@@ -1,0 +1,34 @@
+rootOAuthIds:
+oauth:
+  webClientId:
+  webClientSecret:
+  nativeClientId:
+  nativeClientSecret:
+  domain:
+  apiToken:
+
+databases:
+  - mongo:27017
+
+server:
+  gzip:
+    enabled: false
+  applicationConnectors:
+    - type: http
+      port: 8080
+
+logging:
+  level: INFO
+  loggers:
+    "io.dropwizard": ALL
+
+  appenders:
+    - type: console
+    - type: file
+      threshold: DEBUG
+      logFormat: "%-6level [%d{HH:mm:ss.SSS}] [%t] %logger{5} - %X{code} %msg %n"
+      currentLogFilename: /tmp/application.log
+      maxFileSize: 100MB
+      archivedLogFilenamePattern: /tmp/application-%d{yyyy-MM-dd}-%i.log.gz
+      archivedFileCount: 7
+      timeZone: UTC

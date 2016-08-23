@@ -1,0 +1,13 @@
+version: '2'
+services:
+  api:
+    image: jivecakeapi
+    ports:
+      - "8080:8080"
+    links:
+      - mongo
+    volumes:
+      - ..:/root/jcapi
+      - ./example-settings.yml:/root/settings.yml
+  mongo:
+    image: mongo

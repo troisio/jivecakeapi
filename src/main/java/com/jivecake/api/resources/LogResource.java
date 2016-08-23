@@ -1,0 +1,104 @@
+package com.jivecake.api.resources;
+
+import java.util.Date;
+import java.util.List;
+
+import javax.ws.rs.GET;
+import javax.ws.rs.Path;
+import javax.ws.rs.QueryParam;
+import javax.ws.rs.core.Context;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
+import javax.ws.rs.core.Response.ResponseBuilder;
+import javax.ws.rs.core.Response.Status;
+
+import org.mongodb.morphia.query.Query;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.google.inject.Inject;
+import com.jivecake.api.filter.Authorized;
+import com.jivecake.api.filter.CORS;
+import com.jivecake.api.model.Application;
+import com.jivecake.api.model.Request;
+import com.jivecake.api.request.Paging;
+import com.jivecake.api.service.ApplicationService;
+import com.jivecake.api.service.LogService;
+import com.jivecake.api.service.PermissionService;
+
+@Path("/log")
+@CORS
+public class LogResource {
+    private final ApplicationService applicationService;
+    private final LogService logService;
+    private final PermissionService permissionService;
+
+    @Inject
+    public LogResource(
+        ApplicationService applicationService,
+        LogService logService,
+        PermissionService permissionService
+    ) {
+        this.applicationService = applicationService;
+        this.logService = logService;
+        this.permissionService = permissionService;
+    }
+
+    @GET
+    @Path("/http")
+    @Authorized
+    public Response query(
+        @QueryParam("limit") Integer limit,
+        @QueryParam("offset") Integer offset,
+        @QueryParam("order") String order,
+        @QueryParam("user_id") List<String> userIds,
+        @QueryParam("timeCreatedLessThan") Long timeCreatedLessThan,
+        @QueryParam("timeCreatedGreaterThan") Long timeCreatedGreaterThan,
+        @Context JsonNode claims
+    ) {
+        Application application = this.applicationService.read();
+
+        ResponseBuilder builder;
+
+        boolean hasPermission = this.permissionService.has(
+            claims.get("sub").asText(),
+            Application.class,
+            this.applicationService.getReadPermission(),
+            application.id
+        );
+
+        if (hasPermission) {
+            Query<Request> query = this.logService.query();
+
+            if (!userIds.isEmpty()) {
+                query.field("user_id").in(userIds);
+            }
+
+            if (timeCreatedGreaterThan != null) {
+                query.field("timeCreated").greaterThan(new Date(timeCreatedGreaterThan));
+            }
+
+            if (timeCreatedLessThan != null) {
+                query.field("timeCreated").lessThan(new Date(timeCreatedLessThan));
+            }
+
+            if (order != null) {
+                query.order(order);
+            }
+
+            if (limit != null && limit > -1) {
+                query.limit(limit);
+            }
+
+            if (offset != null && offset > -1) {
+                query.offset(offset);
+            }
+
+            Paging<Request> entity = new Paging<>(query.asList(), query.countAll());
+            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+        } else {
+            builder = Response.status(Status.UNAUTHORIZED);
+        }
+
+        return builder.build();
+    }
+}
