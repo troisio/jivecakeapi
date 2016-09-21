@@ -30,6 +30,7 @@ import com.jivecake.api.OAuthConfiguration;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.request.Auth0UserUpdateEntity;
+import com.jivecake.api.request.UserEmailVerificationBody;
 
 import io.dropwizard.jersey.PATCH;
 
@@ -47,25 +48,33 @@ public class Auth0Resource {
     @POST
     @Path("/api/v2/jobs/verification-email")
     @Authorized
-    public void sendVerifyEmailAddress(@Suspended AsyncResponse promise, String body) {
-        WebTarget target = ClientBuilder.newClient()
-            .target("https://" + this.oAuthConfiguration.domain)
-            .path("/api/v2/jobs/verification-email");
+    public void sendVerifyEmailAddress(
+        @Context JsonNode claims,
+        @Suspended AsyncResponse promise,
+        UserEmailVerificationBody body
+    ) {
+        if (claims.get("sub").asText().equals(body.user_id)) {
+            WebTarget target = ClientBuilder.newClient()
+                .target("https://" + this.oAuthConfiguration.domain)
+                .path("/api/v2/jobs/verification-email");
 
-        target.request()
-            .header("Authorization", "Bearer " + this.oAuthConfiguration.apiToken)
-            .buildPost(Entity.json(body))
-            .submit(new InvocationCallback<Response>() {
-                @Override
-                public void completed(Response response) {
-                    promise.resume(response);
-                }
+            target.request()
+                .header("Authorization", "Bearer " + this.oAuthConfiguration.apiToken)
+                .buildPost(Entity.json(body))
+                .submit(new InvocationCallback<Response>() {
+                    @Override
+                    public void completed(Response response) {
+                        promise.resume(response);
+                    }
 
-                @Override
-                public void failed(Throwable throwable) {
-                    promise.resume(throwable);
-                }
-            });
+                    @Override
+                    public void failed(Throwable throwable) {
+                        promise.resume(throwable);
+                    }
+                });
+        } else {
+            promise.resume(Response.status(Status.UNAUTHORIZED).build());
+        }
     }
 
     @GET
