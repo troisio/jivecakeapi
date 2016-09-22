@@ -1,6 +1,9 @@
 package com.jivecake.api.resources;
 
 import java.io.IOException;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
@@ -39,6 +42,8 @@ import io.dropwizard.jersey.PATCH;
 public class Auth0Resource {
     private final OAuthConfiguration oAuthConfiguration;
     private final ObjectMapper mapper = new ObjectMapper();
+    private final Map<String, Date> lastEmailTime = new HashMap<>();
+    private final long emailLimitTime = 1000 * 60 * 5;
 
     @Inject
     public Auth0Resource(OAuthConfiguration oAuthConfiguration) {
@@ -46,6 +51,7 @@ public class Auth0Resource {
     }
 
     @POST
+    @Consumes(MediaType.APPLICATION_JSON)
     @Path("/api/v2/jobs/verification-email")
     @Authorized
     public void sendVerifyEmailAddress(
@@ -53,25 +59,50 @@ public class Auth0Resource {
         @Suspended AsyncResponse promise,
         UserEmailVerificationBody body
     ) {
-        if (claims.get("sub").asText().equals(body.user_id)) {
-            WebTarget target = ClientBuilder.newClient()
-                .target("https://" + this.oAuthConfiguration.domain)
-                .path("/api/v2/jobs/verification-email");
+        String user_id = claims.get("sub").asText();
 
-            target.request()
-                .header("Authorization", "Bearer " + this.oAuthConfiguration.apiToken)
-                .buildPost(Entity.json(body))
-                .submit(new InvocationCallback<Response>() {
-                    @Override
-                    public void completed(Response response) {
-                        promise.resume(response);
-                    }
+        if (user_id.equals(body.user_id)) {
+            boolean emailTimeViolation;
 
-                    @Override
-                    public void failed(Throwable throwable) {
-                        promise.resume(throwable);
-                    }
-                });
+            Date currentTime = new Date();
+            Date lastEmailTime = this.lastEmailTime.get(user_id);
+
+            if (lastEmailTime == null) {
+                emailTimeViolation = false;
+            } else {
+                emailTimeViolation = currentTime.getTime() - lastEmailTime.getTime() < this.emailLimitTime;
+            }
+
+            if (emailTimeViolation) {
+                promise.resume(Response.status(Status.BAD_REQUEST)
+                    .entity(String.format("{\"error\": %d}", lastEmailTime.getTime() + this.emailLimitTime))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build()
+                );
+            } else {
+                WebTarget target = ClientBuilder.newClient()
+                    .target("https://" + this.oAuthConfiguration.domain)
+                    .path("/api/v2/jobs/verification-email");
+
+                target.request()
+                    .header("Authorization", "Bearer " + this.oAuthConfiguration.apiToken)
+                    .buildPost(Entity.json(body))
+                    .submit(new InvocationCallback<Response>() {
+                        @Override
+                        public void completed(Response response) {
+                            if (response.getStatus() == 201) {
+                                Auth0Resource.this.lastEmailTime.put(user_id, new Date());
+                            }
+
+                            promise.resume(response);
+                        }
+
+                        @Override
+                        public void failed(Throwable throwable) {
+                            promise.resume(throwable);
+                        }
+                    });
+                }
         } else {
             promise.resume(Response.status(Status.UNAUTHORIZED).build());
         }
