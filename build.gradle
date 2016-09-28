@@ -45,4 +45,8 @@ dependencies {
 
 test {
     systemProperties = System.getProperties()
+    
+    testLogging {
+        exceptionFormat = 'full'
+    }
 }
