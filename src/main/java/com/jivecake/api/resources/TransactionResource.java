@@ -52,7 +52,6 @@ import com.jivecake.api.service.MappingService;
 import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.TransactionService;
-import com.mongodb.BasicDBObject;
 
 @Path("/transaction")
 @CORS
@@ -480,10 +479,11 @@ public class TransactionResource {
                     Set<ObjectId> idsFilter = this.mappingService.getItemTransactionIds(organizationIds, eventIds, itemIds);
                     idsFilter.addAll(ids);
 
-                    String userQuery = this.transactionService.query()
+                    List<Transaction> transactions = this.transactionService.query()
                         .field("id").in(idsFilter)
-                        .asList()
-                        .stream()
+                        .asList();
+
+                    String userQuery = transactions.stream()
                         .filter(transaction -> transaction.user_id != null)
                         .map(transaction -> String.format("user_id: \"%s\"", transaction.user_id))
                         .collect(Collectors.joining(" OR "));
@@ -503,13 +503,8 @@ public class TransactionResource {
                             }
 
                             if (users != null) {
-                                BasicDBObject query = new BasicDBObject(
-                                    "_id",
-                                    new BasicDBObject("$in", idsFilter)
-                                );
-
                                 try {
-                                    TransactionResource.this.transactionService.writeToExcel(query, users, writeFile);
+                                    TransactionResource.this.transactionService.writeToExcel(transactions, users, writeFile);
                                     Response result = Response.ok(writeFile)
                                         .type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                                         .header("Content-Disposition", String.format("attachment; filename=%s", writeFile.getName()))
