@@ -2,6 +2,7 @@ package com.jivecake.api.resources;
 
 import java.util.Date;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
@@ -62,17 +63,39 @@ public class EventResource {
     @Path("/search")
     public Response search(
         @QueryParam("id") List<ObjectId> ids,
-        @QueryParam("shortNameStartsWith") String shortNameStartsWith,
+        @QueryParam("shortName") String shortName,
         @QueryParam("timeStartBefore") Long timeStartBefore,
         @QueryParam("timeStartAfter") Long timeStartAfter,
         @QueryParam("timeEndBefore") Long timeEndBefore,
-        @QueryParam("timeEndAfter") Long timeEndAfter
+        @QueryParam("timeEndAfter") Long timeEndAfter,
+        @QueryParam("text") String text
     ) {
         Query<Event> query = this.eventService.query()
-            .field("status").equal(this.eventService.getActiveEventStatus());
+            .field("status").equal(this.eventService.getActiveEventStatus())
+            .limit(1000);
+
+        if (text != null && !text.isEmpty()) {
+            List<ObjectId> organizationIds = this.organizationService.query()
+                .field("name").containsIgnoreCase(text)
+                .asList()
+                .stream()
+                .map(organization -> organization.id)
+                .collect(Collectors.toList());
+
+            query.and(
+                query.or(
+                    query.criteria("organizationId").in(organizationIds),
+                    query.criteria("name").containsIgnoreCase(text)
+                )
+            );
+        }
 
         if (!ids.isEmpty()) {
             query.field("id").in(ids);
+        }
+
+        if (shortName != null) {
+            query.field("shortName").startsWithIgnoreCase(shortName);
         }
 
         if (timeStartBefore != null) {
