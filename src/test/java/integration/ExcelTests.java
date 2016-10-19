@@ -20,7 +20,6 @@ import com.jivecake.api.model.Item;
 import com.jivecake.api.model.PaypalIPN;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.service.TransactionService;
-import com.mongodb.BasicDBObject;
 import com.mongodb.MongoClient;
 import com.mongodb.ServerAddress;
 
@@ -51,9 +50,7 @@ public class ExcelTests {
         Transaction transaction = new Transaction();
         this.datastore.save(transaction);
 
-        BasicDBObject query = new BasicDBObject();
-
-        this.transactionService.writeToExcel(query, new ArrayList<>(),file);
+        this.transactionService.writeToExcel(Arrays.asList(transaction), new ArrayList<>(),file);
     }
 
     @Test
@@ -71,9 +68,7 @@ public class ExcelTests {
             .put("family_name", "family")
             .put("given_name", "given");
 
-        BasicDBObject query = new BasicDBObject();
-
-        this.transactionService.writeToExcel(query, Arrays.asList(node), file);
+        this.transactionService.writeToExcel(Arrays.asList(transaction), Arrays.asList(node), file);
     }
 
     @Test
@@ -101,8 +96,6 @@ public class ExcelTests {
 
         this.datastore.save(item, transaction);
 
-        BasicDBObject query = new BasicDBObject();
-
-        this.transactionService.writeToExcel(query, new ArrayList<>(),file);
+        this.transactionService.writeToExcel(Arrays.asList(transaction), new ArrayList<>(),file);
     }
 }

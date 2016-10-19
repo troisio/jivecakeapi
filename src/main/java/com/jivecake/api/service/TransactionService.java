@@ -23,22 +23,16 @@ import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.Query;
 
-import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.PaypalIPN;
 import com.jivecake.api.model.Transaction;
-import com.mongodb.BasicDBList;
-import com.mongodb.BasicDBObject;
-import com.mongodb.DBObject;
 
 @Singleton
 public class TransactionService {
     private final Datastore datastore;
-    private final ObjectMapper mapper = new ObjectMapper().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
     private final Predicate<Transaction> usedForCountFilter = (transaction) ->
         transaction.status == this.getPaymentCompleteStatus() ||
         transaction.status == this.getPaymentPendingStatus();
@@ -54,8 +48,8 @@ public class TransactionService {
 
     public Transaction read(ObjectId id) {
         Transaction result = this.datastore.find(Transaction.class)
-        .field("id").equal(id)
-        .get();
+            .field("id").equal(id)
+            .get();
         return result;
     }
 
@@ -108,29 +102,21 @@ public class TransactionService {
         return result;
     }
 
-    public void writeToExcel(BasicDBObject query, List<JsonNode> users, File file) throws IOException {
+    public void writeToExcel(List<Transaction> transactions, List<JsonNode> users, File file) throws IOException {
         Workbook workbook = new XSSFWorkbook();
         Sheet sheet = workbook.createSheet("Transactions");
         sheet.createFreezePane(0, 1);
 
-        List<DBObject> dbObjects = new ArrayList<>();
+        List<ObjectId> itemIds = transactions.stream()
+            .map(transaction -> transaction.itemId)
+            .collect(Collectors.toList());
+        Map<ObjectId, List<Item>> itemById = this.datastore.createQuery(Item.class)
+            .field("id").in(itemIds)
+            .asList()
+            .stream()
+            .collect(Collectors.groupingBy(item -> item.id));
 
-        this.datastore.getDB()
-            .getCollection(Transaction.class.getSimpleName())
-            .aggregate(Arrays.asList(
-                new BasicDBObject("$match", query),
-                new BasicDBObject(
-                    "$lookup",
-                    new BasicDBObject("from", Item.class.getSimpleName())
-                    .append("localField", "itemId")
-                    .append("foreignField", "_id")
-                    .append("as", "items")
-                )
-            ))
-            .results()
-            .forEach(dbObjects::add);
-
-        Map<String, List<JsonNode>> userIdMap = users.stream()
+        Map<String, List<JsonNode>> userById = users.stream()
             .collect(Collectors.groupingBy(user -> user.get("user_id").asText()));
 
         String[] headers = {
@@ -156,25 +142,12 @@ public class TransactionService {
             cell.setCellValue(headers[index]);
         }
 
-        for (int index = 0; index < dbObjects.size(); index++) {
+        for (int index = 0; index < transactions.size(); index++) {
             Row row = sheet.createRow(index + 1);
-            BasicDBObject object = (BasicDBObject)dbObjects.get(index);
 
-            Transaction transaction = this.mapper.convertValue(object, Transaction.class);
-            transaction.id = object.getObjectId("_id");
-            BasicDBList items = (BasicDBList)object.get("items");
-
-            Item item;
-
-            if (items.isEmpty()) {
-                item = null;
-            } else {
-                item = this.mapper.convertValue(items.get(0), Item.class);
-                item.id = ((BasicDBObject)items.get(0)).getObjectId("_id");
-            }
-
-            List<JsonNode> values = userIdMap.get(transaction.user_id);
-            JsonNode user = values == null ? null : values.get(0);
+            Transaction transaction = transactions.get(index);
+            Item item = itemById.containsKey(transaction.itemId) ? itemById.get(transaction.itemId).get(0) : null;
+            JsonNode user = userById.containsKey(transaction.user_id) ? userById.get(transaction.user_id).get(0) : null;
 
             this.writeRow(transaction, item, user, row, dateStyle);
         }
