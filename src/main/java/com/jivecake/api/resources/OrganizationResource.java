@@ -449,7 +449,7 @@ public class OrganizationResource {
         @QueryParam("limit") Integer limit,
         @QueryParam("offset") Integer offset
     ) {
-        Query<Organization> query = this.organizationService.query().retrievedFields(false, "email");
+        Query<Organization> query = this.organizationService.query();
 
         if (!organizationIds.isEmpty()) {
             query.field("id").in(organizationIds);

@@ -63,11 +63,13 @@ public class EventResource {
     @Path("/search")
     public Response search(
         @QueryParam("id") List<ObjectId> ids,
-        @QueryParam("shortName") String shortName,
         @QueryParam("timeStartBefore") Long timeStartBefore,
         @QueryParam("timeStartAfter") Long timeStartAfter,
         @QueryParam("timeEndBefore") Long timeEndBefore,
         @QueryParam("timeEndAfter") Long timeEndAfter,
+        @QueryParam("timeCreatedAfter") Long timeCreatedAfter,
+        @QueryParam("timeCreatedBefore") Long timeCreatedBefore,
+        @QueryParam("order") String order,
         @QueryParam("text") String text
     ) {
         Query<Event> query = this.eventService.query()
@@ -94,10 +96,6 @@ public class EventResource {
             query.field("id").in(ids);
         }
 
-        if (shortName != null) {
-            query.field("shortName").startsWithIgnoreCase(shortName);
-        }
-
         if (timeStartBefore != null) {
             query.field("timeStart").lessThan(new Date(timeStartBefore));
         }
@@ -112,6 +110,18 @@ public class EventResource {
 
         if (timeEndAfter != null) {
             query.field("timeEnd").greaterThan(new Date(timeEndAfter));
+        }
+
+        if (timeCreatedAfter != null) {
+            query.field("timeCreated").greaterThan(new Date(timeCreatedAfter));
+        }
+
+        if (timeCreatedBefore != null) {
+            query.field("timeCreated").lessThan(new Date(timeCreatedBefore));
+        }
+
+        if (order != null) {
+            query.order(order);
         }
 
         Paging<Event> entity = new Paging<>(query.asList(), query.countAll());
