@@ -18,6 +18,7 @@ import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
 import javax.ws.rs.QueryParam;
 import javax.ws.rs.client.InvocationCallback;
 import javax.ws.rs.container.AsyncResponse;
@@ -301,6 +302,108 @@ public class TransactionResource {
             futureResponse.resume(exception);
             return null;
         });
+    }
+
+    @POST
+    @Authorized
+    @Path("/{id}/transfer/{user_id}")
+    public void transfer(
+        @PathObject("id") Transaction transaction,
+        @PathParam("user_id") String user_id,
+        @Context JsonNode claims,
+        @Suspended AsyncResponse promise
+    ) {
+        if (transaction == null) {
+            promise.resume(Response.status(Status.NOT_FOUND).build());
+        } else if (transaction.status != this.transactionService.getPaymentCompleteStatus()) {
+            promise.resume(Response.status(Status.BAD_REQUEST).build());
+        } else {
+            Item item = this.itemService.read(transaction.itemId);
+            Event event = this.eventService.read(item.eventId);
+
+            String requester = claims.get("sub").asText();
+
+            boolean hasTransferTimeViolation = false;
+
+            Transaction parentTransaction = this.transactionService.read(transaction.parentTransactionId);
+
+            if (parentTransaction != null && parentTransaction.status == this.transactionService.getTransferredStatus()) {
+                hasTransferTimeViolation = event.minimumTimeBetweenTransactionTransfer > new Date().getTime() - parentTransaction.timeCreated.getTime();
+            }
+
+            if (requester.equals(user_id)) {
+                promise.resume(Response.status(Status.BAD_REQUEST).build());
+            } else if (event.status == this.eventService.getInactiveEventStatus()) {
+                promise.resume(Response.status(Status.BAD_REQUEST).entity("{\"error\": \"eventInactive\"}").build());
+            } else if (hasTransferTimeViolation) {
+                String body = String.format("{\"error\": \"minimumTimeBetweenPassTransfer\", data: %d}", event.minimumTimeBetweenTransactionTransfer);
+                promise.resume(Response.status(Status.BAD_REQUEST).entity(body).build());
+            } else {
+                boolean hasPermission = requester.equals(transaction.user_id) ||
+                    this.permissionService.has(
+                        requester,
+                        Arrays.asList(transaction),
+                        this.organizationService.getWritePermission()
+                    );
+
+                if (hasPermission) {
+                    this.auth0Service.queryUsers(String.format("user_id: \"%s\"", user_id), new InvocationCallback<Response>() {
+                        @Override
+                        public void completed(Response response) {
+                            JsonNode[] users;
+
+                            Object entity = response.getEntity();
+                            String body = entity instanceof String ? (String)entity : response.readEntity(String.class);
+
+                            try {
+                                users = TransactionResource.this.mapper.readValue(body, JsonNode[].class);
+                            } catch (IOException e) {
+                                users = null;
+                                promise.resume(response);
+                            }
+
+                            if (users != null) {
+                                if (users.length == 0) {
+                                    promise.resume(Response.status(Status.NOT_FOUND).build());
+                                } else {
+                                    Transaction transfer = new Transaction();
+                                    transfer.id = new ObjectId();
+                                    transfer.parentTransactionId = transaction.id;
+                                    transfer.itemId = transaction.itemId;
+                                    transfer.user_id = transaction.user_id;
+                                    transfer.status = TransactionResource.this.transactionService.getTransferredStatus();
+                                    transfer.timeCreated = new Date();
+
+                                    Transaction completed = new Transaction();
+                                    completed.itemId = transaction.itemId;
+                                    completed.parentTransactionId = transfer.id;
+                                    completed.user_id = users[0].get("user_id").asText();
+                                    completed.status = TransactionResource.this.transactionService.getPaymentCompleteStatus();
+                                    completed.timeCreated = new Date();
+
+                                    TransactionResource.this.transactionService.save(transfer);
+                                    TransactionResource.this.transactionService.save(completed);
+
+                                    Transaction transferAfter = TransactionResource.this.transactionService.read(transfer.id);
+                                    Transaction completedAfter = TransactionResource.this.transactionService.read(completed.id);
+
+                                    promise.resume(
+                                        Response.ok(Arrays.asList(transferAfter, completedAfter)).type(MediaType.APPLICATION_JSON).build()
+                                    );
+                                }
+                            }
+                        }
+
+                        @Override
+                        public void failed(Throwable throwable) {
+                            promise.resume(throwable);
+                        }
+                    });
+                } else {
+                    promise.resume(Response.status(Status.UNAUTHORIZED).build());
+                }
+            }
+        }
     }
 
     @GET

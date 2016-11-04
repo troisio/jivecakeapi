@@ -367,7 +367,9 @@ public class ItemResource {
                 this.organizationService.getWritePermission()
             );
 
-            if (hasPermission) {
+            if (!this.transactionService.isValidTransaction(transaction)) {
+                builder = Response.status(Status.BAD_REQUEST);
+            } else if (hasPermission) {
                 boolean totalAvailibleViolation;
 
                 if (item.totalAvailible == null) {

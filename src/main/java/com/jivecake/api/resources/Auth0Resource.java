@@ -74,17 +74,18 @@ public class Auth0Resource {
             }
 
             if (emailTimeViolation) {
-                promise.resume(Response.status(Status.BAD_REQUEST)
-                    .entity(String.format("{\"error\": %d}", lastEmailTime.getTime() + this.emailLimitTime))
+                String responseBody = String.format("{\"error\": \"emailLimitTime\", \"data\": %d}", lastEmailTime.getTime() + this.emailLimitTime);
+                Response response = Response.status(Status.BAD_REQUEST)
+                    .entity(responseBody)
                     .type(MediaType.APPLICATION_JSON)
-                    .build()
-                );
-            } else {
-                WebTarget target = ClientBuilder.newClient()
-                    .target("https://" + this.oAuthConfiguration.domain)
-                    .path("/api/v2/jobs/verification-email");
+                    .build();
 
-                target.request()
+                promise.resume(response);
+            } else {
+                ClientBuilder.newClient()
+                    .target("https://" + this.oAuthConfiguration.domain)
+                    .path("/api/v2/jobs/verification-email")
+                    .request()
                     .header("Authorization", "Bearer " + this.oAuthConfiguration.apiToken)
                     .buildPost(Entity.json(body))
                     .submit(new InvocationCallback<Response>() {

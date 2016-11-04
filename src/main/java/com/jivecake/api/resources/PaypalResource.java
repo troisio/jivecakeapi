@@ -104,13 +104,7 @@ public class PaypalResource {
             @Override
             public void completed(Response paypalResponse) {
                 Object entity = paypalResponse.getEntity();
-                String body;
-
-                if (entity instanceof String) {
-                    body = (String)entity;
-                } else {
-                    body = paypalResponse.readEntity(String.class);;
-                }
+                String body = entity instanceof String ? (String)entity : paypalResponse.readEntity(String.class);
 
                 boolean verified = body.equals(PaypalResource.this.paypalService.getVerified());
 
@@ -177,6 +171,8 @@ public class PaypalResource {
     @Path("/ipn")
     @Authorized
     public Response search(
+        @QueryParam("id") ObjectId id,
+        @QueryParam("timeCreated") Long timeCreated,
         @QueryParam("timeCreatedLessThan") Long timeCreatedLessThan,
         @QueryParam("timeCreatedGreaterThan") Long timeCreatedGreaterThan,
         @QueryParam("custom") List<String> custom,
@@ -200,12 +196,20 @@ public class PaypalResource {
         if (hasPermission) {
             Query<PaypalIPN> query = this.paypalService.query();
 
+            if (id != null) {
+                query.field("id").equal(id);
+            }
+
             if (!custom.isEmpty()) {
                 query.field("custom").in(custom);
             }
 
             if (!paymentStatuses.isEmpty()) {
                 query.field("payment_status").in(paymentStatuses);
+            }
+
+            if (timeCreated != null) {
+                query.field("timeCreated").equal(new Date(timeCreated));
             }
 
             if (timeCreatedLessThan != null) {
