@@ -72,19 +72,17 @@ public class PaypalService {
         return key;
     }
 
-    public Future<Response> isValidIPN(MultivaluedMap<String, String> paramaters, String paypalURL, InvocationCallback<Response> callback) {
-        String url = String.format("%s?cmd=_notify-validate", paypalURL);
+    public Future<Response> isValidIPN(MultivaluedMap<String, String> paramaters, String paypalUrl, InvocationCallback<Response> callback) {
+        String url = String.format("%s?cmd=_notify-validate", paypalUrl);
 
         MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
         form.putAll(paramaters);
 
-        Future<Response> response = ClientBuilder.newClient()
+        return ClientBuilder.newClient()
             .target(url)
             .request()
             .buildPost(Entity.form(form))
             .submit(callback);
-
-        return response;
     }
 
     public String getSandboxURL() {
@@ -174,10 +172,8 @@ public class PaypalService {
             payments.add(payment);
         }
 
-        Set<String> copyKeySet = copy.keySet();
-        Set<String> removeKeys = copyKeySet.stream().filter(subject -> subject.matches(this.itemPaymentFieldRegex)).collect(Collectors.toSet());
-
-        copyKeySet.removeAll(removeKeys);
+        Set<String> removeKeys = copy.keySet().stream().filter(subject -> subject.matches(this.itemPaymentFieldRegex)).collect(Collectors.toSet());
+        copy.keySet().removeAll(removeKeys);
 
         String json;
 

@@ -1,5 +1,3 @@
-package integration;
-
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -23,7 +21,7 @@ import com.jivecake.api.service.TransactionService;
 import com.mongodb.MongoClient;
 import com.mongodb.ServerAddress;
 
-public class ExcelTests {
+public class ExcelTest {
     private TransactionService transactionService;
     private Datastore datastore;
     private MongoClient client;

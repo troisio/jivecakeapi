@@ -33,6 +33,7 @@ import com.jivecake.api.model.Transaction;
 @Singleton
 public class TransactionService {
     private final Datastore datastore;
+    private final List<String> currencies = Arrays.asList("USD", "EUR");
     private final Predicate<Transaction> usedForCountFilter = (transaction) ->
         transaction.status == this.getPaymentCompleteStatus() ||
         transaction.status == this.getPaymentPendingStatus();
@@ -61,6 +62,10 @@ public class TransactionService {
 
     public Key<Transaction> save(Transaction itemTransaction) {
         return this.datastore.save(itemTransaction);
+    }
+
+    public boolean isValidTransaction(Transaction transaction) {
+        return transaction.quantity > 0 && this.currencies.contains(transaction.currency);
     }
 
     public String getItemTransactionCreatedEventName() {
@@ -258,5 +263,9 @@ public class TransactionService {
 
     public int getPendingWithInvalidPayment() {
         return 7;
+    }
+
+    public int getTransferredStatus() {
+        return 8;
     }
 }
