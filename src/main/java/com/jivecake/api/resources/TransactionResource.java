@@ -10,6 +10,7 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -90,7 +91,7 @@ public class TransactionResource {
     public void search(
         @QueryParam("organizationId") List<ObjectId> organizationIds,
         @QueryParam("eventId") List<ObjectId> eventIds,
-        @QueryParam("eventNameStartsWith") String eventNameStartsWith,
+        @QueryParam("eventName") String eventName,
         @QueryParam("eventStatus") Set<Integer> eventStatuses,
         @QueryParam("itemTimeStartGreaterThan") Long itemTimeStartGreaterThan,
         @QueryParam("itemTimeStartLessThan") Long itemTimeStartLessThan,
@@ -130,7 +131,12 @@ public class TransactionResource {
             Set<ObjectId> idsFilter = this.mappingService.getItemTransactionIds(organizationIds, eventIds, itemIds);
             idsFilter.addAll(ids);
 
-            if (!ids.isEmpty() || !organizationIds.isEmpty() || !eventIds.isEmpty() || !itemIds.isEmpty()) {
+            boolean hasIdFilter = !ids.isEmpty() ||
+                                  !organizationIds.isEmpty() ||
+                                  !eventIds.isEmpty() ||
+                                  !itemIds.isEmpty();
+
+            if (hasIdFilter) {
                 query.field("id").in(idsFilter);
             }
 
@@ -203,21 +209,20 @@ public class TransactionResource {
                 );
             }
 
-            List<Transaction> transactions = query.asList();
-            List<Transaction> filteredTransactions;
-
             boolean hasItemTimeSearch = itemTimeStartGreaterThan != null ||
                                         itemTimeStartLessThan != null ||
                                         itemTimeEndLessThan != null ||
                                         itemTimeEndGreaterThan != null ||
                                         text != null;
             boolean hasEventSearch = !eventStatuses.isEmpty() ||
-                                     eventNameStartsWith != null;
+                                     eventName != null;
 
             if (hasItemTimeSearch || hasEventSearch) {
+                List<Transaction> transactions = query.asList();
+
                 Set<Object> itemIdsQuery = transactions.stream()
-                                                       .map(transaction -> transaction.itemId)
-                                                       .collect(Collectors.toSet());
+                   .map(transaction -> transaction.itemId)
+                   .collect(Collectors.toSet());
 
                 Query<Item> itemQuery = this.itemService.query().field("id").in(itemIdsQuery);
 
@@ -240,17 +245,15 @@ public class TransactionResource {
                 List<Item> queriedItems = itemQuery.asList();
                 List<Item> filteredItems;
 
-                if (eventStatuses.isEmpty()) {
-                    filteredItems = queriedItems;
-                } else {
+                if (hasEventSearch) {
                     Query<Event> eventQuery = this.eventService.query();
 
                     if (!eventStatuses.isEmpty()) {
                         eventQuery.field("status").in(eventStatuses);
                     }
 
-                    if (eventNameStartsWith != null) {
-                        eventQuery.field("name").startsWithIgnoreCase(eventNameStartsWith);
+                    if (eventName != null) {
+                        eventQuery.field("name").startsWithIgnoreCase(eventName);
                     }
 
                     Set<ObjectId> filteredEventIds = eventQuery.asList()
@@ -261,37 +264,44 @@ public class TransactionResource {
                     filteredItems = queriedItems.stream()
                         .filter(item -> filteredEventIds.contains(item.eventId))
                         .collect(Collectors.toList());
+                } else {
+                    filteredItems = queriedItems;
                 }
 
-                Set<ObjectId> queriedItemIds = filteredItems.stream()
-                                                            .map(item -> item.id)
-                                                            .collect(Collectors.toSet());
+                List<ObjectId> queriedItemIds = filteredItems.stream()
+                    .map(item -> item.id)
+                    .collect(Collectors.toList());
 
-                filteredTransactions = transactions.stream()
-                                                   .filter(transaction -> queriedItemIds.contains(transaction.itemId))
-                                                   .collect(Collectors.toList());
-            } else {
-                filteredTransactions = transactions;
+                query.field("itemId").in(queriedItemIds);
             }
 
-            if (leaf != null && leaf) {
+            if (Objects.equals(leaf, true)) {
+                List<Transaction> transactions = query.asList();
                 List<List<Transaction>> forest = this.transactionService.getTransactionForest(transactions);
 
-                filteredTransactions = forest.stream()
+                List<ObjectId> leafIds = forest.stream()
                     .filter(lineage -> lineage.size() == 1)
-                    .map(lineage -> lineage.get(0))
+                    .map(lineage -> lineage.get(0).id)
                     .collect(Collectors.toList());
+
+                query.field("id").in(leafIds);
             }
 
             String user_id = claims.get("sub").asText();
 
+            List<Transaction> transactions = query.asList();
+
             boolean hasUserIdPermission = userIds.size() == 1 && userIds.contains(user_id);
-            boolean hasPermission = this.permissionService.has(user_id, filteredTransactions, this.organizationService.getReadPermission());
+            boolean hasPermission = this.permissionService.has(
+                user_id,
+                transactions,
+                this.organizationService.getReadPermission()
+            );
 
             ResponseBuilder builder;
 
             if (hasUserIdPermission || hasPermission) {
-                Paging<Transaction> entity = new Paging<>(filteredTransactions, query.countAll());
+                Paging<Transaction> entity = new Paging<>(transactions, query.countAll());
                 builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
             } else {
                 builder = Response.status(Status.UNAUTHORIZED);
