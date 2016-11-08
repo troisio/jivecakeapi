@@ -33,7 +33,8 @@ import com.jivecake.api.model.Transaction;
 @Singleton
 public class TransactionService {
     private final Datastore datastore;
-    private final List<String> currencies = Arrays.asList("USD", "EUR");
+    public final List<Integer> statuses = Arrays.asList(0, 1, 2, 3, 4, 5, 6, 7, 8);
+    private final List<String> currencies = Arrays.asList("EUR", "USD");
     private final Predicate<Transaction> usedForCountFilter = (transaction) ->
         transaction.status == this.getPaymentCompleteStatus() ||
         transaction.status == this.getPaymentPendingStatus();
@@ -52,6 +53,26 @@ public class TransactionService {
             .field("id").equal(id)
             .get();
         return result;
+    }
+
+    public long getItemLimitCount(ObjectId itemId) {
+        List<Transaction> transactions = this.datastore.createQuery(Transaction.class)
+            .field("itemId").equal(itemId)
+            .asList();
+
+        List<List<Transaction>> forest = this.getTransactionForest(transactions);
+
+        List<Transaction> pendingOrCompleteLeafTransactions = forest.stream()
+            .filter(lineage -> lineage.size() == 1)
+            .map(lineage -> lineage.get(0))
+           .filter(this.usedForCountFilter)
+           .collect(Collectors.toList());
+
+        long count = pendingOrCompleteLeafTransactions.stream()
+            .map(subject -> subject.quantity)
+            .reduce(0L, Long::sum);
+
+        return count;
     }
 
     public Transaction delete(ObjectId id) {
@@ -183,8 +204,6 @@ public class TransactionService {
 
         if (PaypalIPN.class.getSimpleName().equals(subject.linkedObjectClass)) {
             system.setCellValue("paypal");
-        } else {
-            system.setCellValue("jivecake");
         }
 
         if (subject.timeCreated != null) {

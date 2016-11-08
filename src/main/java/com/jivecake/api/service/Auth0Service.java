@@ -10,6 +10,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 
 import javax.ws.rs.client.ClientBuilder;
+import javax.ws.rs.client.Invocation;
 import javax.ws.rs.client.InvocationCallback;
 import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.MultivaluedHashMap;
@@ -48,6 +49,15 @@ public class Auth0Service {
         }
 
         return result;
+    }
+
+    public Invocation getUser(String id) {
+        return ClientBuilder.newClient()
+            .target("https://" + this.oAuthConfiguration.domain)
+            .path("/api/v2/users/" + id)
+             .request()
+            .header("Authorization", "Bearer " + this.oAuthConfiguration.apiToken)
+            .buildGet();
     }
 
     public Future<Response> queryUsers(String query, InvocationCallback<Response> callback) {

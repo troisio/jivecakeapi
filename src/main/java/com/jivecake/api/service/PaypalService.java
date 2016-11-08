@@ -275,22 +275,7 @@ public class PaypalService {
                     Double amount;
 
                     if (item.countAmounts != null) {
-                        List<Transaction> itemTransactions = this.transactionService.query()
-                            .field("itemId").equal(item.id)
-                            .asList();
-
-                        List<List<Transaction>> forest = transactionService.getTransactionForest(itemTransactions);
-
-                        List<Transaction> pendingOrCompleteLeafTransactions = forest.stream()
-                            .filter(lineage -> lineage.size() == 1)
-                            .map(lineage -> lineage.get(0))
-                           .filter(this.transactionService.getCountingFilter())
-                           .collect(Collectors.toList());
-
-                        long count = pendingOrCompleteLeafTransactions.stream()
-                            .map(subject -> subject.quantity)
-                            .reduce(0L, Long::sum);
-
+                        long count = this.transactionService.getItemLimitCount(item.id);
                         amount = item.getDerivedAmountFromCounts(count);
                     } else if (item.timeAmounts != null) {
                         amount = item.getDerivedAmountFromTime(currentDate);
