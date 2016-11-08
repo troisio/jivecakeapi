@@ -2,16 +2,15 @@ package com.jivecake.api.service;
 
 import java.util.List;
 
+import javax.inject.Inject;
+
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.Query;
 
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
 import com.jivecake.api.model.Event;
 
-@Singleton
 public class EventService {
     private final Datastore datastore;
 

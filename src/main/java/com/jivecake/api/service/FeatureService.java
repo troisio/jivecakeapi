@@ -2,16 +2,15 @@ package com.jivecake.api.service;
 
 import java.util.Date;
 
+import javax.inject.Inject;
+
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.Query;
 
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
 import com.jivecake.api.model.Feature;
 import com.mongodb.WriteResult;
 
-@Singleton
 public class FeatureService {
     private final Datastore datastore;
 

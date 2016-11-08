@@ -1,14 +1,13 @@
 package com.jivecake.api.service;
 
+import javax.inject.Inject;
+
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Key;
 
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
 import com.jivecake.api.model.PaymentDetail;
 
-@Singleton
 public class PaymentService {
     private final Datastore datastore;
 

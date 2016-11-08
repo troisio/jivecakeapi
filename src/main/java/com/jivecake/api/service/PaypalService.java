@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
+import javax.inject.Inject;
 import javax.ws.rs.client.ClientBuilder;
 import javax.ws.rs.client.Entity;
 import javax.ws.rs.client.InvocationCallback;
@@ -24,15 +25,12 @@ import org.mongodb.morphia.query.Query;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.PaymentDetail;
 import com.jivecake.api.model.PaypalIPN;
 import com.jivecake.api.model.PaypalItemPayment;
 import com.jivecake.api.model.Transaction;
 
-@Singleton
 public class PaypalService {
     private final Datastore datastore;
     private final TransactionService transactionService;

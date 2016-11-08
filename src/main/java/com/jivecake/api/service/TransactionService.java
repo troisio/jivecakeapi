@@ -11,6 +11,8 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import javax.inject.Inject;
+
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.CreationHelper;
@@ -24,13 +26,10 @@ import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.Query;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.PaypalIPN;
 import com.jivecake.api.model.Transaction;
 
-@Singleton
 public class TransactionService {
     private final Datastore datastore;
     public final List<Integer> statuses = Arrays.asList(0, 1, 2, 3, 4, 5, 6, 7, 8);
@@ -95,7 +94,7 @@ public class TransactionService {
 
     public List<List<Transaction>> getTransactionForest(List<Transaction> transactions) {
         Map<Transaction, List<Transaction>> transactionLineageMap = transactions.stream()
-            .collect(Collectors.toMap(Function.identity(), transaction -> new ArrayList<Transaction>(Arrays.asList(transaction))));
+            .collect(Collectors.toMap(Function.identity(), transaction -> new ArrayList<>(Arrays.asList(transaction))));
 
         Map<ObjectId, Transaction> parentTransactionIdMap;
 

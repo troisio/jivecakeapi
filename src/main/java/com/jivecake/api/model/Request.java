@@ -11,7 +11,6 @@ import org.mongodb.morphia.annotations.Entity;
 import org.mongodb.morphia.annotations.Field;
 import org.mongodb.morphia.annotations.Id;
 import org.mongodb.morphia.annotations.Index;
-import org.mongodb.morphia.annotations.Indexed;
 import org.mongodb.morphia.annotations.Indexes;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -39,7 +38,5 @@ public class Request {
     public Map<String, Cookie> cookies;
     public Map<String, List<String>> headers;
     public String user_id;
-
-    @Indexed
     public Date timeCreated;
 }

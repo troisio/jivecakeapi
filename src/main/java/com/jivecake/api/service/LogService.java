@@ -1,14 +1,13 @@
 package com.jivecake.api.service;
 
+import javax.inject.Inject;
+
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.Query;
 
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
 import com.jivecake.api.model.Request;
 
-@Singleton
 public class LogService {
     public final Datastore datastore;
 

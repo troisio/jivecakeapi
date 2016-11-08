@@ -3,21 +3,19 @@ package com.jivecake.api.service;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import javax.inject.Inject;
 import javax.ws.rs.core.MediaType;
 
 import org.bson.types.ObjectId;
 import org.glassfish.jersey.media.sse.OutboundEvent;
 import org.mongodb.morphia.Datastore;
 
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.OrganizationFeature;
 import com.jivecake.api.model.Transaction;
 
-@Singleton
 public class NotificationService {
     private final Datastore datastore;
     private final TransactionService transactionService;

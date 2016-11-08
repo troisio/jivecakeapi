@@ -9,14 +9,14 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import javax.inject.Inject;
+
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.CriteriaContainer;
 import org.mongodb.morphia.query.Query;
 
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.IndexedOrganizationNode;
 import com.jivecake.api.model.Item;
@@ -25,7 +25,6 @@ import com.jivecake.api.model.Permission;
 import com.jivecake.api.model.Transaction;
 import com.mongodb.WriteResult;
 
-@Singleton
 public class PermissionService {
     private final Datastore datastore;
     private final MappingService mappingService;
@@ -179,7 +178,7 @@ public class PermissionService {
 
         query.or(criterium);
 
-        if (criterium.length != 0) {
+        if (criterium.length > 0) {
             this.datastore.delete(query);
         }
 

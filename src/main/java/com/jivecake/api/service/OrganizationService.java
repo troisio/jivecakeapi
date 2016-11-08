@@ -8,17 +8,16 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import javax.inject.Inject;
+
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.Query;
 
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.OrganizationNode;
 
-@Singleton
 public class OrganizationService {
     private final Set<String> permissions = new HashSet<>(Arrays.asList(
         this.getWritePermission(),

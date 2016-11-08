@@ -5,17 +5,16 @@ import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import javax.inject.Inject;
+
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.Query;
 
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
 import com.jivecake.api.model.IndexedOrganizationNode;
 import com.jivecake.api.model.OrganizationNode;
 
-@Singleton
 public class IndexedOrganizationNodeService {
     private final OrganizationService organizationService;
     private final Datastore datastore;

@@ -9,10 +9,8 @@ import org.bson.types.ObjectId;
 import org.glassfish.jersey.media.sse.EventOutput;
 import org.glassfish.jersey.media.sse.SseBroadcaster;
 
-import com.google.inject.Singleton;
 import com.jivecake.api.model.EventBroadcaster;
 
-@Singleton
 public class ClientConnectionService {
     private final List<EventBroadcaster> broadcasters = new ArrayList<>();
 
