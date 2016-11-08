@@ -12,6 +12,9 @@ import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.QueryParam;
+import javax.ws.rs.client.InvocationCallback;
+import javax.ws.rs.container.AsyncResponse;
+import javax.ws.rs.container.Suspended;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
@@ -28,7 +31,6 @@ import com.google.inject.Inject;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.PathObject;
-import com.jivecake.api.filter.QueryRestrict;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
@@ -36,6 +38,7 @@ import com.jivecake.api.model.Transaction;
 import com.jivecake.api.request.AggregatedItemGroup;
 import com.jivecake.api.request.ItemData;
 import com.jivecake.api.request.Paging;
+import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.ItemService;
 import com.jivecake.api.service.NotificationService;
@@ -47,6 +50,7 @@ import com.jivecake.api.service.TransactionService;
 @Path("/item")
 @CORS
 public class ItemResource {
+    private final Auth0Service auth0Service;
     private final ItemService itemService;
     private final EventService eventService;
     private final OrganizationService organizationService;
@@ -56,6 +60,7 @@ public class ItemResource {
 
     @Inject
     public ItemResource(
+        Auth0Service auth0Service,
         ItemService itemService,
         EventService eventService,
         PaymentProfileService paymentProfileService,
@@ -64,6 +69,7 @@ public class ItemResource {
         TransactionService transactionService,
         NotificationService notificationService
     ) {
+        this.auth0Service = auth0Service;
         this.itemService = itemService;
         this.eventService = eventService;
         this.organizationService = organizationService;
@@ -273,7 +279,6 @@ public class ItemResource {
 
     @GET
     @Authorized
-    @QueryRestrict(hasAny=true, target={"id", "eventId", "organizationId"})
     public Response search(
         @QueryParam("id") List<ObjectId> ids,
         @QueryParam("status") List<Integer> statuses,
@@ -352,11 +357,14 @@ public class ItemResource {
     @POST
     @Authorized
     @Path("/{id}/transaction")
-    public Response createTransaction(@PathObject("id") Item item, @Context JsonNode claims, Transaction transaction) {
-        ResponseBuilder builder;
-
+    public void createTransaction(
+        @PathObject("id") Item item,
+        @Context JsonNode claims,
+        Transaction transaction,
+        @Suspended AsyncResponse promise
+    ) {
         if (item == null) {
-            builder = Response.status(Status.NOT_FOUND);
+            promise.resume(Response.status(Status.NOT_FOUND).build());
         } else {
             Event event = this.eventService.read(item.eventId);
             Organization organization = this.organizationService.read(event.organizationId);
@@ -368,56 +376,85 @@ public class ItemResource {
             );
 
             if (!this.transactionService.isValidTransaction(transaction)) {
-                builder = Response.status(Status.BAD_REQUEST);
+                promise.resume(Response.status(Status.BAD_REQUEST).build());
             } else if (hasPermission) {
                 boolean totalAvailibleViolation;
 
                 if (item.totalAvailible == null) {
                     totalAvailibleViolation = false;
                 } else {
-                    long count = this.transactionService.query()
-                        .field("itemId").equal(item.id)
-                        .countAll();
+                    long count = this.transactionService.getItemLimitCount(item.id);
 
                     totalAvailibleViolation = count >= item.totalAvailible;
                 }
 
                 boolean eventActiveViolation = event.status == this.eventService.getInactiveEventStatus();
+                boolean hasParentTransactionPermissionViolation = false;
 
-                if (eventActiveViolation) {
+                if (transaction.parentTransactionId != null) {
+                    Transaction parentTransaction = this.transactionService.query()
+                        .field("id").equal(transaction.parentTransactionId)
+                        .get();
+
+                    if (parentTransaction == null) {
+                        hasParentTransactionPermissionViolation = !this.permissionService.has(
+                            claims.get("sub").asText(),
+                            Arrays.asList(parentTransaction),
+                            this.organizationService.getWritePermission()
+                        );
+                    } else {
+                        hasParentTransactionPermissionViolation = true;
+                    }
+                }
+
+                boolean hasStatusViolation = !this.transactionService.statuses.contains(transaction.status);
+
+                if (hasStatusViolation) {
+                    promise.resume(Response.status(Status.BAD_REQUEST).build());
+                } else if (hasParentTransactionPermissionViolation) {
+                    promise.resume(Response.status(Status.UNAUTHORIZED).build());
+                } else if (eventActiveViolation) {
                     String entity = String.format("{\"error\": \"inactive\"}", item.totalAvailible);
-                    builder = Response.status(Status.BAD_REQUEST).entity(entity).type(MediaType.APPLICATION_JSON);
+                    promise.resume(Response.status(Status.BAD_REQUEST).entity(entity).type(MediaType.APPLICATION_JSON).build());
                 } else if (totalAvailibleViolation) {
-                    String entity = String.format("{\"error\": \"totalAvailible\", \"amount\": %s}", item.totalAvailible);
-                    builder = Response.status(Status.BAD_REQUEST).entity(entity).type(MediaType.APPLICATION_JSON);
+                    promise.resume(
+                        Response.status(Status.BAD_REQUEST).entity("{\"error\": \"totalAvailible\"}").type(MediaType.APPLICATION_JSON).build()
+                    );
                 } else {
-                    transaction.status = this.transactionService.getPaymentCompleteStatus();
-                    transaction.parentTransactionId = null;
-                    transaction.linkedId = null;
-                    transaction.linkedObjectClass = null;
-                    transaction.itemId = item.id;
-                    transaction.currency = event.currency;
-                    transaction.timeCreated = new Date();
+                    this.auth0Service.getUser(transaction.user_id).submit(new InvocationCallback<Response>(){
+                        @Override
+                        public void completed(Response response) {
+                            if (response.getStatus() == 200) {
+                                transaction.status = ItemResource.this.transactionService.getPaymentCompleteStatus();
+                                transaction.linkedId = null;
+                                transaction.linkedObjectClass = null;
+                                transaction.itemId = item.id;
+                                transaction.currency = event.currency;
+                                transaction.timeCreated = new Date();
 
-                    /*
-                     * TODO: Make sure user_id is legit (too legit to quit)
-                     * TODO: Make sure parentTransactionId is not derpy
-                     * TODO: Make sure status is doin it and doin it and doin it whale
-                     * */
+                                Key<Transaction> key = ItemResource.this.transactionService.save(transaction);
 
-                    Key<Transaction> key = this.transactionService.save(transaction);
+                                ItemResource.this.notificationService.notifyItemTransaction((ObjectId)key.getId());
 
-                    this.notificationService.notifyItemTransaction((ObjectId)key.getId());
+                                Transaction entity = ItemResource.this.transactionService.read((ObjectId)key.getId());
+                                promise.resume(
+                                    Response.ok(entity).type(MediaType.APPLICATION_JSON).build()
+                                );
+                            } else {
+                                promise.resume(Response.status(Status.BAD_REQUEST).build());
+                            }
+                        }
 
-                    Transaction entity = this.transactionService.read((ObjectId)key.getId());
-                    builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+                        @Override
+                        public void failed(Throwable throwable) {
+                            promise.resume(throwable);
+                        }
+                    });
                 }
             } else {
-                builder = Response.status(Status.UNAUTHORIZED);
+                promise.resume(Response.status(Status.UNAUTHORIZED).build());
             }
         }
-
-        return builder.build();
     }
 
     @GET
