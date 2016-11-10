@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 
+import javax.inject.Inject;
 import javax.ws.rs.client.ClientBuilder;
 import javax.ws.rs.client.Invocation;
 import javax.ws.rs.client.InvocationCallback;
@@ -21,11 +22,8 @@ import com.auth0.jwt.JWTVerifier;
 import com.auth0.jwt.JWTVerifyException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
 import com.jivecake.api.OAuthConfiguration;
 
-@Singleton
 public class Auth0Service {
     private final ObjectMapper mapper = new ObjectMapper();
     private final List<JWTVerifier> verifiers;

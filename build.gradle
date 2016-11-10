@@ -1,7 +1,7 @@
 plugins {
     id 'java'
     id 'application'
-    id 'com.github.johnrengelman.shadow' version '1.2.3'
+    id 'com.github.johnrengelman.shadow' version '1.2.4'
     id 'eclipse'
 }
 
@@ -30,16 +30,15 @@ dependencies {
         'io.dropwizard:dropwizard-client:0.9.2',
         'io.dropwizard:dropwizard-auth:0.9.2',
         'io.dropwizard:dropwizard-assets:0.9.2',
-        'org.glassfish.jersey.media:jersey-media-sse:2.22.1',
+        'org.glassfish.jersey.media:jersey-media-sse:2.24',
         'org.mongodb.morphia:morphia:1.2.1',
-        'commons-io:commons-io:2.4',
-        'org.apache.poi:poi:3.13',
-        'org.apache.poi:poi-ooxml:3.13',
+        'commons-io:commons-io:2.5',
+        'org.apache.poi:poi:3.15',
+        'org.apache.poi:poi-ooxml:3.15',
         'junit:junit:4.12',
-        'com.google.inject:guice:4.0',
-        'com.github.jengelman.gradle.plugins:shadow:1.2.2',
-        'com.auth0:java-jwt:2.1.0',
-        'commons-codec:commons-codec:1.4'
+        'com.github.jengelman.gradle.plugins:shadow:1.2.4',
+        'com.auth0:java-jwt:2.2.1',
+        'commons-codec:commons-codec:1.9'
     )
 }
 

@@ -3,14 +3,14 @@ package com.jivecake.api.service;
 import java.util.Calendar;
 import java.util.Date;
 
+import javax.inject.Inject;
+
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Key;
 
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
 import com.jivecake.api.model.Feature;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.OrganizationFeature;
@@ -20,7 +20,6 @@ import com.jivecake.api.model.SubscriptionPaymentDetail;
 import com.jivecake.api.resources.PaypalResource;
 import com.jivecake.api.serializer.JsonTools;
 
-@Singleton
 public class SubscriptionService {
     private final Datastore datastore;
     private final FeatureService featureService;

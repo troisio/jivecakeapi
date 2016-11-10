@@ -8,6 +8,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import javax.inject.Inject;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
@@ -25,7 +26,6 @@ import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.Query;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.google.inject.Inject;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.PathObject;

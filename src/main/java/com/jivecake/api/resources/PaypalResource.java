@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 
+import javax.inject.Inject;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
@@ -29,7 +30,6 @@ import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.Query;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.google.inject.Inject;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.Log;
@@ -95,7 +95,7 @@ public class PaypalResource {
         detail.timeCreated = new Date();
 
         Key<PaymentDetail> key = this.paypalService.create(detail);
-        PaymentDetail entity = this.paypalService.readPaypalPaymentDetails((ObjectId) key.getId());
+        PaymentDetail entity = this.paypalService.readPaypalPaymentDetails((ObjectId)key.getId());
         return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
     }
 

@@ -4,10 +4,8 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 
-import com.google.inject.Singleton;
 import com.jivecake.api.model.Application;
 
-@Singleton
 public class ApplicationService {
     private final Application application;
     private final Set<String> permissions = new HashSet<>(Arrays.asList(

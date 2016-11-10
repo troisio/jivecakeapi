@@ -11,6 +11,7 @@ import javax.inject.Singleton;
 
 import org.bson.types.ObjectId;
 import org.glassfish.hk2.api.InjectionResolver;
+import org.glassfish.hk2.api.TypeLiteral;
 import org.glassfish.hk2.utilities.binding.AbstractBinder;
 import org.glassfish.jersey.process.internal.RequestScoped;
 import org.glassfish.jersey.server.spi.internal.ValueFactoryProvider;
@@ -21,9 +22,6 @@ import org.mongodb.morphia.mapping.MapperOptions;
 import com.auth0.jwt.JWTVerifier;
 import com.auth0.jwt.internal.org.apache.commons.codec.binary.Base64;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.google.inject.Guice;
-import com.google.inject.Injector;
-import com.google.inject.TypeLiteral;
 import com.jivecake.api.filter.AuthorizedFilter;
 import com.jivecake.api.filter.CORSFilter;
 import com.jivecake.api.filter.ClaimsFactory;
@@ -50,8 +48,22 @@ import com.jivecake.api.resources.PermissionResource;
 import com.jivecake.api.resources.TransactionResource;
 import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.Auth0Service;
+import com.jivecake.api.service.ClientConnectionService;
+import com.jivecake.api.service.EventService;
+import com.jivecake.api.service.FeatureService;
+import com.jivecake.api.service.HttpService;
 import com.jivecake.api.service.IndexedOrganizationNodeService;
+import com.jivecake.api.service.ItemService;
+import com.jivecake.api.service.LogService;
+import com.jivecake.api.service.MappingService;
+import com.jivecake.api.service.NotificationService;
+import com.jivecake.api.service.OrganizationService;
+import com.jivecake.api.service.PaymentProfileService;
+import com.jivecake.api.service.PaymentService;
+import com.jivecake.api.service.PaypalService;
 import com.jivecake.api.service.PermissionService;
+import com.jivecake.api.service.SubscriptionService;
+import com.jivecake.api.service.TransactionService;
 import com.mongodb.MongoClient;
 import com.mongodb.ServerAddress;
 
@@ -65,7 +77,7 @@ import io.dropwizard.setup.Bootstrap;
 import io.dropwizard.setup.Environment;
 
 public class APIApplication extends Application<APIConfiguration> {
-    private final List<Class<?>> registerClasses = Arrays.asList(
+    private final List<Class<?>> filters = Arrays.asList(
         AuthorizedFilter.class,
         CORSFilter.class,
         LogFilter.class,
@@ -74,7 +86,7 @@ public class APIApplication extends Application<APIConfiguration> {
         QueryRestrictFilter.class
     );
 
-    private final List<Class<?>> resourceClasses = Arrays.asList(
+    private final List<Class<?>> resources = Arrays.asList(
         Auth0Resource.class,
         ConnectionResource.class,
         EventResource.class,
@@ -89,13 +101,34 @@ public class APIApplication extends Application<APIConfiguration> {
         TransactionResource.class
     );
 
+    private final List<Class<?>> services = Arrays.asList(
+        ApplicationService.class,
+        Auth0Service.class,
+        ClientConnectionService.class,
+        EventService.class,
+        FeatureService.class,
+        HttpService.class,
+        IndexedOrganizationNodeService.class,
+        ItemService.class,
+        LogService.class,
+        MappingService.class,
+        NotificationService.class,
+        OrganizationService.class,
+        PaymentProfileService.class,
+        PaymentService.class,
+        PaypalService.class,
+        PermissionService.class,
+        SubscriptionService.class,
+        TransactionService.class
+    );
+
     public static void main(String[] args) throws Exception {
         new APIApplication().run(args);
     }
 
     @Override
     public String getName() {
-        return "JiveCakeAPI";
+        return "jivecakeapi";
     }
 
     @Override
@@ -146,37 +179,47 @@ public class APIApplication extends Application<APIConfiguration> {
             )
         ));
 
-        Injector injector = Guice.createInjector(
-            (binder) -> {
-                binder.bind(new TypeLiteral<List<JWTVerifier>>() {}).toInstance(verifiers);
-                binder.bind(ApplicationService.class).toInstance(new ApplicationService(application));
-                binder.bind(Datastore.class).toInstance(datastore);
-                binder.bind(OAuthConfiguration.class).toInstance(configuration.oauth);
-            }
+        MappingService mappingService = new MappingService(datastore);
+        ApplicationService applicationService =new ApplicationService(application);
+        OrganizationService organizationService = new OrganizationService(datastore);
+        IndexedOrganizationNodeService indexedOrganizationNodeService = new IndexedOrganizationNodeService(
+            datastore,
+            new OrganizationService(datastore)
+        );
+        PermissionService permissionService = new PermissionService(
+            datastore,
+            mappingService,
+            applicationService,
+            organizationService,
+            indexedOrganizationNodeService
         );
 
-        injector.getInstance(IndexedOrganizationNodeService.class).writeIndexedOrganizationNodes(organization.id);
-
+        indexedOrganizationNodeService.writeIndexedOrganizationNodes(organization.id);
         this.establishRootUsers(
-            injector.getInstance(PermissionService.class),
+            permissionService,
             application,
             organization,
             configuration.rootOAuthIds
         );
 
         JerseyEnvironment jersey = environment.jersey();
-
         DropwizardResourceConfig resourceConfiguration = jersey.getResourceConfig();
         resourceConfiguration.register(datastore);
-
         resourceConfiguration.register(new AbstractBinder() {
             @Override
             protected void configure() {
+                this.bind(verifiers).to(new TypeLiteral<List<JWTVerifier>>() {});
+
+                this.bind(new ApplicationService(application)).to(ApplicationService.class);
+                this.bind(datastore).to(Datastore.class);
+                this.bind(configuration.oauth).to(OAuthConfiguration.class);
+
+                for (Class<?> clazz: APIApplication.this.services) {
+                    this.bind(clazz).to(clazz).in(Singleton.class);
+                }
+
                 SingletonFactory<Datastore> datastoreFactory = new SingletonFactory<>(datastore);
                 this.bindFactory(datastoreFactory).to(Datastore.class).in(Singleton.class);
-
-                SingletonFactory<Auth0Service> auth0Factory = new SingletonFactory<>(injector.getInstance(Auth0Service.class));
-                this.bindFactory(auth0Factory).to(Auth0Service.class).in(Singleton.class);
 
                 bind(PathObjectValueFactoryProvider.class).to(ValueFactoryProvider.class).in(Singleton.class);
                 bind(PathObjectInjectionResolver.class).to(new org.glassfish.hk2.api.TypeLiteral<InjectionResolver<PathObject>>() {}).in(Singleton.class);
@@ -186,11 +229,11 @@ public class APIApplication extends Application<APIConfiguration> {
         });
 
         List<Class<?>> registerClasses = new ArrayList<>();
-        registerClasses.addAll(this.resourceClasses);
-        registerClasses.addAll(this.registerClasses);
+        registerClasses.addAll(this.resources);
+        registerClasses.addAll(this.filters);
 
         for (Class<? extends Object> clazz : registerClasses) {
-            jersey.register(injector.getInstance(clazz));
+            jersey.register(clazz);
         }
     }
 

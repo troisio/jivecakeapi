@@ -11,6 +11,8 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import javax.inject.Inject;
+
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.CreationHelper;
@@ -24,20 +26,18 @@ import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.Query;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.PaypalIPN;
 import com.jivecake.api.model.Transaction;
 
-@Singleton
 public class TransactionService {
     private final Datastore datastore;
     public final List<Integer> statuses = Arrays.asList(0, 1, 2, 3, 4, 5, 6, 7, 8);
     private final List<String> currencies = Arrays.asList("EUR", "USD");
     private final Predicate<Transaction> usedForCountFilter = (transaction) ->
         transaction.status == this.getPaymentCompleteStatus() ||
-        transaction.status == this.getPaymentPendingStatus();
+        transaction.status == this.getPaymentPendingStatus() ||
+        transaction.status == this.getPendingWithValidPayment();
 
     @Inject
     public TransactionService(Datastore datastore) {
@@ -55,7 +55,7 @@ public class TransactionService {
         return result;
     }
 
-    public long getItemLimitCount(ObjectId itemId) {
+    public List<Transaction> getTransactionsForItemTotal(ObjectId itemId) {
         List<Transaction> transactions = this.datastore.createQuery(Transaction.class)
             .field("itemId").equal(itemId)
             .asList();
@@ -68,11 +68,7 @@ public class TransactionService {
            .filter(this.usedForCountFilter)
            .collect(Collectors.toList());
 
-        long count = pendingOrCompleteLeafTransactions.stream()
-            .map(subject -> subject.quantity)
-            .reduce(0L, Long::sum);
-
-        return count;
+        return pendingOrCompleteLeafTransactions;
     }
 
     public Transaction delete(ObjectId id) {
@@ -81,8 +77,8 @@ public class TransactionService {
         return result;
     }
 
-    public Key<Transaction> save(Transaction itemTransaction) {
-        return this.datastore.save(itemTransaction);
+    public Key<Transaction> save(Transaction transaction) {
+        return this.datastore.save(transaction);
     }
 
     public boolean isValidTransaction(Transaction transaction) {
@@ -95,7 +91,7 @@ public class TransactionService {
 
     public List<List<Transaction>> getTransactionForest(List<Transaction> transactions) {
         Map<Transaction, List<Transaction>> transactionLineageMap = transactions.stream()
-            .collect(Collectors.toMap(Function.identity(), transaction -> new ArrayList<Transaction>(Arrays.asList(transaction))));
+            .collect(Collectors.toMap(Function.identity(), transaction -> new ArrayList<>(Arrays.asList(transaction))));
 
         Map<ObjectId, Transaction> parentTransactionIdMap;
 

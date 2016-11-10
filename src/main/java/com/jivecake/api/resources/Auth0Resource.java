@@ -5,6 +5,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
+import javax.inject.Inject;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
@@ -28,7 +29,6 @@ import org.glassfish.jersey.client.HttpUrlConnectorProvider;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.inject.Inject;
 import com.jivecake.api.OAuthConfiguration;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
