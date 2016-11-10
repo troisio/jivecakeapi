@@ -95,7 +95,7 @@ public class PaypalResource {
         detail.timeCreated = new Date();
 
         Key<PaymentDetail> key = this.paypalService.create(detail);
-        PaymentDetail entity = this.paypalService.readPaypalPaymentDetails((ObjectId) key.getId());
+        PaymentDetail entity = this.paypalService.readPaypalPaymentDetails((ObjectId)key.getId());
         return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
     }
 

@@ -273,7 +273,11 @@ public class PaypalService {
                     Double amount;
 
                     if (item.countAmounts != null) {
-                        long count = this.transactionService.getItemLimitCount(item.id);
+                        long count = this.transactionService.getTransactionsForItemTotal(item.id)
+                            .stream()
+                            .map(subject -> subject.quantity)
+                            .reduce(0L, Long::sum);
+
                         amount = item.getDerivedAmountFromCounts(count);
                     } else if (item.timeAmounts != null) {
                         amount = item.getDerivedAmountFromTime(currentDate);

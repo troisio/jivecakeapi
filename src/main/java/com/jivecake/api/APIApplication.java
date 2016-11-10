@@ -77,7 +77,7 @@ import io.dropwizard.setup.Bootstrap;
 import io.dropwizard.setup.Environment;
 
 public class APIApplication extends Application<APIConfiguration> {
-    private final List<Class<?>> registerClasses = Arrays.asList(
+    private final List<Class<?>> filters = Arrays.asList(
         AuthorizedFilter.class,
         CORSFilter.class,
         LogFilter.class,
@@ -86,7 +86,7 @@ public class APIApplication extends Application<APIConfiguration> {
         QueryRestrictFilter.class
     );
 
-    private final List<Class<?>> resourceClasses = Arrays.asList(
+    private final List<Class<?>> resources = Arrays.asList(
         Auth0Resource.class,
         ConnectionResource.class,
         EventResource.class,
@@ -99,6 +99,27 @@ public class APIApplication extends Application<APIConfiguration> {
         PaypalResource.class,
         PermissionResource.class,
         TransactionResource.class
+    );
+
+    private final List<Class<?>> services = Arrays.asList(
+        ApplicationService.class,
+        Auth0Service.class,
+        ClientConnectionService.class,
+        EventService.class,
+        FeatureService.class,
+        HttpService.class,
+        IndexedOrganizationNodeService.class,
+        ItemService.class,
+        LogService.class,
+        MappingService.class,
+        NotificationService.class,
+        OrganizationService.class,
+        PaymentProfileService.class,
+        PaymentService.class,
+        PaypalService.class,
+        PermissionService.class,
+        SubscriptionService.class,
+        TransactionService.class
     );
 
     public static void main(String[] args) throws Exception {
@@ -193,24 +214,9 @@ public class APIApplication extends Application<APIConfiguration> {
                 this.bind(datastore).to(Datastore.class);
                 this.bind(configuration.oauth).to(OAuthConfiguration.class);
 
-                this.bind(ApplicationService.class).to(ApplicationService.class).in(Singleton.class);
-                this.bind(Auth0Service.class).to(Auth0Service.class).in(Singleton.class);
-                this.bind(ClientConnectionService.class).to(ClientConnectionService.class).in(Singleton.class);
-                this.bind(EventService.class).to(EventService.class).in(Singleton.class);
-                this.bind(FeatureService.class).to(FeatureService.class).in(Singleton.class);
-                this.bind(HttpService.class).to(HttpService.class).in(Singleton.class);
-                this.bind(IndexedOrganizationNodeService.class).to(IndexedOrganizationNodeService.class).in(Singleton.class);
-                this.bind(ItemService.class).to(ItemService.class).in(Singleton.class);
-                this.bind(LogService.class).to(LogService.class).in(Singleton.class);
-                this.bind(MappingService.class).to(MappingService.class).in(Singleton.class);
-                this.bind(NotificationService.class).to(NotificationService.class).in(Singleton.class);
-                this.bind(OrganizationService.class).to(OrganizationService.class).in(Singleton.class);
-                this.bind(PaymentProfileService.class).to(OrganizationService.class).in(Singleton.class);
-                this.bind(PaymentService.class).to(PaymentService.class).in(Singleton.class);
-                this.bind(PaypalService.class).to(PaypalService.class).in(Singleton.class);
-                this.bind(PermissionService.class).to(PermissionService.class).in(Singleton.class);
-                this.bind(SubscriptionService.class).to(SubscriptionService.class).in(Singleton.class);
-                this.bind(TransactionService.class).to(TransactionService.class).in(Singleton.class);
+                for (Class<?> clazz: APIApplication.this.services) {
+                    this.bind(clazz).to(clazz).in(Singleton.class);
+                }
 
                 SingletonFactory<Datastore> datastoreFactory = new SingletonFactory<>(datastore);
                 this.bindFactory(datastoreFactory).to(Datastore.class).in(Singleton.class);
@@ -223,8 +229,8 @@ public class APIApplication extends Application<APIConfiguration> {
         });
 
         List<Class<?>> registerClasses = new ArrayList<>();
-        registerClasses.addAll(this.resourceClasses);
-        registerClasses.addAll(this.registerClasses);
+        registerClasses.addAll(this.resources);
+        registerClasses.addAll(this.filters);
 
         for (Class<? extends Object> clazz : registerClasses) {
             jersey.register(clazz);

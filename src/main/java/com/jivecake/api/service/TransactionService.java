@@ -36,7 +36,8 @@ public class TransactionService {
     private final List<String> currencies = Arrays.asList("EUR", "USD");
     private final Predicate<Transaction> usedForCountFilter = (transaction) ->
         transaction.status == this.getPaymentCompleteStatus() ||
-        transaction.status == this.getPaymentPendingStatus();
+        transaction.status == this.getPaymentPendingStatus() ||
+        transaction.status == this.getPendingWithValidPayment();
 
     @Inject
     public TransactionService(Datastore datastore) {
@@ -54,7 +55,7 @@ public class TransactionService {
         return result;
     }
 
-    public long getItemLimitCount(ObjectId itemId) {
+    public List<Transaction> getTransactionsForItemTotal(ObjectId itemId) {
         List<Transaction> transactions = this.datastore.createQuery(Transaction.class)
             .field("itemId").equal(itemId)
             .asList();
@@ -67,11 +68,7 @@ public class TransactionService {
            .filter(this.usedForCountFilter)
            .collect(Collectors.toList());
 
-        long count = pendingOrCompleteLeafTransactions.stream()
-            .map(subject -> subject.quantity)
-            .reduce(0L, Long::sum);
-
-        return count;
+        return pendingOrCompleteLeafTransactions;
     }
 
     public Transaction delete(ObjectId id) {
@@ -80,8 +77,8 @@ public class TransactionService {
         return result;
     }
 
-    public Key<Transaction> save(Transaction itemTransaction) {
-        return this.datastore.save(itemTransaction);
+    public Key<Transaction> save(Transaction transaction) {
+        return this.datastore.save(transaction);
     }
 
     public boolean isValidTransaction(Transaction transaction) {

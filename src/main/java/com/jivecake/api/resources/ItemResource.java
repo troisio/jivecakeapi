@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -163,28 +164,27 @@ public class ItemResource {
         if (item == null) {
             builder = Response.status(Status.NOT_FOUND);
         } else if (item.amount == null) {
-            List<Transaction> transactions = this.transactionService.query()
-                .field("itemId").equal(item.id)
-                .asList();
+            Event event = this.eventService.read(item.eventId);
 
-            List<List<Transaction>> forest = this.transactionService.getTransactionForest(transactions);
+            List<Transaction> countedTransactions = this.transactionService.getTransactionsForItemTotal(item.id);
 
-            List<Transaction> pendingOrCompleteLeafTransactions = forest.stream()
-                 .filter(lineage -> lineage.size() == 1)
-                 .map(lineage -> lineage.get(0))
-                .filter(this.transactionService.getCountingFilter())
+            List<Transaction> transactionsForUser = countedTransactions.stream()
+                .filter(subject -> claims.get("sub").asText().equals(subject.user_id))
                 .collect(Collectors.toList());
 
-            List<Transaction> transactionsForUser = pendingOrCompleteLeafTransactions.stream()
-                    .filter(subject -> claims.get("sub").asText().equals(subject.user_id))
-                    .collect(Collectors.toList());
-
             boolean maximumPerUserViolation = item.maximumPerUser != null &&
-                                              transactionsForUser.size() > item.maximumPerUser + transaction.quantity;
+                transactionsForUser.size() > item.maximumPerUser + transaction.quantity;
             boolean maximumReached = item.totalAvailible != null &&
-                                     pendingOrCompleteLeafTransactions.size() > item.totalAvailible + transaction.quantity;
+                countedTransactions.size() > item.totalAvailible + transaction.quantity;
 
-            if (maximumPerUserViolation) {
+            boolean activeViolation = item.status != this.itemService.getActiveItemStatus() ||
+                event.status != this.eventService.getActiveEventStatus();
+
+            if (event.currency == null) {
+                builder = Response.status(Status.BAD_REQUEST);
+            } else if (activeViolation) {
+                builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"active\"}").type(MediaType.APPLICATION_JSON);
+            } else if (maximumPerUserViolation) {
                 builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"userlimit\"}").type(MediaType.APPLICATION_JSON);
             } else if (maximumReached) {
                 builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"limit\"}").type(MediaType.APPLICATION_JSON);
@@ -194,6 +194,7 @@ public class ItemResource {
                 userTransaction.quantity = transaction.quantity;
                 userTransaction.status = this.transactionService.getPaymentCompleteStatus();
                 userTransaction.itemId = item.id;
+                userTransaction.currency = event.currency;
                 userTransaction.amount = 0;
                 userTransaction.timeCreated = new Date();
 
@@ -383,18 +384,19 @@ public class ItemResource {
                 if (item.totalAvailible == null) {
                     totalAvailibleViolation = false;
                 } else {
-                    long count = this.transactionService.getItemLimitCount(item.id);
+                    long count = this.transactionService.getTransactionsForItemTotal(item.id)
+                        .stream()
+                        .map(subject -> subject.quantity)
+                        .reduce(0L, Long::sum);
 
-                    totalAvailibleViolation = count >= item.totalAvailible;
+                    totalAvailibleViolation = count > item.totalAvailible;
                 }
 
                 boolean eventActiveViolation = event.status == this.eventService.getInactiveEventStatus();
                 boolean hasParentTransactionPermissionViolation = false;
 
                 if (transaction.parentTransactionId != null) {
-                    Transaction parentTransaction = this.transactionService.query()
-                        .field("id").equal(transaction.parentTransactionId)
-                        .get();
+                    Transaction parentTransaction = this.transactionService.read(transaction.parentTransactionId);
 
                     if (parentTransaction == null) {
                         hasParentTransactionPermissionViolation = !this.permissionService.has(
@@ -414,40 +416,49 @@ public class ItemResource {
                 } else if (hasParentTransactionPermissionViolation) {
                     promise.resume(Response.status(Status.UNAUTHORIZED).build());
                 } else if (eventActiveViolation) {
-                    String entity = String.format("{\"error\": \"inactive\"}", item.totalAvailible);
-                    promise.resume(Response.status(Status.BAD_REQUEST).entity(entity).type(MediaType.APPLICATION_JSON).build());
+                    promise.resume(Response.status(Status.BAD_REQUEST).entity("{\"error\": \"inactive\"}").type(MediaType.APPLICATION_JSON).build());
                 } else if (totalAvailibleViolation) {
                     promise.resume(
                         Response.status(Status.BAD_REQUEST).entity("{\"error\": \"totalAvailible\"}").type(MediaType.APPLICATION_JSON).build()
                     );
                 } else {
-                    this.auth0Service.getUser(transaction.user_id).submit(new InvocationCallback<Response>(){
-                        @Override
-                        public void completed(Response response) {
-                            if (response.getStatus() == 200) {
-                                transaction.status = ItemResource.this.transactionService.getPaymentCompleteStatus();
-                                transaction.linkedId = null;
-                                transaction.linkedObjectClass = null;
-                                transaction.itemId = item.id;
-                                transaction.currency = event.currency;
-                                transaction.timeCreated = new Date();
+                    CompletableFuture<Boolean> hasValidUserIdPromise = new CompletableFuture<>();
 
-                                Key<Transaction> key = ItemResource.this.transactionService.save(transaction);
-
-                                ItemResource.this.notificationService.notifyItemTransaction((ObjectId)key.getId());
-
-                                Transaction entity = ItemResource.this.transactionService.read((ObjectId)key.getId());
-                                promise.resume(
-                                    Response.ok(entity).type(MediaType.APPLICATION_JSON).build()
-                                );
-                            } else {
-                                promise.resume(Response.status(Status.BAD_REQUEST).build());
+                    if (transaction.user_id == null) {
+                        hasValidUserIdPromise.complete(true);
+                    } else {
+                        this.auth0Service.getUser(transaction.user_id).submit(new InvocationCallback<Response>(){
+                            @Override
+                            public void completed(Response response) {
+                                hasValidUserIdPromise.complete(response.getStatus() == 200);
                             }
-                        }
 
-                        @Override
-                        public void failed(Throwable throwable) {
-                            promise.resume(throwable);
+                            @Override
+                            public void failed(Throwable throwable) {
+                                hasValidUserIdPromise.completeExceptionally(throwable);
+                            }
+                        });
+                    }
+
+                    hasValidUserIdPromise.thenAcceptAsync(hasValidUserId -> {
+                        if (hasValidUserId) {
+                            transaction.status = ItemResource.this.transactionService.getPaymentCompleteStatus();
+                            transaction.linkedId = null;
+                            transaction.linkedObjectClass = null;
+                            transaction.itemId = item.id;
+                            transaction.currency = event.currency;
+                            transaction.timeCreated = new Date();
+
+                            Key<Transaction> key = ItemResource.this.transactionService.save(transaction);
+
+                            ItemResource.this.notificationService.notifyItemTransaction((ObjectId)key.getId());
+
+                            Transaction entity = ItemResource.this.transactionService.read((ObjectId)key.getId());
+                            promise.resume(
+                                Response.ok(entity).type(MediaType.APPLICATION_JSON).build()
+                            );
+                        } else {
+                            promise.resume(Response.status(Status.BAD_REQUEST).build());
                         }
                     });
                 }

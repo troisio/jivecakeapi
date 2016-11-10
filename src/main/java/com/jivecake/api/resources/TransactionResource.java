@@ -5,7 +5,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
@@ -109,6 +108,7 @@ public class TransactionResource {
         @QueryParam("amountLessThan") Double amountLessThan,
         @QueryParam("amountGreaterThan") Double amountGreaterThan,
         @QueryParam("leaf") Boolean leaf,
+        @QueryParam("status") List<Integer> statuses,
         @QueryParam("text") String text,
         @QueryParam("limit") Integer limit,
         @QueryParam("offset") Integer offset,
@@ -138,6 +138,10 @@ public class TransactionResource {
 
             if (hasIdFilter) {
                 query.field("id").in(idsFilter);
+            }
+
+            if (!statuses.isEmpty()) {
+                query.field("status").in(statuses);
             }
 
             if (!parentTransactionIds.isEmpty()) {
@@ -520,25 +524,16 @@ public class TransactionResource {
         if (transaction == null) {
             builder = Response.status(Status.NOT_FOUND);
         } else {
-            boolean hasUserPermission = userId.equals(transaction.user_id);
             boolean hasPermission;
 
-            if (hasUserPermission) {
+            if (userId.equals(transaction.user_id)) {
                 hasPermission = true;
             } else {
-                Set<ObjectId> organizationIds = this.mappingService.getOrganizationIds(
-                    Arrays.asList(transaction.id),
-                    Collections.emptyList(),
-                    Collections.emptyList()
-                );
-
-                boolean hasAllPermissions = this.permissionService.hasAllHierarchicalPermission(
+                hasPermission = this.permissionService.has(
                     userId,
-                    this.organizationService.getReadPermission(),
-                    organizationIds
+                    Arrays.asList(transaction.id),
+                    this.organizationService.getReadPermission()
                 );
-
-                hasPermission = hasAllPermissions;
             }
 
             if (hasPermission) {
