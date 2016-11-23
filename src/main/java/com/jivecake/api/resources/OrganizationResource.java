@@ -429,7 +429,7 @@ public class OrganizationResource {
 
         if (hasPermission) {
             Paging<IndexedOrganizationNode> paging = new Paging<>(nodes, query.countAll());
-            builder = Response.ok(paging);
+            builder = Response.ok(paging).type(MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);
         }

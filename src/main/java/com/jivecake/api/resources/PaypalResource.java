@@ -154,7 +154,13 @@ public class PaypalResource {
                         }
                     }
                 } else {
-                    PaypalResource.this.logger.warn(String.format("Paypal IPN returned \"%s\", expecting \"%s\"", entity, PaypalResource.this.paypalService.getVerified()));
+                    PaypalResource.this.logger.warn(
+                        String.format(
+                            "Paypal IPN returned \"%s\", expecting \"%s\"",
+                            entity,
+                            PaypalResource.this.paypalService.getVerified()
+                        )
+                    );
                 }
 
                 response.resume(Response.ok().build());
@@ -172,6 +178,8 @@ public class PaypalResource {
     @Authorized
     public Response search(
         @QueryParam("id") ObjectId id,
+        @QueryParam("txn_id") String txn_id,
+        @QueryParam("parent_txn_id") String parent_txn_id,
         @QueryParam("timeCreated") Long timeCreated,
         @QueryParam("timeCreatedLessThan") Long timeCreatedLessThan,
         @QueryParam("timeCreatedGreaterThan") Long timeCreatedGreaterThan,
@@ -198,6 +206,14 @@ public class PaypalResource {
 
             if (id != null) {
                 query.field("id").equal(id);
+            }
+
+            if (txn_id != null) {
+                query.field("txn_id").equal(txn_id);
+            }
+
+            if (parent_txn_id != null) {
+                query.field("parent_txn_id").equal(parent_txn_id);
             }
 
             if (!custom.isEmpty()) {

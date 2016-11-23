@@ -1,6 +1,5 @@
 import static org.junit.Assert.assertEquals;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -55,15 +54,9 @@ public class PaypalRefundTest {
         refundIpn.parent_txn_id = rootIpn.txn_id;
         refundIpn.mc_gross = "-0.99";
 
-        List<Transaction> transactions = new ArrayList<>();
-
-        for (int index = 0; index < 5; index++) {
-            Transaction transaction = new Transaction();
-            transaction.linkedId = rootIpn.id;
-            transaction.linkedObjectClass = PaypalIPN.class.getSimpleName();
-
-            transactions.add(transaction);
-        }
+        Transaction transaction = new Transaction();
+        transaction.linkedId = rootIpn.id;
+        transaction.linkedObjectClass = PaypalIPN.class.getSimpleName();
 
         this.datastore.save(
             item,
@@ -72,14 +65,14 @@ public class PaypalRefundTest {
             refundIpn
         );
 
-        this.datastore.save(transactions);
+        this.datastore.save(transaction);
 
         TransactionService itemTransactionService = new TransactionService(this.datastore);
         PaypalService paypalService = new PaypalService(datastore, null, itemTransactionService);
 
         paypalService.processRefund(refundIpn);
 
-        List<List<Transaction>> forest = itemTransactionService.getTransactionForest(transactions);
+        List<List<Transaction>> forest = itemTransactionService.getTransactionForest(Arrays.asList(transaction));
 
         forest.forEach((lineage) -> {
             Transaction refundTransaction = lineage.get(lineage.size() - 1);

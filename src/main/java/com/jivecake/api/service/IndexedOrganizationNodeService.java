@@ -61,9 +61,9 @@ public class IndexedOrganizationNodeService {
             indexedNode.organizationId = node.organization.id;
             indexedNode.parentIds = ancestors;
             indexedNode.childIds = node.getDescendants()
-                    .stream()
-                    .map(n -> n.organization.id)
-                    .collect(Collectors.toSet());
+                .stream()
+                .map(n -> n.organization.id)
+                .collect(Collectors.toSet());
 
             result.add(indexedNode);
         });
