@@ -386,6 +386,7 @@ public class PaypalService {
             List<Transaction> refundTransactions = parentTransactions.stream().map(parentTransaction -> {
                 Transaction transaction = new Transaction();
                 transaction.status = this.transactionService.getRefundedStatus();
+                transaction.quantity = parentTransaction.quantity;
                 transaction.currency = ipn.mc_currency;
                 transaction.linkedId = ipn.id;
                 transaction.linkedObjectClass = PaypalIPN.class.getSimpleName();
@@ -415,7 +416,21 @@ public class PaypalService {
             })
             .collect(Collectors.toList());
 
-            result = this.datastore.save(refundTransactions);
+            boolean canUniquelyDetermineRefundTransaction = refundTransactions.size() == 1;
+
+            Double refundedAmount = new Double(ipn.mc_gross);
+
+            double parentTransactionsTotal = parentTransactions.stream()
+                .map(transaction -> transaction.quantity * transaction.amount)
+                .reduce(0.0, Double::sum);
+
+            boolean refundedAmountEqualsTotalPaid = Math.abs(parentTransactionsTotal - refundedAmount) < 0.01;
+
+            if (canUniquelyDetermineRefundTransaction || refundedAmountEqualsTotalPaid) {
+                result = this.datastore.save(refundTransactions);
+            } else {
+                result = this.datastore.save();
+            }
         }
 
         return result;

@@ -105,6 +105,7 @@ public class TransactionResource {
         @QueryParam("given_name") String given_name,
         @QueryParam("family_name") String family_name,
         @QueryParam("email") String email,
+        @QueryParam("quantity") Long quantity,
         @QueryParam("amountLessThan") Double amountLessThan,
         @QueryParam("amountGreaterThan") Double amountGreaterThan,
         @QueryParam("leaf") Boolean leaf,
@@ -164,6 +165,10 @@ public class TransactionResource {
                 query.field("email").equal(email);
             }
 
+            if (quantity != null) {
+                query.field("quantity").equal(quantity);
+            }
+
             if (given_name != null) {
                 query.field("given_name").startsWithIgnoreCase(given_name);
             }
@@ -178,18 +183,6 @@ public class TransactionResource {
 
             if (amountLessThan != null) {
                 query.field("amount").lessThan(amountLessThan);
-            }
-
-            if (limit != null && limit > -1) {
-                query.limit(limit);
-            }
-
-            if (offset != null && offset > -1) {
-                query.offset(offset);
-            }
-
-            if (order != null) {
-                query.order(order);
             }
 
             if (text != null || auth0Users != null) {
@@ -228,7 +221,8 @@ public class TransactionResource {
                    .map(transaction -> transaction.itemId)
                    .collect(Collectors.toSet());
 
-                Query<Item> itemQuery = this.itemService.query().field("id").in(itemIdsQuery);
+                Query<Item> itemQuery = this.itemService.query()
+                    .field("id").in(itemIdsQuery);
 
                 if (itemTimeStartGreaterThan != null) {
                     itemQuery.field("timeStart").greaterThan(new Date(itemTimeStartGreaterThan));
@@ -292,6 +286,18 @@ public class TransactionResource {
             }
 
             String user_id = claims.get("sub").asText();
+
+            if (limit != null && limit > -1) {
+                query.limit(limit);
+            }
+
+            if (offset != null && offset > -1) {
+                query.offset(offset);
+            }
+
+            if (order != null) {
+                query.order(order);
+            }
 
             List<Transaction> transactions = query.asList();
 
