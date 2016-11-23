@@ -19,7 +19,7 @@ fi
 
 if [ -d /root/tls ]; then
   mkdir /root/tls_copy
-  cp --parents /root/tls_copy /root/tls/keystore.jks /root/tls_copy/keystore.jks
+  cp /root/tls/keystore.jks /root/tls_copy/
 
   if [ -a /root/tls/intermediate.crt ]; then
     keytool -import -trustcacerts -noprompt -alias root -file /root/tls/intermediate.crt -keystore /root/tls_copy/keystore.jks -storepass $KEY_STORE_PASSWORD
