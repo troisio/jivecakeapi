@@ -38,7 +38,8 @@ dependencies {
         'junit:junit:4.12',
         'com.github.jengelman.gradle.plugins:shadow:1.2.4',
         'com.auth0:java-jwt:2.2.1',
-        'commons-codec:commons-codec:1.9'
+        'commons-codec:commons-codec:1.9',
+        'org.bytedeco:javacv-platform:1.3'
     )
 }
 
