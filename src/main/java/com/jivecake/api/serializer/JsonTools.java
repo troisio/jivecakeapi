@@ -11,7 +11,7 @@ public class JsonTools {
         String result;
 
         try {
-            return this.mapper.writeValueAsString(object);
+            result = this.mapper.writeValueAsString(object);
         } catch (JsonProcessingException e) {
             result = null;
         }

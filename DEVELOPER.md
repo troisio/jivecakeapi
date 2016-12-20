@@ -10,6 +10,8 @@ Before working on this project, you should be familiar with [docker](https://www
 
 You will also need an [auth0](https://auth0.com) account and will need to configure any clients if you are working with a client.
 
+You will also need an [imgur](https://market.mashape.com/imgur) account from mashape. You will need to fill in the `mashape` portion of your configuration file.
+
 ### Settings
 
 An example `docker-compose.yml` for development, along with an `example-settings.yml` can be found in the `docker` directory
@@ -26,7 +28,7 @@ The `apiToken` field in your settings yaml will need both the `user:update` and 
 
 ### Running
 
-Read `DOCKER.md` to read about how to run this project
+Read `DOCKER.md` to read about how to build and run this project
 
 ### Testing
 
@@ -34,4 +36,4 @@ Read `DOCKER.md` to read about how to run this project
 gradle test -Ddb=MONGO_DB_URL
 ```
 
-The database passed to the `db` system property will use and continually truncate a collection named `test`
+The database passed to the `db` system property will use and continually truncate a database named `test`

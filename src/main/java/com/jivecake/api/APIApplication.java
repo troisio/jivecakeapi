@@ -10,6 +10,7 @@ import java.util.stream.Collectors;
 import javax.inject.Singleton;
 
 import org.bson.types.ObjectId;
+import org.bytedeco.javacpp.opencv_objdetect.CascadeClassifier;
 import org.glassfish.hk2.api.InjectionResolver;
 import org.glassfish.hk2.api.TypeLiteral;
 import org.glassfish.hk2.utilities.binding.AbstractBinder;
@@ -25,6 +26,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.jivecake.api.filter.AuthorizedFilter;
 import com.jivecake.api.filter.CORSFilter;
 import com.jivecake.api.filter.ClaimsFactory;
+import com.jivecake.api.filter.HashDateCount;
+import com.jivecake.api.filter.LimitUserRequestFilter;
 import com.jivecake.api.filter.LogFilter;
 import com.jivecake.api.filter.OptionsProcessor;
 import com.jivecake.api.filter.PathObject;
@@ -46,12 +49,15 @@ import com.jivecake.api.resources.PaymentProfileResource;
 import com.jivecake.api.resources.PaypalResource;
 import com.jivecake.api.resources.PermissionResource;
 import com.jivecake.api.resources.TransactionResource;
+import com.jivecake.api.resources.UserResource;
 import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.ClientConnectionService;
 import com.jivecake.api.service.EventService;
+import com.jivecake.api.service.FacialRecognitionService;
 import com.jivecake.api.service.FeatureService;
 import com.jivecake.api.service.HttpService;
+import com.jivecake.api.service.ImgurService;
 import com.jivecake.api.service.IndexedOrganizationNodeService;
 import com.jivecake.api.service.ItemService;
 import com.jivecake.api.service.LogService;
@@ -80,6 +86,7 @@ public class APIApplication extends Application<APIConfiguration> {
     private final List<Class<?>> filters = Arrays.asList(
         AuthorizedFilter.class,
         CORSFilter.class,
+        LimitUserRequestFilter.class,
         LogFilter.class,
         OAuthConfiguration.class,
         OptionsProcessor.class,
@@ -98,7 +105,8 @@ public class APIApplication extends Application<APIConfiguration> {
         PaymentProfileResource.class,
         PaypalResource.class,
         PermissionResource.class,
-        TransactionResource.class
+        TransactionResource.class,
+        UserResource.class
     );
 
     private final List<Class<?>> services = Arrays.asList(
@@ -106,9 +114,11 @@ public class APIApplication extends Application<APIConfiguration> {
         Auth0Service.class,
         ClientConnectionService.class,
         EventService.class,
+        FacialRecognitionService.class,
         FeatureService.class,
         HttpService.class,
         IndexedOrganizationNodeService.class,
+        ImgurService.class,
         ItemService.class,
         LogService.class,
         MappingService.class,
@@ -164,7 +174,7 @@ public class APIApplication extends Application<APIConfiguration> {
         Organization organization = new Organization();
         organization.id = new ObjectId("55865027c1fcce003aa0aa40");
         organization.name = "JiveCake";
-        organization.email = "JiveCake@gmail.com";
+        organization.email = "luis@trois.io";
         organization.timeCreated = new Date();
         datastore.save(organization);
 
@@ -180,7 +190,7 @@ public class APIApplication extends Application<APIConfiguration> {
         ));
 
         MappingService mappingService = new MappingService(datastore);
-        ApplicationService applicationService =new ApplicationService(application);
+        ApplicationService applicationService = new ApplicationService(application);
         OrganizationService organizationService = new OrganizationService(datastore);
         IndexedOrganizationNodeService indexedOrganizationNodeService = new IndexedOrganizationNodeService(
             datastore,
@@ -209,7 +219,10 @@ public class APIApplication extends Application<APIConfiguration> {
             @Override
             protected void configure() {
                 this.bind(verifiers).to(new TypeLiteral<List<JWTVerifier>>() {});
+                this.bind(new HashDateCount()).to(HashDateCount.class);
 
+                this.bind(configuration.imgur).to(ImgurConfiguration.class);
+                this.bind(new CascadeClassifier(configuration.facialRecognition.frontFaceClassifierPath)).to(CascadeClassifier.class);
                 this.bind(new ApplicationService(application)).to(ApplicationService.class);
                 this.bind(datastore).to(Datastore.class);
                 this.bind(configuration.oauth).to(OAuthConfiguration.class);
