@@ -428,6 +428,13 @@ public class PaypalService {
 
             if (canUniquelyDetermineRefundTransaction || refundedAmountEqualsTotalPaid) {
                 result = this.datastore.save(refundTransactions);
+
+                if (refundedAmountEqualsTotalPaid) {
+                    /*
+                     Go through each transaction and assign `amount` the negative value of its
+                     parent's transaction.amount
+                    */
+                }
             } else {
                 result = this.datastore.save();
             }

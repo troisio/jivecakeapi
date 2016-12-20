@@ -14,6 +14,7 @@ public class CORSFilter implements ContainerResponseFilter {
         String origin = context.getHeaderString("Origin");
 
         if (origin != null) {
+            headers.remove("Access-Control-Allow-Origin");
             headers.add("Access-Control-Allow-Origin", origin);
         }
 

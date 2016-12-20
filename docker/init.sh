@@ -13,8 +13,6 @@ if [ ! -d $SOURCE_DIRECTORY ]; then
     cd $SOURCE_DIRECTORY
     git reset --hard $COMMIT
   fi
-
-  gradle shadowJar
 fi
 
 if [ -d /root/tls ]; then
@@ -26,6 +24,12 @@ if [ -d /root/tls ]; then
   fi
 
   keytool -import -trustcacerts -noprompt -alias server -file /root/tls/server.crt -keystore /root/tls_copy/keystore.jks -storepass $KEY_STORE_PASSWORD
+fi
+
+cd $SOURCE_DIRECTORY
+
+if [ ! -d $SOURCE_DIRECTORY/build ]; then
+  gradle shadowJar
 fi
 
 java -jar $SOURCE_DIRECTORY/$(echo build/libs/*.jar) server $SETTINGS_FILE
