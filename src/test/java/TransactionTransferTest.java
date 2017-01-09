@@ -102,7 +102,13 @@ public class TransactionTransferTest {
         transaction.amount = 1.00;
         transaction.timeCreated = new Date();
 
-        this.datastore.save(event, item, transaction);
+        this.datastore.save(
+            Arrays.asList(
+                event,
+                item,
+                transaction
+            )
+        );
 
         ObjectNode jsonNode = new ObjectMapper().createObjectNode();
         jsonNode.put("sub", "auth0|0000");

@@ -76,7 +76,11 @@ public class PaypalMultipleCurrencyTest {
         PaypalIPN multiCurrencyPendingIpn = this.paypalService.create(this.httpService.bodyToMap(multiCurrencyPendingBody));
         PaypalIPN multiCurrencyCompleteIpn = this.paypalService.create(this.httpService.bodyToMap(multiCurrencyComplete));
 
-        this.datastore.save(detail, firstItem, secondItem, multiCurrencyPendingIpn, multiCurrencyCompleteIpn);
+        this.datastore.save(
+            Arrays.asList(
+                detail, firstItem, secondItem, multiCurrencyPendingIpn, multiCurrencyCompleteIpn
+            )
+        );
 
         this.paypalService.processTransactions(multiCurrencyPendingIpn);
         Iterable<Key<Transaction>> keys = this.paypalService.processTransactions(multiCurrencyCompleteIpn);

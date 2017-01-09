@@ -4,7 +4,6 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
@@ -32,7 +31,7 @@ import javax.ws.rs.core.Response.Status;
 
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Key;
-import org.mongodb.morphia.query.CriteriaContainerImpl;
+import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -117,182 +116,169 @@ public class TransactionResource {
         @Context JsonNode claims,
         @Suspended AsyncResponse futureResponse
     ) {
-        CompletableFuture<JsonNode> userSearchFuture;
+        Query<Transaction> query = this.transactionService.query();
 
-        if (text == null) {
-            userSearchFuture = new CompletableFuture<>();
-            userSearchFuture.complete(null);
-        } else {
-            userSearchFuture = this.auth0Service.searchEmailOrNames(text);
+        Set<ObjectId> idsFilter = this.mappingService.getTransactionIds(organizationIds, eventIds, itemIds);
+        idsFilter.addAll(ids);
+
+        boolean hasIdFilter = !ids.isEmpty() ||
+                              !organizationIds.isEmpty() ||
+                              !eventIds.isEmpty() ||
+                              !itemIds.isEmpty();
+
+        if (hasIdFilter) {
+            query.field("id").in(idsFilter);
         }
 
-        userSearchFuture.thenAcceptAsync(auth0Users -> {
-            Query<Transaction> query = this.transactionService.query();
+        if (!statuses.isEmpty()) {
+            query.field("status").in(statuses);
+        }
 
-            Set<ObjectId> idsFilter = this.mappingService.getItemTransactionIds(organizationIds, eventIds, itemIds);
-            idsFilter.addAll(ids);
+        if (!parentTransactionIds.isEmpty()) {
+            query.field("parentTransactionId").in(parentTransactionIds);
+        }
 
-            boolean hasIdFilter = !ids.isEmpty() ||
-                                  !organizationIds.isEmpty() ||
-                                  !eventIds.isEmpty() ||
-                                  !itemIds.isEmpty();
+        if (!userIds.isEmpty()) {
+            query.field("user_id").in(userIds);
+        }
 
-            if (hasIdFilter) {
-                query.field("id").in(idsFilter);
+        if (timeCreatedGreaterThan != null) {
+            query.field("timeCreated").greaterThan(new Date(timeCreatedGreaterThan));
+        }
+
+        if (timeCreatedLessThan != null) {
+            query.field("timeCreated").lessThan(new Date(timeCreatedLessThan));
+        }
+
+        if (email != null) {
+            query.field("email").equal(email);
+        }
+
+        if (quantity != null) {
+            query.field("quantity").equal(quantity);
+        }
+
+        if (given_name != null) {
+            query.field("given_name").startsWithIgnoreCase(given_name);
+        }
+
+        if (family_name != null) {
+            query.field("family_name").startsWithIgnoreCase(family_name);
+        }
+
+        if (amountGreaterThan != null) {
+            query.field("amount").greaterThan(amountGreaterThan);
+        }
+
+        if (amountLessThan != null) {
+            query.field("amount").lessThan(amountLessThan);
+        }
+
+        boolean hasItemTimeSearch = itemTimeStartGreaterThan != null ||
+                                    itemTimeStartLessThan != null ||
+                                    itemTimeEndLessThan != null ||
+                                    itemTimeEndGreaterThan != null ||
+                                    text != null;
+        boolean hasEventSearch = !eventStatuses.isEmpty() ||
+                                 eventName != null;
+
+        if (hasItemTimeSearch || hasEventSearch) {
+            List<Transaction> transactions = query.asList();
+
+            Set<Object> itemIdsQuery = transactions.stream()
+               .map(transaction -> transaction.itemId)
+               .collect(Collectors.toSet());
+
+            Query<Item> itemQuery = this.itemService.query()
+                .field("id").in(itemIdsQuery);
+
+            if (itemTimeStartGreaterThan != null) {
+                itemQuery.field("timeStart").greaterThan(new Date(itemTimeStartGreaterThan));
             }
 
-            if (!statuses.isEmpty()) {
-                query.field("status").in(statuses);
+            if (itemTimeStartLessThan != null) {
+                itemQuery.field("timeStart").lessThan(new Date(itemTimeStartLessThan));
             }
 
-            if (!parentTransactionIds.isEmpty()) {
-                query.field("parentTransactionId").in(parentTransactionIds);
+            if (itemTimeEndLessThan != null) {
+                itemQuery.field("timeEnd").lessThan(new Date(itemTimeEndLessThan));
             }
 
-            if (!userIds.isEmpty()) {
-                query.field("user_id").in(userIds);
+            if (itemTimeEndGreaterThan != null) {
+                itemQuery.field("timeEnd").greaterThan(new Date(itemTimeEndGreaterThan));
             }
 
-            if (timeCreatedGreaterThan != null) {
-                query.field("timeCreated").greaterThan(new Date(timeCreatedGreaterThan));
-            }
+            List<Item> queriedItems = itemQuery.asList();
+            List<Item> filteredItems;
 
-            if (timeCreatedLessThan != null) {
-                query.field("timeCreated").lessThan(new Date(timeCreatedLessThan));
-            }
+            if (hasEventSearch) {
+                Query<Event> eventQuery = this.eventService.query();
 
-            if (email != null) {
-                query.field("email").equal(email);
-            }
-
-            if (quantity != null) {
-                query.field("quantity").equal(quantity);
-            }
-
-            if (given_name != null) {
-                query.field("given_name").startsWithIgnoreCase(given_name);
-            }
-
-            if (family_name != null) {
-                query.field("family_name").startsWithIgnoreCase(family_name);
-            }
-
-            if (amountGreaterThan != null) {
-                query.field("amount").greaterThan(amountGreaterThan);
-            }
-
-            if (amountLessThan != null) {
-                query.field("amount").lessThan(amountLessThan);
-            }
-
-            if (text != null || auth0Users != null) {
-                Collection<CriteriaContainerImpl> textSearchCritera = new ArrayList<>();
-
-                if (auth0Users != null) {
-                    List<String> auth0UserIds = new ArrayList<>();
-                    auth0Users.forEach(node -> auth0UserIds.add(node.get("user_id").asText()));
-
-                    textSearchCritera.add(query.criteria("user_id").in(auth0UserIds));
+                if (!eventStatuses.isEmpty()) {
+                    eventQuery.field("status").in(eventStatuses);
                 }
 
-                if (text != null) {
-                    textSearchCritera.add(query.criteria("email").startsWithIgnoreCase(text));
-                    textSearchCritera.add(query.criteria("given_name").startsWithIgnoreCase(text));
-                    textSearchCritera.add(query.criteria("family_name").startsWithIgnoreCase(text));
+                if (eventName != null) {
+                    eventQuery.field("name").startsWithIgnoreCase(eventName);
                 }
 
-                query.and(
-                    query.or(textSearchCritera.toArray(new CriteriaContainerImpl[]{}))
-                );
+                Set<ObjectId> filteredEventIds = eventQuery.asList()
+                    .stream()
+                    .map(event -> event.id)
+                    .collect(Collectors.toSet());
+
+                filteredItems = queriedItems.stream()
+                    .filter(item -> filteredEventIds.contains(item.eventId))
+                    .collect(Collectors.toList());
+            } else {
+                filteredItems = queriedItems;
             }
 
-            boolean hasItemTimeSearch = itemTimeStartGreaterThan != null ||
-                                        itemTimeStartLessThan != null ||
-                                        itemTimeEndLessThan != null ||
-                                        itemTimeEndGreaterThan != null ||
-                                        text != null;
-            boolean hasEventSearch = !eventStatuses.isEmpty() ||
-                                     eventName != null;
+            List<ObjectId> queriedItemIds = filteredItems.stream()
+                .map(item -> item.id)
+                .collect(Collectors.toList());
 
-            if (hasItemTimeSearch || hasEventSearch) {
-                List<Transaction> transactions = query.asList();
+            query.field("itemId").in(queriedItemIds);
+        }
 
-                Set<Object> itemIdsQuery = transactions.stream()
-                   .map(transaction -> transaction.itemId)
-                   .collect(Collectors.toSet());
+        if (Objects.equals(leaf, true)) {
+            List<Transaction> transactions = query.asList();
+            List<List<Transaction>> forest = this.transactionService.getTransactionForest(transactions);
 
-                Query<Item> itemQuery = this.itemService.query()
-                    .field("id").in(itemIdsQuery);
+            List<ObjectId> leafIds = forest.stream()
+                .filter(lineage -> lineage.size() == 1)
+                .map(lineage -> lineage.get(0).id)
+                .collect(Collectors.toList());
 
-                if (itemTimeStartGreaterThan != null) {
-                    itemQuery.field("timeStart").greaterThan(new Date(itemTimeStartGreaterThan));
-                }
+            query.field("id").in(leafIds);
+        }
 
-                if (itemTimeStartLessThan != null) {
-                    itemQuery.field("timeStart").lessThan(new Date(itemTimeStartLessThan));
-                }
+        CompletableFuture<List<Transaction>> textSearchFuture;
 
-                if (itemTimeEndLessThan != null) {
-                    itemQuery.field("timeEnd").lessThan(new Date(itemTimeEndLessThan));
-                }
+        if (text == null) {
+            textSearchFuture = new CompletableFuture<>();
+            textSearchFuture.complete(null);
+        } else {
+            textSearchFuture = this.transactionService.searchTransactionsFromText(text, this.auth0Service);
+        }
 
-                if (itemTimeEndGreaterThan != null) {
-                    itemQuery.field("timeEnd").greaterThan(new Date(itemTimeEndGreaterThan));
-                }
-
-                List<Item> queriedItems = itemQuery.asList();
-                List<Item> filteredItems;
-
-                if (hasEventSearch) {
-                    Query<Event> eventQuery = this.eventService.query();
-
-                    if (!eventStatuses.isEmpty()) {
-                        eventQuery.field("status").in(eventStatuses);
-                    }
-
-                    if (eventName != null) {
-                        eventQuery.field("name").startsWithIgnoreCase(eventName);
-                    }
-
-                    Set<ObjectId> filteredEventIds = eventQuery.asList()
-                        .stream()
-                        .map(event -> event.id)
-                        .collect(Collectors.toSet());
-
-                    filteredItems = queriedItems.stream()
-                        .filter(item -> filteredEventIds.contains(item.eventId))
-                        .collect(Collectors.toList());
-                } else {
-                    filteredItems = queriedItems;
-                }
-
-                List<ObjectId> queriedItemIds = filteredItems.stream()
-                    .map(item -> item.id)
+        textSearchFuture.thenAcceptAsync(textTransactions -> {
+            if (textTransactions != null) {
+                List<ObjectId> textTransactionIds = textTransactions.stream()
+                    .map(transaction -> transaction.id)
                     .collect(Collectors.toList());
 
-                query.field("itemId").in(queriedItemIds);
+                query.field("id").in(textTransactionIds);
             }
 
-            if (Objects.equals(leaf, true)) {
-                List<Transaction> transactions = query.asList();
-                List<List<Transaction>> forest = this.transactionService.getTransactionForest(transactions);
-
-                List<ObjectId> leafIds = forest.stream()
-                    .filter(lineage -> lineage.size() == 1)
-                    .map(lineage -> lineage.get(0).id)
-                    .collect(Collectors.toList());
-
-                query.field("id").in(leafIds);
-            }
-
-            String user_id = claims.get("sub").asText();
+            FindOptions options = new FindOptions();
 
             if (limit != null && limit > -1) {
-                query.limit(limit);
+                options.limit(limit);
             }
 
             if (offset != null && offset > -1) {
-                query.offset(offset);
+                options.skip(offset);
             }
 
             if (order != null) {
@@ -300,6 +286,8 @@ public class TransactionResource {
             }
 
             List<Transaction> transactions = query.asList();
+
+            String user_id = claims.get("sub").asText();
 
             boolean hasUserIdPermission = userIds.size() == 1 && userIds.contains(user_id);
             boolean hasPermission = this.permissionService.has(
@@ -311,14 +299,14 @@ public class TransactionResource {
             ResponseBuilder builder;
 
             if (hasUserIdPermission || hasPermission) {
-                Paging<Transaction> entity = new Paging<>(transactions, query.countAll());
+                Paging<Transaction> entity = new Paging<>(transactions, query.count());
                 builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
             } else {
                 builder = Response.status(Status.UNAUTHORIZED);
             }
 
             futureResponse.resume(builder.build());
-        }).exceptionally((exception) -> {
+        }).exceptionally(exception -> {
             futureResponse.resume(exception);
             return null;
         });
@@ -436,9 +424,12 @@ public class TransactionResource {
         @QueryParam("leaf") Boolean leaf
     ) {
         Query<Transaction> query = this.transactionService.query()
-            .retrievedFields(true, "id", "itemId", "status", "parentTransactionId");
+            .project("id", true)
+            .project("itemId", true)
+            .project("status", true)
+            .project("parentTransactionId", true);
 
-        Set<ObjectId> idsFilter = this.mappingService.getItemTransactionIds(new HashSet<>(), eventIds, itemIds);
+        Set<ObjectId> idsFilter = this.mappingService.getTransactionIds(new HashSet<>(), eventIds, itemIds);
         idsFilter.addAll(ids);
 
         if (!eventIds.isEmpty() || !itemIds.isEmpty() || !ids.isEmpty()) {
@@ -460,7 +451,7 @@ public class TransactionResource {
                 .collect(Collectors.toList());
         }
 
-        Paging<Transaction> entity = new Paging<>(transactions, query.countAll());
+        Paging<Transaction> entity = new Paging<>(transactions, query.count());
         ResponseBuilder builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
 
         return builder.build();
@@ -590,7 +581,7 @@ public class TransactionResource {
                 File writeFile = file;
 
                 if (file != null) {
-                    Set<ObjectId> idsFilter = this.mappingService.getItemTransactionIds(organizationIds, eventIds, itemIds);
+                    Set<ObjectId> idsFilter = this.mappingService.getTransactionIds(organizationIds, eventIds, itemIds);
                     idsFilter.addAll(ids);
 
                     List<Transaction> transactions = this.transactionService.query()
@@ -666,7 +657,7 @@ public class TransactionResource {
             boolean targetIsCompleted = transaction.status == this.transactionService.getPaymentCompleteStatus();
             boolean hasChildTransaction = this.transactionService.query()
                 .field("parentTransactionId").equal(transaction.id)
-                .countAll() > 0;
+                .count() > 0;
 
             if (hasChildTransaction) {
                 builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"childtransaction\"}").type(MediaType.APPLICATION_JSON);
@@ -674,6 +665,9 @@ public class TransactionResource {
                 if (targetIsCompleted) {
                     if (hasPermission) {
                         Transaction revokedTransaction = new Transaction();
+                        revokedTransaction.given_name = transaction.given_name;
+                        revokedTransaction.middleName = transaction.middleName;
+                        revokedTransaction.family_name = transaction.family_name;
                         revokedTransaction.itemId = transaction.itemId;
                         revokedTransaction.status = this.transactionService.getRevokedStatus();
                         revokedTransaction.user_id = transaction.user_id;
@@ -719,7 +713,7 @@ public class TransactionResource {
                 boolean isVendorTransaction = PaypalIPN.class.getSimpleName().equals(transaction.linkedObjectClass);
                 boolean hasChildTransaction = this.transactionService.query()
                     .field("parentTransactionId").equal(transaction.id)
-                    .countAll() > 0;
+                    .count() > 0;
 
                 if (isVendorTransaction || hasChildTransaction) {
                     builder = Response.status(Status.BAD_REQUEST);

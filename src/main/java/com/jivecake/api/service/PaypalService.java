@@ -436,7 +436,7 @@ public class PaypalService {
                     */
                 }
             } else {
-                result = this.datastore.save();
+                result = this.datastore.save(Arrays.asList());
             }
         }
 

@@ -66,7 +66,13 @@ public class SubscriptionIPNTest {
         String body = "mc_gross=30.00&protection_eligibility=Eligible&address_status=confirmed&payer_id=J62KGRNQYR3VU&address_street=123+Fake&payment_date=19%3A52%3A50+Apr+14%2C+2016+PDT&payment_status=Completed&charset=windows-1252&address_zip=32907&first_name=Luis&mc_fee=0.33&address_country_code=US&address_name=JiveCake&notify_version=3.8&subscr_id=I-AGK5XHASMVX8&custom=5710574ba7b11b001f12fb19&payer_status=verified&business=luis%40trois.io&address_country=United+States&address_city=Palm+Bay&verify_sign=AVMnB4GuhH0hVL2g-AdOMvDUcA9zAUg7kdpqptp8Gk6j4BYE8RAVBX54&payer_email=SobiborTreblinka%40gmail.com&txn_id=1GK360366M840293X&payment_type=instant&payer_business_name=JiveCake&btn_id=113215020&last_name=Banegas&address_state=FL&receiver_email=luis%40trois.io&payment_fee=0.33&receiver_id=J6LQ63LX6CYF8&txn_type=subscr_payment&item_name=JiveCake+Test+Daily+Billing&mc_currency=USD&item_number=jivecakesubscriptiondailytest&residence_country=US&transaction_subject=JiveCake+Test+Daily+Billing&payment_gross=1.00&ipn_track_id=df33e24c1970d";
         PaypalIPN ipn = this.paypalService.create(this.httpService.bodyToMap(body));
 
-        this.datastore.save(organization, detail, ipn);
+        this.datastore.save(
+            Arrays.asList(
+                organization,
+                detail,
+                ipn
+            )
+        );
 
         Key<Feature> key = this.subscriptionService.processSubscription(ipn);
 

@@ -57,7 +57,7 @@ public class NotificationService {
         Organization organization = this.organizationService.read(event.organizationId);
 
         Set<String> userIds = this.permissionService.query()
-            .retrievedFields(true, "user_id")
+            .project("user_id", true)
             .field("objectClass").equal(this.organizationService.getPermissionObjectClass())
             .field("objectId").equal(organization.id)
             .asList()

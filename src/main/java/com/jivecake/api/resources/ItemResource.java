@@ -26,6 +26,7 @@ import javax.ws.rs.core.Response.Status;
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.Criteria;
+import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -273,7 +274,7 @@ public class ItemResource {
             query.field("timeEnd").lessThan(new Date(timeEndLessThan));
         }
 
-        Paging<Item> entity = new Paging<>(query.asList(), query.countAll());
+        Paging<Item> entity = new Paging<>(query.asList(), query.count());
         ResponseBuilder builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         return builder.build();
     }
@@ -325,12 +326,14 @@ public class ItemResource {
             query.field("name").startsWithIgnoreCase(name);
         }
 
+        FindOptions options = new FindOptions();
+
         if (limit != null && limit > -1) {
-            query.limit(limit);
+            options.limit(limit);
         }
 
         if (offset != null && offset > -1) {
-            query.offset(offset);
+            options.skip(offset);
         }
 
         if (order != null) {
@@ -346,7 +349,7 @@ public class ItemResource {
         );
 
         if (hasPermission) {
-            Paging<Item> entity = new Paging<>(items, query.countAll());
+            Paging<Item> entity = new Paging<>(items, query.count());
             builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);
@@ -515,7 +518,7 @@ public class ItemResource {
             );
 
             if (hasPermission) {
-                long transactionCount = this.transactionService.query().field("itemId").equal(item.id).countAll();
+                long transactionCount = this.transactionService.query().field("itemId").equal(item.id).count();
 
                 if (transactionCount == 0) {
                     Item deletedItem = this.itemService.delete(item.id);

@@ -17,6 +17,7 @@ import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
 import org.bson.types.ObjectId;
+import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -92,15 +93,17 @@ public class FeatureResource {
             query.order(order);
         }
 
+        FindOptions options = new FindOptions();
+
         if (limit != null && limit > -1) {
-            query.limit(limit);
+            options.limit(limit);
         }
 
         if (offset != null && offset > -1) {
-            query.offset(offset);
+            options.skip(offset);
         }
 
-        List<Feature> features = query.asList();
+        List<Feature> features = query.asList(options);
 
         Set<ObjectId> organizationPermissionIds = features.stream()
             .filter(feature -> feature instanceof OrganizationFeature)
@@ -116,7 +119,7 @@ public class FeatureResource {
         ResponseBuilder builder;
 
         if (hasPermission) {
-            Paging<Feature> entity = new Paging<>(features, query.countAll());
+            Paging<Feature> entity = new Paging<>(features, query.count());
             builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);
