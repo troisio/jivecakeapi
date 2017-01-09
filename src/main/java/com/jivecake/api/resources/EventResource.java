@@ -19,6 +19,7 @@ import javax.ws.rs.core.Response.Status;
 
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Key;
+import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -72,9 +73,11 @@ public class EventResource {
         @QueryParam("order") String order,
         @QueryParam("text") String text
     ) {
+        FindOptions options = new FindOptions();
+        options.limit(1000);
+
         Query<Event> query = this.eventService.query()
-            .field("status").equal(this.eventService.getActiveEventStatus())
-            .limit(1000);
+            .field("status").equal(this.eventService.getActiveEventStatus());
 
         if (text != null && !text.isEmpty()) {
             List<ObjectId> organizationIds = this.organizationService.query()
@@ -124,7 +127,7 @@ public class EventResource {
             query.order(order);
         }
 
-        Paging<Event> entity = new Paging<>(query.asList(), query.countAll());
+        Paging<Event> entity = new Paging<>(query.asList(options), query.count());
         ResponseBuilder builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         return builder.build();
     }
@@ -147,7 +150,7 @@ public class EventResource {
                 .field("id").notEqual(original.id)
                 .field("status").equal(this.eventService.getActiveEventStatus())
                 .field("organizationId").equal(original.organizationId)
-                .countAll();
+                .count();
 
             if (event.status == this.eventService.getActiveEventStatus()) {
                 activeEventsCount++;
@@ -240,7 +243,7 @@ public class EventResource {
                     query.criteria("organizationId").equal(event.organizationId)
                 );
 
-                long itemCount = query.countAll();
+                long itemCount = query.count();
 
                 if (itemCount == 0) {
                     Event entity = this.eventService.delete(event.id);
@@ -309,23 +312,25 @@ public class EventResource {
             query.field("timeEnd").greaterThan(new Date(timeEndAfter));
         }
 
+        FindOptions options = new FindOptions();
+
         if (limit != null && limit > -1) {
-            query.limit(limit);
+            options.limit(limit);
         }
 
         if (offset != null && offset > -1) {
-            query.offset(offset);
+            options.skip(offset);
         }
 
         if (order != null) {
             query.order(order);
         }
 
-        List<Event> entities = query.asList();
+        List<Event> entities = query.asList(options);
         boolean hasPermission = this.permissionService.has(claims.get("sub").asText(), entities, this.organizationService.getReadPermission());
 
         if (hasPermission) {
-            Paging<Event> entity = new Paging<>(entities, query.countAll());
+            Paging<Event> entity = new Paging<>(entities, query.count());
             builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);

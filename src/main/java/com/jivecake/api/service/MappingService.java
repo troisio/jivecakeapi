@@ -24,7 +24,7 @@ public class MappingService {
         this.datastore = datastore;
     }
 
-    public Set<ObjectId> getItemTransactionIds(
+    public Set<ObjectId> getTransactionIds(
         Collection<ObjectId> organizationIds,
         Collection<ObjectId> eventIds,
         Collection<ObjectId> itemIds
@@ -73,7 +73,7 @@ public class MappingService {
             aggregatedItemIds = new HashSet<>();
         } else {
             aggregatedItemIds = this.datastore.createQuery(Transaction.class)
-                .retrievedFields(true, "itemId")
+                .project("itemId", true)
                 .field("id").in(itemTransactionIds)
                 .asList()
                 .stream()
@@ -98,7 +98,7 @@ public class MappingService {
 
         if (!aggregatedEventIds.isEmpty()) {
             Set<ObjectId> searchedOrganizationIds = this.datastore.createQuery(Event.class)
-                .retrievedFields(true, "organizationId")
+                .project("organizationId", true)
                 .field("id").in(aggregatedEventIds)
                 .asList()
                 .stream()

@@ -23,6 +23,7 @@ import javax.ws.rs.core.Response.Status;
 
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Key;
+import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -220,7 +221,7 @@ public class OrganizationResource {
             if (hasPermission) {
                 long profileCount = this.paymentProfileService.query()
                     .field("organizationId").equal(organization.id)
-                    .countAll();
+                    .count();
 
                 if (profileCount > 50) {
                     builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"limit\"}").type(MediaType.APPLICATION_JSON);
@@ -282,7 +283,7 @@ public class OrganizationResource {
                 long activeEventsCount = this.eventService.query()
                     .field("status").equal(this.eventService.getActiveEventStatus())
                     .field("organizationId").equal(organization.id)
-                    .countAll();
+                    .count();
 
                 if (event.status == this.eventService.getActiveEventStatus()) {
                     activeEventsCount++;
@@ -296,7 +297,7 @@ public class OrganizationResource {
                 boolean hasFeatureViolation = activeEventsCount > currentOrganizationFeatures.size();
                 long eventCount = this.eventService.query()
                     .field("organizationId").equal(organization.id)
-                    .countAll();
+                    .count();
 
                 if (eventCount > 50) {
                     builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"limit\"}").type(MediaType.APPLICATION_JSON);
@@ -329,7 +330,7 @@ public class OrganizationResource {
 
         long sameEmailCount = this.organizationService.query()
             .field("email").equalIgnoreCase(organization.email)
-            .countAll();
+            .count();
 
         if (sameEmailCount == 0) {
             if (organization.parentId == null) {
@@ -358,7 +359,7 @@ public class OrganizationResource {
                     .field("user_id").equal(claims.get("sub").asText())
                     .field("objectClass").equal(Organization.class.getSimpleName())
                     .field("include").equal(this.permissionService.getIncludeAllPermission())
-                    .countAll();
+                    .count();
 
                 if (userOrganizationPermissions > this.maximumOrganizationsPerUser) {
                     builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"limit\"}");
@@ -428,7 +429,7 @@ public class OrganizationResource {
         ResponseBuilder builder;
 
         if (hasPermission) {
-            Paging<IndexedOrganizationNode> paging = new Paging<>(nodes, query.countAll());
+            Paging<IndexedOrganizationNode> paging = new Paging<>(nodes, query.count());
             builder = Response.ok(paging).type(MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);
@@ -475,17 +476,19 @@ public class OrganizationResource {
             query.order(order);
         }
 
+        FindOptions options = new FindOptions();
+
         if (limit != null && limit > -1) {
-            query.limit(limit);
+            options.limit(limit);
         }
 
         if (offset != null && offset > -1) {
-            query.offset(offset);
+            options.skip(offset);
         }
 
         List<Organization> organizations = query.asList();
 
-        Paging<Organization> entity = new Paging<>(organizations, query.countAll());
+        Paging<Organization> entity = new Paging<>(organizations, query.count());
         ResponseBuilder builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
 
         return builder.build();
@@ -531,12 +534,14 @@ public class OrganizationResource {
             query.order(order);
         }
 
+        FindOptions options = new FindOptions();
+
         if (limit != null && limit > -1) {
-            query.limit(limit);
+            options.limit(limit);
         }
 
         if (offset != null && offset > -1) {
-            query.offset(offset);
+            options.skip(offset);
         }
 
         List<Organization> organizations = query.asList();
@@ -550,7 +555,7 @@ public class OrganizationResource {
         ResponseBuilder builder;
 
         if (hasPermission) {
-            Paging<Organization> entity = new Paging<>(organizations, query.countAll());
+            Paging<Organization> entity = new Paging<>(organizations, query.count());
             builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);
@@ -573,7 +578,7 @@ public class OrganizationResource {
                 .field("id").notEqual(queriedOrganization.id)
                 .field("email").equalIgnoreCase(organization.email);
 
-            long sameEmailCount = query.countAll();
+            long sameEmailCount = query.count();
 
             if (sameEmailCount == 0) {
                 boolean hasPermission = this.permissionService.hasAnyHierarchicalPermission(

@@ -13,6 +13,7 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
+import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -85,15 +86,17 @@ public class LogResource {
                 query.order(order);
             }
 
+            FindOptions options = new FindOptions();
+
             if (limit != null && limit > -1) {
-                query.limit(limit);
+                options.limit(limit);
             }
 
             if (offset != null && offset > -1) {
-                query.offset(offset);
+                options.skip(offset);
             }
 
-            Paging<Request> entity = new Paging<>(query.asList(), query.countAll());
+            Paging<Request> entity = new Paging<>(query.asList(), query.count());
             builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);

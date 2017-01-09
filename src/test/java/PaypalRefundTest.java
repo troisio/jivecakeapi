@@ -59,10 +59,12 @@ public class PaypalRefundTest {
         transaction.linkedObjectClass = PaypalIPN.class.getSimpleName();
 
         this.datastore.save(
-            item,
-            detail,
-            rootIpn,
-            refundIpn
+            Arrays.asList(
+                item,
+                detail,
+                rootIpn,
+                refundIpn
+            )
         );
 
         this.datastore.save(transaction);

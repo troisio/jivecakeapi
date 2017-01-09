@@ -20,6 +20,7 @@ import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
 import org.bson.types.ObjectId;
+import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -193,12 +194,14 @@ public class PermissionResource {
              );
         }
 
+        FindOptions options = new FindOptions();
+
         if (limit != null && limit > -1) {
-            query.limit(limit);
+            options.limit(limit);
         }
 
         if (offset != null && offset > -1) {
-            query.offset(offset);
+            options.skip(offset);
         }
 
         List<Permission> entities = query.asList();
@@ -237,7 +240,7 @@ public class PermissionResource {
         }
 
         if (hasUserPermission || hasOrganizationPermission || hasApplicationRead) {
-            Paging<Permission> entity = new Paging<>(entities, query.countAll());
+            Paging<Permission> entity = new Paging<>(entities, query.count());
             builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);

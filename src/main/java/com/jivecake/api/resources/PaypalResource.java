@@ -27,6 +27,7 @@ import org.apache.log4j.Logger;
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Key;
+import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -236,19 +237,21 @@ public class PaypalResource {
                 query.field("timeCreated").greaterThan(new Date(timeCreatedGreaterThan));
             }
 
+            FindOptions options = new FindOptions();
+
             if (limit != null) {
-                query.limit(limit);
+                options.limit(limit);
             }
 
             if (offset != null) {
-                query.offset(offset);
+                options.skip(offset);
             }
 
             if (order != null) {
                 query.order(order);
             }
 
-            Paging<PaypalIPN> entity = new Paging<>(query.asList(), query.countAll());
+            Paging<PaypalIPN> entity = new Paging<>(query.asList(), query.count());
             builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);

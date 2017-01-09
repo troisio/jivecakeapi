@@ -1,8 +1,8 @@
 ### Required Software
 
-- gradle 2.12
+- gradle 3.2.1
 - java 1.8
-- mongoDB 3.2
+- docker 1.12
 
 ### Things You Should Know
 
@@ -33,6 +33,7 @@ Read `DOCKER.md` to read about how to build and run this project
 ### Testing
 
 ```sh
+cd your_project_directory
 gradle test -Ddb=MONGO_DB_URL
 ```
 

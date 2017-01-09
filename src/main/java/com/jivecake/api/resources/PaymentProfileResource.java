@@ -15,6 +15,7 @@ import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
 import org.bson.types.ObjectId;
+import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -88,7 +89,7 @@ public class PaymentProfileResource {
             query.field("id").in(ids);
         }
 
-        Paging<PaymentProfile> paging = new Paging<>(query.asList(), query.countAll());
+        Paging<PaymentProfile> paging = new Paging<>(query.asList(), query.count());
 
         ResponseBuilder builder = Response.ok(paging).type(MediaType.APPLICATION_JSON);
         return builder.build();
@@ -124,16 +125,18 @@ public class PaymentProfileResource {
                 query.field("email").startsWithIgnoreCase(email);
             }
 
+            FindOptions options = new FindOptions();
+
             if (limit != null && limit > -1) {
-                query.limit(limit);
+                options.limit(limit);
             }
 
             if (offset != null && offset > -1) {
-                query.offset(offset);
+                options.skip(offset);
             }
 
             List<PaymentProfile> profiles = query.asList();
-            Paging<PaymentProfile> paging = new Paging<>(profiles, query.countAll());
+            Paging<PaymentProfile> paging = new Paging<>(profiles, query.count());
 
             builder = Response.ok(paging).type(MediaType.APPLICATION_JSON);
         } else {

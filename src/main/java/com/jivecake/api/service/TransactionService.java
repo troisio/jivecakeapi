@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -42,6 +43,40 @@ public class TransactionService {
     @Inject
     public TransactionService(Datastore datastore) {
         this.datastore = datastore;
+    }
+
+    public CompletableFuture<List<Transaction>> searchTransactionsFromText(String text, Auth0Service auth0Service) {
+        CompletableFuture<List<Transaction>> future = new CompletableFuture<>();
+
+        List<ObjectId> itemIds = this.datastore.createQuery(Item.class)
+            .field("name").containsIgnoreCase(text)
+            .asList()
+            .stream()
+            .map(item -> item.id)
+            .collect(Collectors.toList());
+
+        auth0Service.searchEmailOrNames(text).thenAcceptAsync(auth0Users -> {
+            Query<Transaction> query = TransactionService.this.datastore.createQuery(Transaction.class);
+
+            List<String> auth0UserIds = new ArrayList<>();
+            auth0Users.forEach(node -> auth0UserIds.add(node.get("user_id").asText()));
+
+            query.or(
+                query.criteria("user_id").in(auth0UserIds),
+                query.criteria("email").startsWithIgnoreCase(text),
+                query.criteria("given_name").startsWithIgnoreCase(text),
+                query.criteria("family_name").startsWithIgnoreCase(text),
+                query.criteria("itemId").in(itemIds)
+            );
+
+            List<Transaction> transactions = query.asList();
+            future.complete(transactions);
+        }).exceptionally((exception) -> {
+            future.completeExceptionally(exception);
+            return null;
+        });
+
+        return future;
     }
 
     public Query<Transaction> query() {
@@ -132,6 +167,7 @@ public class TransactionService {
         List<ObjectId> itemIds = transactions.stream()
             .map(transaction -> transaction.itemId)
             .collect(Collectors.toList());
+
         Map<ObjectId, List<Item>> itemById = this.datastore.createQuery(Item.class)
             .field("id").in(itemIds)
             .asList()

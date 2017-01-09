@@ -92,7 +92,7 @@ public class ExcelTest {
         transaction.currency = "USD";
         transaction.amount = 20.22;
 
-        this.datastore.save(item, transaction);
+        this.datastore.save(Arrays.asList(item, transaction));
 
         this.transactionService.writeToExcel(Arrays.asList(transaction), new ArrayList<>(),file);
     }

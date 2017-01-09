@@ -83,7 +83,12 @@ public class ItemService {
         Map<ObjectId, List<Item>> eventIdToItems = items.stream().collect(Collectors.groupingBy(item -> item.eventId));
 
         List<Transaction> transactions = transactionService.query()
-            .retrievedFields(true, "id", "parentTransactionId", "user_id", "itemId", "status", "timeCreated")
+            .project("id", true)
+            .project("parentTransactionId", true)
+            .project("user_id", true)
+            .project("itemId", true)
+            .project("status", true)
+            .project("timeCreated", true)
             .field("itemId").in(itemIds)
             .asList();
 
