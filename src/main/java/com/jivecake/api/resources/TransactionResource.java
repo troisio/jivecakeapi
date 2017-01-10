@@ -465,9 +465,15 @@ public class TransactionResource {
         @Context JsonNode claims,
         @Suspended AsyncResponse promise
     ) {
-        List<Transaction> transactions = this.transactionService.query()
-            .field("id").in(ids)
-            .asList();
+        List<Transaction> transactions;
+
+        if (ids.isEmpty()) {
+            transactions = new ArrayList<>();
+        } else {
+            transactions = this.transactionService.query()
+                .field("id").in(ids)
+                .asList();
+        }
 
         Set<String> user_ids = transactions.stream()
             .filter(transaction -> transaction.user_id != null)
@@ -481,7 +487,7 @@ public class TransactionResource {
             .count();
 
         boolean hasPermission = this.permissionService.has(
-            claims.get("sub").asText(),
+            requesterId,
             transactions,
             this.organizationService.getReadPermission()
         );
@@ -572,7 +578,7 @@ public class TransactionResource {
                 File file;
 
                 try {
-                    file = File.createTempFile("ItemTransaction-" + new Date().getTime(), ".xlsx");
+                    file = File.createTempFile("transactions", ".xlsx");
                 } catch (IOException e) {
                     promise.resume(e);
                     file = null;

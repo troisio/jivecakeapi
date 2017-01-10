@@ -168,7 +168,9 @@ public class EventResource {
                                                  (event.paymentProfileId != null && event.currency == null);
 
             if (hasPaymentProfileViolation) {
-                builder = Response.status(Status.BAD_REQUEST);
+                builder = Response.status(Status.BAD_REQUEST)
+                    .entity("{\"error\": \"paymentProfile\"}")
+                    .type(MediaType.APPLICATION_JSON);
             } else if (hasFeatureViolation) {
                 builder = Response.status(Status.BAD_REQUEST)
                         .entity(currentOrganizationFeatures)

@@ -9,6 +9,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
+import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
@@ -111,20 +112,8 @@ public class ItemResource {
             List<AggregatedItemGroup> groups = this.itemService.getAggregatedaGroupData(items, this.transactionService, new Date());
 
             groups = groups.stream()
-                    .filter(group -> {
-                        boolean result;
-
-                        if (group.parent instanceof Event) {
-                            result = ((Event)group.parent).status == this.eventService.getActiveEventStatus();
-                        } else if (group.parent instanceof Organization) {
-                            result = true;
-                        } else {
-                            result = true;
-                        }
-
-                        return result;
-                    })
-                    .collect(Collectors.toList());
+                .filter(group -> group.parent.status == this.eventService.getActiveEventStatus())
+                .collect(Collectors.toList());
 
             for (AggregatedItemGroup group: groups) {
                 group.itemData = group.itemData.stream()
@@ -154,6 +143,7 @@ public class ItemResource {
 
     @POST
     @Authorized
+    @Consumes(MediaType.APPLICATION_JSON)
     @Path("/{id}/purchase")
     public Response purchase(
         @PathObject("id") Item item,
@@ -182,13 +172,21 @@ public class ItemResource {
                 event.status != this.eventService.getActiveEventStatus();
 
             if (event.currency == null) {
-                builder = Response.status(Status.BAD_REQUEST);
+                builder = Response.status(Status.BAD_REQUEST)
+                    .entity("{\"error\": \"currency\"}")
+                    .type(MediaType.APPLICATION_JSON);
             } else if (activeViolation) {
-                builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"active\"}").type(MediaType.APPLICATION_JSON);
+                builder = Response.status(Status.BAD_REQUEST)
+                    .entity("{\"error\": \"active\"}")
+                    .type(MediaType.APPLICATION_JSON);
             } else if (maximumPerUserViolation) {
-                builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"userlimit\"}").type(MediaType.APPLICATION_JSON);
+                builder = Response.status(Status.BAD_REQUEST)
+                    .entity("{\"error\": \"userlimit\"}")
+                    .type(MediaType.APPLICATION_JSON);
             } else if (maximumReached) {
-                builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"limit\"}").type(MediaType.APPLICATION_JSON);
+                builder = Response.status(Status.BAD_REQUEST)
+                    .entity("{\"error\": \"limit\"}")
+                    .type(MediaType.APPLICATION_JSON);
             } else {
                 Transaction userTransaction = new Transaction();
                 userTransaction.user_id = claims.get("sub").asText();
@@ -359,6 +357,7 @@ public class ItemResource {
     }
 
     @POST
+    @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
     @Path("/{id}/transaction")
     public void createTransaction(
@@ -535,6 +534,7 @@ public class ItemResource {
     }
 
     @POST
+    @Consumes(MediaType.APPLICATION_JSON)
     @Path("/{id}")
     @Authorized
     public Response update(@PathObject("id") Item searchedItem, @Context JsonNode claims, Item item) {
