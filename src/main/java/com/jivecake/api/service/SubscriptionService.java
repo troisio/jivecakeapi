@@ -21,6 +21,7 @@ import com.jivecake.api.resources.PaypalResource;
 import com.jivecake.api.serializer.JsonTools;
 
 public class SubscriptionService {
+    private final double monthlyAmount = 30.00;
     private final Datastore datastore;
     private final FeatureService featureService;
     private final Logger logger = LogManager.getLogger(PaypalResource.class);
@@ -36,6 +37,8 @@ public class SubscriptionService {
     }
 
     public Key<Feature> processSubscription(PaypalIPN ipn) {
+        Key<Feature> result = null;
+
         ObjectId custom;
 
         try {
@@ -48,50 +51,60 @@ public class SubscriptionService {
             .field("custom").equal(custom)
             .get();
 
-        double subscriptionAmount;
+        String amount;
 
-        try {
-            subscriptionAmount = Double.parseDouble(ipn.mc_gross);
-        } catch (NumberFormatException e) {
-            subscriptionAmount = -1;
+        if ("subscr_signup".equals(ipn.txn_type)) {
+            amount = ipn.amount3;
+        } else if ("subscr_payment".equals(ipn.txn_type)) {
+            amount = ipn.mc_gross;
+        } else {
+            amount = null;
         }
 
-        Key<Feature> result = null;
+        if (amount != null) {
+            NumberFormatException exception;
+            double subscriptionAmount;
 
-        if (subscriptionAmount > 0) {
-            boolean isMonthlyEvent30 = subscriptionAmount > 29.99 && subscriptionAmount < 30.01;
-
-            if (isMonthlyEvent30) {
-                SubscriptionPaymentDetail details = (SubscriptionPaymentDetail)paymentDetails;
-
-                Organization organization = this.datastore.find(Organization.class)
-                    .field("id").equal(details.organizationId)
-                    .get();
-
-                if (organization == null) {
-                    String ipnSerialized = this.jsonTools.pretty(ipn);
-                    this.logger.warn(String.format("%n%nSubscriptionIPN: Organization not found for %s%n%n", ipnSerialized));
-                } else {
-                    OrganizationFeature feature = new OrganizationFeature();
-                    feature.organizationId = organization.id;
-                    feature.type = this.featureService.getOrganizationEventFeature();
-                    feature.timeStart = new Date();
-
-                    Calendar calendar = Calendar.getInstance();
-                    calendar.setTime(feature.timeStart);
-                    calendar.add(Calendar.DATE, 31);
-
-                    feature.timeEnd = calendar.getTime();
-
-                    result = this.featureService.save(feature);
-                }
-            } else {
-                String ipnSerialized = this.jsonTools.pretty(ipn);
-                this.logger.warn(String.format("SubscriptionIPN: Subscription id not found for %s", ipnSerialized));
+            try {
+                subscriptionAmount = Double.parseDouble(amount);
+                exception = null;
+            } catch (NumberFormatException e) {
+                exception = e;
+                subscriptionAmount = 0;
             }
-        } else {
-            String ipnSerialized = this.jsonTools.pretty(ipn);
-            this.logger.warn(String.format("SubscriptionIPN: IPN mc_gross is not parsable to a double%n%n%s", ipnSerialized));
+
+            if (exception == null) {
+                boolean isMonthlyEvent30 = Math.abs(this.monthlyAmount - subscriptionAmount) < 0.01;
+
+                if (isMonthlyEvent30) {
+                    SubscriptionPaymentDetail details = (SubscriptionPaymentDetail)paymentDetails;
+
+                    Organization organization = this.datastore.find(Organization.class)
+                        .field("id").equal(details.organizationId)
+                        .get();
+
+                    if (organization == null) {
+                        String ipnSerialized = this.jsonTools.pretty(ipn);
+                        this.logger.warn(String.format("%n%nSubscriptionIPN: Organization not found for %s%n%n", ipnSerialized));
+                    } else {
+                        OrganizationFeature feature = new OrganizationFeature();
+                        feature.organizationId = organization.id;
+                        feature.type = this.featureService.getOrganizationEventFeature();
+                        feature.timeStart = new Date();
+
+                        Calendar calendar = Calendar.getInstance();
+                        calendar.setTime(feature.timeStart);
+                        calendar.add(Calendar.DATE, 31);
+
+                        feature.timeEnd = calendar.getTime();
+
+                        result = this.featureService.save(feature);
+                    }
+                } else {
+                    String ipnSerialized = this.jsonTools.pretty(ipn);
+                    this.logger.warn(String.format("SubscriptionIPN: Subscription id not found for %s", ipnSerialized));
+                }
+            }
         }
 
         return result;

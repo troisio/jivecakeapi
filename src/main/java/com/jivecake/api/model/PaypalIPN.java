@@ -96,12 +96,22 @@ public class PaypalIPN {
 
     /*Subscription fields*/
     public String subscr_date;
+    public String amount1;
+    public String amount2;
     public String amount3;
+    public String period1;
+    public String period2;
     public String period3;
     public String recurring;
+    public String mc_amount1;
+    public String mc_amount2;
     public String mc_amount3;
     public String reattempt;
     public String subscr_id;
+    public String retry_at;
+    public String recur_times;
+    public String username;
+    public String password;
 
     public Date timeCreated;
 }

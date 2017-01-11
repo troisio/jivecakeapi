@@ -48,6 +48,7 @@ import com.jivecake.api.resources.OrganizationResource;
 import com.jivecake.api.resources.PaymentProfileResource;
 import com.jivecake.api.resources.PaypalResource;
 import com.jivecake.api.resources.PermissionResource;
+import com.jivecake.api.resources.ToolsResource;
 import com.jivecake.api.resources.TransactionResource;
 import com.jivecake.api.resources.UserResource;
 import com.jivecake.api.service.ApplicationService;
@@ -105,6 +106,7 @@ public class APIApplication extends Application<APIConfiguration> {
         PaymentProfileResource.class,
         PaypalResource.class,
         PermissionResource.class,
+        ToolsResource.class,
         TransactionResource.class,
         UserResource.class
     );

@@ -128,7 +128,9 @@ public class PaypalResource {
                         if ("subscr_payment".equals(ipn.txn_type)) {
                             Key<Feature> key = PaypalResource.this.subscriptionService.processSubscription(ipn);
 
-                            if (key != null) {
+                            if (key == null) {
+                                PaypalResource.this.logger.warn(String.format("Unable to process IPN:%n%s%n", PaypalResource.this.jsonTools.pretty(form)));
+                            } else {
                                 OrganizationFeature feature = (OrganizationFeature)PaypalResource.this.featureService.query()
                                     .field("id").equal(key.getId())
                                     .get();
@@ -148,6 +150,19 @@ public class PaypalResource {
                         } else if ("subscr_eot".equals(ipn.txn_type)) {
                         } else if ("subscr_cancel".equals(ipn.txn_type)) {
                         } else if ("subscr_signup".equals(ipn.txn_type)) {
+                            if (ipn.period1 != null) {
+                                Key<Feature> key = PaypalResource.this.subscriptionService.processSubscription(ipn);
+
+                                if (key == null) {
+                                    PaypalResource.this.logger.warn(String.format("Unable to process IPN:%n%s%n", PaypalResource.this.jsonTools.pretty(form)));
+                                } else {
+                                    OrganizationFeature feature = (OrganizationFeature)PaypalResource.this.featureService.query()
+                                        .field("id").equal(key.getId())
+                                        .get();
+
+                                    PaypalResource.this.notificationService.notifyNewSubscription(feature);
+                                }
+                            }
                         } else if ("Refunded".equals(ipn.payment_status)) {
                             PaypalResource.this.paypalService.processRefund(ipn);
                         } else {
