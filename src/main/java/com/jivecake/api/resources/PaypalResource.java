@@ -1,5 +1,6 @@
 package com.jivecake.api.resources;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -110,10 +111,16 @@ public class PaypalResource {
                 boolean verified = body.equals(PaypalResource.this.paypalService.getVerified());
 
                 if (verified) {
-                    List<PaypalIPN> ipns = PaypalResource.this.paypalService.query()
-                        .field("txn_id").equal(form.getFirst("txn_id"))
-                        .field("payment_status").equal(form.getFirst("payment_status"))
-                        .asList();
+                    List<PaypalIPN> ipns;
+
+                    if (form.getFirst("txn_id") == null) {
+                        ipns = new ArrayList<>();
+                    } else {
+                        ipns = PaypalResource.this.paypalService.query()
+                            .field("txn_id").equal(form.getFirst("txn_id"))
+                            .field("payment_status").equal(form.getFirst("payment_status"))
+                            .asList();
+                    }
 
                     boolean transactionHasBeenProcessed = !ipns.isEmpty();
 
