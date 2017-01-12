@@ -105,7 +105,7 @@ public class SubscriptionIPNTest {
         detail.organizationId = organization.id;
         detail.timeCreated = new Date();
 
-        String body = "amount1=0.00&amount3=30.00&address_status=confirmed&subscr_date=07%3A02%3A12+Jan+11%2C+2017+PST&payer_id=4FK8LGP9AUH22&address_street=2020+Leanne+Ct&mc_amount1=0.00&mc_amount3=0.01&charset=windows-1252&address_zip=32792&first_name=David&reattempt=1&address_country_code=US&address_name=David+Chau&notify_version=3.8&subscr_id=I-M79VE7GS3UDH&payer_status=verified&business=luis%40trois.io&address_country=United+States&address_city=Winterpark&verify_sign=AZWo7I4TGPfXBH7LpR-EDFL3.aiWAjRfkQre4rdUseNFabpcvjo0ZXTv&payer_email=chaudavid.dc%40gmail.com&btn_id=128724092&last_name=Chau&address_state=FL&receiver_email=luis%40trois.io&recurring=1&txn_type=subscr_signup&item_name=Test+Monthly+Billing&mc_currency=USD&residence_country=US&period1=1+M&period3=1+M&ipn_track_id=2f49485c5b4b7";
+        String body = "txn_type=subscr_signup&subscr_id=I-L8NB5HF54FT3&last_name=last&residence_country=US&mc_currency=USD&item_name=Monthly+Event+Subscription&amount1=0.00&business=luis%40trois.io&amount3=30.00&recurring=1&verify_sign=AASzyL5CrabrvXMpM6GA4eeXaiKXAXWaZbNy73a08N4bAshE35-vAJDO&payer_status=verified&payer_email=email%40gmail.com&first_name=David&receiver_email=luis%40trois.io&payer_id=4FK8LGP9AUH22&reattempt=1&item_number=monthlyevent30&subscr_date=18%3A57%3A42+Jan+11%2C+2017+PST&btn_id=118211211&charset=windows-1252&notify_version=3.8&period1=1+M&mc_amount1=0.00&period3=1+M&mc_amount3=30.00&ipn_track_id=66fa47fc606fb";
         PaypalIPN ipn = this.paypalService.create(this.httpService.bodyToMap(body));
         ipn.custom = detail.custom.toString();
 System.out.println(new JsonTools().pretty(ipn));
