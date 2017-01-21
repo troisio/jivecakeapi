@@ -7,7 +7,7 @@ services:
     links:
       - mongo
     volumes:
-      - ..:/root/jcapi
+      - ..:/root/jivecakeapi
       - ./example-settings.yml:/root/settings.yml
   mongo:
-    image: mongo
+    image: mongo:3.4.1
