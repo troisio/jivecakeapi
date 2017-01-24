@@ -205,6 +205,7 @@ public class PaypalResource {
         @QueryParam("parent_txn_id") String parent_txn_id,
         @QueryParam("timeCreated") Long timeCreated,
         @QueryParam("timeCreatedLessThan") Long timeCreatedLessThan,
+        @QueryParam("item_number") String itemNumber,
         @QueryParam("timeCreatedGreaterThan") Long timeCreatedGreaterThan,
         @QueryParam("custom") List<String> custom,
         @QueryParam("payment_status") List<String> paymentStatuses,
@@ -241,6 +242,10 @@ public class PaypalResource {
 
             if (!custom.isEmpty()) {
                 query.field("custom").in(custom);
+            }
+
+            if (itemNumber != null) {
+                query.field("item_number").equal(itemNumber);
             }
 
             if (!paymentStatuses.isEmpty()) {
