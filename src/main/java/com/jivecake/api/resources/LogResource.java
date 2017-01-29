@@ -96,7 +96,7 @@ public class LogResource {
                 options.skip(offset);
             }
 
-            Paging<Request> entity = new Paging<>(query.asList(), query.count());
+            Paging<Request> entity = new Paging<>(query.asList(options), query.count());
             builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);
