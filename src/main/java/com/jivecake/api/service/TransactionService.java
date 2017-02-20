@@ -121,7 +121,7 @@ public class TransactionService {
     }
 
     public String getItemTransactionCreatedEventName() {
-        return "item.transaction.created";
+        return "transaction.created";
     }
 
     public List<List<Transaction>> getTransactionForest(List<Transaction> transactions) {
