@@ -27,6 +27,7 @@ import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.Query;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.PaypalIPN;
 import com.jivecake.api.model.Transaction;
@@ -48,11 +49,18 @@ public class TransactionService {
     public CompletableFuture<List<Transaction>> searchTransactionsFromText(String text, Auth0Service auth0Service) {
         CompletableFuture<List<Transaction>> future = new CompletableFuture<>();
 
-        List<ObjectId> itemIds = this.datastore.createQuery(Item.class)
+        List<Object> itemIds = this.datastore.createQuery(Item.class)
             .field("name").containsIgnoreCase(text)
-            .asList()
+            .asKeyList()
             .stream()
-            .map(item -> item.id)
+            .map(Key::getId)
+            .collect(Collectors.toList());
+
+        List<Object> eventIds = this.datastore.createQuery(Event.class)
+            .field("name").containsIgnoreCase(text)
+            .asKeyList()
+            .stream()
+            .map(Key::getId)
             .collect(Collectors.toList());
 
         auth0Service.searchEmailOrNames(text).thenAcceptAsync(auth0Users -> {
@@ -66,7 +74,8 @@ public class TransactionService {
                 query.criteria("email").startsWithIgnoreCase(text),
                 query.criteria("given_name").startsWithIgnoreCase(text),
                 query.criteria("family_name").startsWithIgnoreCase(text),
-                query.criteria("itemId").in(itemIds)
+                query.criteria("itemId").in(itemIds),
+                query.criteria("eventId").in(eventIds)
             );
 
             List<Transaction> transactions = query.asList();

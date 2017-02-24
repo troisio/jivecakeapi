@@ -188,11 +188,15 @@ public class ItemResource {
                     .entity("{\"error\": \"limit\"}")
                     .type(MediaType.APPLICATION_JSON);
             } else {
+                Organization organization = this.organizationService.read(event.organizationId);
+
                 Transaction userTransaction = new Transaction();
                 userTransaction.user_id = claims.get("sub").asText();
                 userTransaction.quantity = transaction.quantity;
                 userTransaction.status = this.transactionService.getPaymentCompleteStatus();
                 userTransaction.itemId = item.id;
+                userTransaction.eventId = event.id;
+                userTransaction.organizationId = organization.id;
                 userTransaction.currency = event.currency;
                 userTransaction.amount = 0;
                 userTransaction.timeCreated = new Date();
@@ -448,6 +452,8 @@ public class ItemResource {
                             transaction.linkedId = null;
                             transaction.linkedObjectClass = null;
                             transaction.itemId = item.id;
+                            transaction.eventId = item.eventId;
+                            transaction.organizationId = organization.id;
                             transaction.currency = event.currency;
                             transaction.timeCreated = new Date();
 
@@ -460,8 +466,11 @@ public class ItemResource {
                                 Response.ok(entity).type(MediaType.APPLICATION_JSON).build()
                             );
                         } else {
-                            promise.resume(Response.status(Status.BAD_REQUEST).build());
+                            promise.resume(Response.status(Status.BAD_REQUEST).entity("{\"error\": \"user\"}").type(MediaType.APPLICATION_JSON).build());
                         }
+                    }).exceptionally(e -> {
+                        promise.resume(e);
+                        return null;
                     });
                 }
             } else {

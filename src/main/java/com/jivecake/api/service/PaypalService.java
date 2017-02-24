@@ -25,6 +25,7 @@ import org.mongodb.morphia.query.Query;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.PaymentDetail;
 import com.jivecake.api.model.PaypalIPN;
@@ -331,11 +332,13 @@ public class PaypalService {
                     }
                 }
 
-                try {
-                    transaction.itemId = new ObjectId(payment.item_number);
-                } catch (IllegalArgumentException e) {
-                    transaction.status = this.transactionService.getMalformedDataStatus();
-                }
+                Event event = this.datastore.find(Event.class)
+                    .field("id").equal(item.eventId)
+                    .get();
+
+                transaction.itemId = item.id;
+                transaction.eventId = event.id;
+                transaction.organizationId = event.organizationId;
 
                 transactions.add(transaction);
             }
@@ -392,6 +395,8 @@ public class PaypalService {
                 transaction.linkedObjectClass = PaypalIPN.class.getSimpleName();
                 transaction.parentTransactionId = parentTransaction.id;
                 transaction.itemId = parentTransaction.itemId;
+                transaction.eventId = parentTransaction.eventId;
+                transaction.organizationId = parentTransaction.organizationId;
                 transaction.timeCreated = new Date();
 
                 try {
