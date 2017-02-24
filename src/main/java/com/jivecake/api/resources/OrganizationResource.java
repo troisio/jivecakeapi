@@ -54,6 +54,9 @@ import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PaymentProfileService;
 import com.jivecake.api.service.PaymentService;
 import com.jivecake.api.service.PermissionService;
+import com.jivecake.api.service.StripeService;
+import com.stripe.exception.StripeException;
+import com.stripe.model.Subscription;
 
 @CORS
 @Path("/organization")
@@ -68,6 +71,7 @@ public class OrganizationResource {
     private final FeatureService featureService;
     private final PermissionService permissionService;
     private final PaymentService paymentService;
+    private final StripeService stripeService;
     private final long maximumOrganizationsPerUser = 50;
 
     @Inject
@@ -81,7 +85,8 @@ public class OrganizationResource {
         PaymentProfileService paymentProfileService,
         FeatureService featureService,
         PermissionService permissionService,
-        PaymentService paymentService
+        PaymentService paymentService,
+        StripeService stripeService
     ) {
         this.applicationService = applicationService;
         this.organizationService = organizationService;
@@ -93,6 +98,7 @@ public class OrganizationResource {
         this.featureService = featureService;
         this.permissionService = permissionService;
         this.paymentService = paymentService;
+        this.stripeService = stripeService;
     }
 
     @POST
@@ -285,26 +291,38 @@ public class OrganizationResource {
                     .field("organizationId").equal(organization.id)
                     .count();
 
+                boolean hasFeatureViolation;
+
+                StripeException stripeException = null;
+
                 if (event.status == this.eventService.getActiveEventStatus()) {
                     activeEventsCount++;
+                    List<Subscription> subscriptions = null;
+
+                    try {
+                        subscriptions = stripeService.getCurrentSubscriptions(organization.id);
+                    } catch (StripeException e) {
+                        stripeException = e;
+                    }
+
+                    hasFeatureViolation = subscriptions != null && activeEventsCount > subscriptions.size();
+                } else {
+                    hasFeatureViolation = false;
                 }
 
-                List<Feature> currentOrganizationFeatures = this.featureService.getCurrentFeaturesQuery(new Date())
-                    .disableValidation()
-                    .field("organizationId").equal(organization.id)
-                    .asList();
-
-                boolean hasFeatureViolation = activeEventsCount > currentOrganizationFeatures.size();
                 long eventCount = this.eventService.query()
                     .field("organizationId").equal(organization.id)
                     .count();
 
-                if (eventCount > 50) {
+                if (stripeException != null) {
+                    builder = Response.status(Status.SERVICE_UNAVAILABLE)
+                        .entity(stripeException);
+                } else if (eventCount > 100) {
                     builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"limit\"}").type(MediaType.APPLICATION_JSON);
                 } else if (hasFeatureViolation) {
                     builder = Response.status(Status.BAD_REQUEST)
-                            .entity(currentOrganizationFeatures)
-                            .type(MediaType.APPLICATION_JSON);
+                        .entity("{\"error\": \"subscription\"}")
+                        .type(MediaType.APPLICATION_JSON);
                 } else {
                     event.id = null;
                     event.organizationId = organization.id;

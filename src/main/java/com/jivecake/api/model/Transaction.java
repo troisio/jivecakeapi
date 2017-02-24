@@ -14,6 +14,8 @@ import com.jivecake.api.serializer.ObjectIdSerializer;
 
 @Indexes({
     @Index(fields = @Field("itemId")),
+    @Index(fields = @Field("eventId")),
+    @Index(fields = @Field("organizationId")),
     @Index(fields = @Field("user_id")),
     @Index(fields = @Field("timeCreated")),
     @Index(fields={
@@ -41,6 +43,13 @@ public class Transaction {
 
     @JsonSerialize(using=ObjectIdSerializer.class)
     public ObjectId itemId;
+
+    @JsonSerialize(using=ObjectIdSerializer.class)
+    public ObjectId eventId;
+
+    @JsonSerialize(using=ObjectIdSerializer.class)
+    public ObjectId organizationId;
+
     public String user_id;
 
     @JsonSerialize(using=ObjectIdSerializer.class)

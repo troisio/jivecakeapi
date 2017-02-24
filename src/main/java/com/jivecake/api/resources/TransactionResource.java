@@ -89,12 +89,6 @@ public class TransactionResource {
     public void search(
         @QueryParam("organizationId") List<ObjectId> organizationIds,
         @QueryParam("eventId") List<ObjectId> eventIds,
-        @QueryParam("eventName") String eventName,
-        @QueryParam("eventStatus") Set<Integer> eventStatuses,
-        @QueryParam("itemTimeStartGreaterThan") Long itemTimeStartGreaterThan,
-        @QueryParam("itemTimeStartLessThan") Long itemTimeStartLessThan,
-        @QueryParam("itemTimeEndGreaterThan") Long itemTimeEndGreaterThan,
-        @QueryParam("itemTimeEndLessThan") Long itemTimeEndLessThan,
         @QueryParam("itemId") List<ObjectId> itemIds,
         @QueryParam("user_id") Set<String> userIds,
         @QueryParam("id") List<ObjectId> ids,
@@ -118,16 +112,20 @@ public class TransactionResource {
     ) {
         Query<Transaction> query = this.transactionService.query();
 
-        Set<ObjectId> idsFilter = this.mappingService.getTransactionIds(organizationIds, eventIds, itemIds);
-        idsFilter.addAll(ids);
+        if (!ids.isEmpty()) {
+            query.field("id").in(ids);
+        }
 
-        boolean hasIdFilter = !ids.isEmpty() ||
-                              !organizationIds.isEmpty() ||
-                              !eventIds.isEmpty() ||
-                              !itemIds.isEmpty();
+        if (!organizationIds.isEmpty()) {
+            query.field("organizationId").in(organizationIds);
+        }
 
-        if (hasIdFilter) {
-            query.field("id").in(idsFilter);
+        if (!eventIds.isEmpty()) {
+            query.field("eventId").in(eventIds);
+        }
+
+        if (!itemIds.isEmpty()) {
+            query.field("itemId").in(itemIds);
         }
 
         if (!statuses.isEmpty()) {
@@ -151,7 +149,7 @@ public class TransactionResource {
         }
 
         if (email != null) {
-            query.field("email").equal(email);
+            query.field("email").startsWithIgnoreCase(email);
         }
 
         if (quantity != null) {
@@ -172,73 +170,6 @@ public class TransactionResource {
 
         if (amountLessThan != null) {
             query.field("amount").lessThan(amountLessThan);
-        }
-
-        boolean hasItemTimeSearch = itemTimeStartGreaterThan != null ||
-                                    itemTimeStartLessThan != null ||
-                                    itemTimeEndLessThan != null ||
-                                    itemTimeEndGreaterThan != null ||
-                                    text != null;
-        boolean hasEventSearch = !eventStatuses.isEmpty() ||
-                                 eventName != null;
-
-        if (hasItemTimeSearch || hasEventSearch) {
-            List<Transaction> transactions = query.asList();
-
-            Set<Object> itemIdsQuery = transactions.stream()
-               .map(transaction -> transaction.itemId)
-               .collect(Collectors.toSet());
-
-            Query<Item> itemQuery = this.itemService.query()
-                .field("id").in(itemIdsQuery);
-
-            if (itemTimeStartGreaterThan != null) {
-                itemQuery.field("timeStart").greaterThan(new Date(itemTimeStartGreaterThan));
-            }
-
-            if (itemTimeStartLessThan != null) {
-                itemQuery.field("timeStart").lessThan(new Date(itemTimeStartLessThan));
-            }
-
-            if (itemTimeEndLessThan != null) {
-                itemQuery.field("timeEnd").lessThan(new Date(itemTimeEndLessThan));
-            }
-
-            if (itemTimeEndGreaterThan != null) {
-                itemQuery.field("timeEnd").greaterThan(new Date(itemTimeEndGreaterThan));
-            }
-
-            List<Item> queriedItems = itemQuery.asList();
-            List<Item> filteredItems;
-
-            if (hasEventSearch) {
-                Query<Event> eventQuery = this.eventService.query();
-
-                if (!eventStatuses.isEmpty()) {
-                    eventQuery.field("status").in(eventStatuses);
-                }
-
-                if (eventName != null) {
-                    eventQuery.field("name").startsWithIgnoreCase(eventName);
-                }
-
-                Set<ObjectId> filteredEventIds = eventQuery.asList()
-                    .stream()
-                    .map(event -> event.id)
-                    .collect(Collectors.toSet());
-
-                filteredItems = queriedItems.stream()
-                    .filter(item -> filteredEventIds.contains(item.eventId))
-                    .collect(Collectors.toList());
-            } else {
-                filteredItems = queriedItems;
-            }
-
-            List<ObjectId> queriedItemIds = filteredItems.stream()
-                .map(item -> item.id)
-                .collect(Collectors.toList());
-
-            query.field("itemId").in(queriedItemIds);
         }
 
         if (Objects.equals(leaf, true)) {
@@ -378,12 +309,16 @@ public class TransactionResource {
                                     transfer.id = new ObjectId();
                                     transfer.parentTransactionId = transaction.id;
                                     transfer.itemId = transaction.itemId;
+                                    transfer.eventId = transaction.eventId;
+                                    transfer.organizationId = transaction.organizationId;
                                     transfer.user_id = transaction.user_id;
                                     transfer.status = TransactionResource.this.transactionService.getTransferredStatus();
                                     transfer.timeCreated = new Date();
 
                                     Transaction completed = new Transaction();
                                     completed.itemId = transaction.itemId;
+                                    completed.eventId = transaction.eventId;
+                                    completed.organizationId = transaction.organizationId;
                                     completed.parentTransactionId = transfer.id;
                                     completed.user_id = users[0].get("user_id").asText();
                                     completed.status = TransactionResource.this.transactionService.getPaymentCompleteStatus();
@@ -675,6 +610,8 @@ public class TransactionResource {
                         revokedTransaction.middleName = transaction.middleName;
                         revokedTransaction.family_name = transaction.family_name;
                         revokedTransaction.itemId = transaction.itemId;
+                        revokedTransaction.eventId = transaction.eventId;
+                        revokedTransaction.organizationId = transaction.organizationId;
                         revokedTransaction.status = this.transactionService.getRevokedStatus();
                         revokedTransaction.user_id = transaction.user_id;
                         revokedTransaction.parentTransactionId = transaction.id;

@@ -1,0 +1,171 @@
+package com.jivecake.api.resources;
+
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import javax.inject.Inject;
+import javax.ws.rs.Consumes;
+import javax.ws.rs.DELETE;
+import javax.ws.rs.GET;
+import javax.ws.rs.POST;
+import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
+import javax.ws.rs.core.Context;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
+import javax.ws.rs.core.Response.ResponseBuilder;
+import javax.ws.rs.core.Response.Status;
+
+import org.bson.types.ObjectId;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.jivecake.api.filter.Authorized;
+import com.jivecake.api.filter.CORS;
+import com.jivecake.api.filter.PathObject;
+import com.jivecake.api.model.Organization;
+import com.jivecake.api.service.OrganizationService;
+import com.jivecake.api.service.PermissionService;
+import com.jivecake.api.service.StripeService;
+import com.stripe.exception.StripeException;
+import com.stripe.model.Customer;
+import com.stripe.model.Subscription;
+
+@CORS
+@Path("stripe")
+public class StripeResource {
+    private final StripeService stripeService;
+    private final PermissionService permissionService;
+    private final OrganizationService organizationService;
+
+    @Inject
+    public StripeResource(StripeService stripeService,  PermissionService permissionService, OrganizationService organizationService) {
+        this.stripeService = stripeService;
+        this.permissionService = permissionService;
+        this.organizationService = organizationService;
+    }
+
+    @DELETE
+    @Path("subscriptions/{subscriptionId}")
+    @Authorized
+    public Response cancelSubscription(
+        @PathParam("subscriptionId") String subscriptionId,
+        @Context JsonNode claims
+    ) {
+        ResponseBuilder builder;
+
+        Subscription subscription = null;
+        StripeException stripeException = null;
+
+        try {
+            subscription = Subscription.retrieve(subscriptionId, this.stripeService.getRequestOptions());
+        } catch (StripeException e) {
+            subscription = null;
+            stripeException = e;
+        }
+
+        if (stripeException != null) {
+            builder = Response.status(Status.SERVICE_UNAVAILABLE).entity(stripeException);
+        } else if (subscription == null) {
+            builder = Response.status(Status.NOT_FOUND);
+        } else {
+            String organizationId = subscription.getMetadata().get("organizationId");
+            Organization organization = this.organizationService.read(new ObjectId(organizationId));
+
+            boolean hasPermission = this.permissionService.has(
+                claims.get("sub").asText(),
+                Arrays.asList(organization),
+                this.organizationService.getReadPermission()
+            );
+
+            if (hasPermission) {
+                try {
+                    subscription.cancel(new HashMap<>(), this.stripeService.getRequestOptions());
+                    builder = Response.ok();
+                } catch (StripeException e) {
+                    builder = Response.status(Status.SERVICE_UNAVAILABLE).entity(e);
+                }
+            } else {
+                builder = Response.status(Status.UNAUTHORIZED);
+            }
+        }
+
+        return builder.build();
+    }
+
+    @GET
+    @Path("{organizationId}/subscription")
+    @Authorized
+    public Response subscribe(
+        @PathObject("organizationId") Organization organization,
+        @Context JsonNode claims
+    ) {
+        ResponseBuilder builder;
+
+        if (organization == null) {
+            builder = Response.status(Status.NOT_FOUND);
+        } else {
+            boolean hasPermission = this.permissionService.has(
+                claims.get("sub").asText(),
+                Arrays.asList(organization),
+                this.organizationService.getReadPermission()
+            );
+
+            if (hasPermission) {
+                try {
+                    List<Subscription> subscriptions = this.stripeService.getCurrentSubscriptions(organization.id);
+                    builder = Response.ok(subscriptions).type(MediaType.APPLICATION_JSON);
+                } catch (StripeException e) {
+                    builder = Response.status(Status.SERVICE_UNAVAILABLE).entity(e);
+                }
+            } else {
+                builder = Response.status(Status.UNAUTHORIZED);
+            }
+        }
+
+        return builder.build();
+    }
+
+    @POST
+    @Path("{organizationId}/subscribe")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Authorized
+    public Response subscribe(
+        @PathObject("organizationId") Organization organization,
+        Map<String, Object> json,
+        @Context JsonNode claims
+    ) {
+        ResponseBuilder builder;
+
+        if (organization == null) {
+            builder = Response.status(Status.UNAUTHORIZED);
+        } else {
+            Map<String, Object> customerOptions = new HashMap<>();
+            customerOptions.put("email", json.get("email"));
+            customerOptions.put("source", json.get("source"));
+            customerOptions.put("plan", this.stripeService.getMonthly10PlanId());
+
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put("sub", claims.get("sub").asText());
+            customerOptions.put("metadata", metadata);
+
+            Map<String, Object> subscriptionUpdate = new HashMap<>();
+            Map<String, Object> subscriptionMetaData = new HashMap<>();
+            subscriptionMetaData.put("organizationId", organization.id);
+            subscriptionUpdate.put("metadata", subscriptionMetaData);
+
+            try {
+                Customer customer = Customer.create(customerOptions, this.stripeService.getRequestOptions());
+                List<Subscription> subscriptions = customer.getSubscriptions().getData();
+                subscriptions.get(0).update(subscriptionUpdate, this.stripeService.getRequestOptions());
+
+                builder = Response.ok(customer).type(MediaType.APPLICATION_JSON);
+            } catch (StripeException e) {
+                builder = Response.status(400).entity(e);
+            }
+        }
+
+        return builder.build();
+    }
+}

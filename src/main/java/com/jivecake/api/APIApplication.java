@@ -37,6 +37,7 @@ import com.jivecake.api.filter.QueryRestrictFilter;
 import com.jivecake.api.filter.SingletonFactory;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.Permission;
+import com.jivecake.api.resources.AssetResource;
 import com.jivecake.api.resources.Auth0Resource;
 import com.jivecake.api.resources.ConnectionResource;
 import com.jivecake.api.resources.EventResource;
@@ -48,6 +49,7 @@ import com.jivecake.api.resources.OrganizationResource;
 import com.jivecake.api.resources.PaymentProfileResource;
 import com.jivecake.api.resources.PaypalResource;
 import com.jivecake.api.resources.PermissionResource;
+import com.jivecake.api.resources.StripeResource;
 import com.jivecake.api.resources.ToolsResource;
 import com.jivecake.api.resources.TransactionResource;
 import com.jivecake.api.resources.UserResource;
@@ -69,6 +71,7 @@ import com.jivecake.api.service.PaymentProfileService;
 import com.jivecake.api.service.PaymentService;
 import com.jivecake.api.service.PaypalService;
 import com.jivecake.api.service.PermissionService;
+import com.jivecake.api.service.StripeService;
 import com.jivecake.api.service.SubscriptionService;
 import com.jivecake.api.service.TransactionService;
 import com.mongodb.MongoClient;
@@ -96,6 +99,7 @@ public class APIApplication extends Application<APIConfiguration> {
 
     private final List<Class<?>> resources = Arrays.asList(
         Auth0Resource.class,
+        AssetResource.class,
         ConnectionResource.class,
         EventResource.class,
         FeatureResource.class,
@@ -106,6 +110,7 @@ public class APIApplication extends Application<APIConfiguration> {
         PaymentProfileResource.class,
         PaypalResource.class,
         PermissionResource.class,
+        StripeResource.class,
         ToolsResource.class,
         TransactionResource.class,
         UserResource.class
@@ -130,6 +135,7 @@ public class APIApplication extends Application<APIConfiguration> {
         PaymentService.class,
         PaypalService.class,
         PermissionService.class,
+        StripeService.class,
         SubscriptionService.class,
         TransactionService.class
     );
@@ -228,6 +234,7 @@ public class APIApplication extends Application<APIConfiguration> {
                 this.bind(new ApplicationService(application)).to(ApplicationService.class);
                 this.bind(datastore).to(Datastore.class);
                 this.bind(configuration.oauth).to(OAuthConfiguration.class);
+                this.bind(configuration.stripe).to(StripeConfiguration.class);
 
                 for (Class<?> clazz: APIApplication.this.services) {
                     this.bind(clazz).to(clazz).in(Singleton.class);

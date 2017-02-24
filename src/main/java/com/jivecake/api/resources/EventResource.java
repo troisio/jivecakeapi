@@ -27,37 +27,38 @@ import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Event;
-import com.jivecake.api.model.Feature;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.EventService;
-import com.jivecake.api.service.FeatureService;
 import com.jivecake.api.service.ItemService;
 import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PermissionService;
+import com.jivecake.api.service.StripeService;
+import com.stripe.exception.StripeException;
+import com.stripe.model.Subscription;
 
 @Path("/event")
 @CORS
 public class EventResource {
-    private final FeatureService featureService;
     private final EventService eventService;
     private final ItemService itemService;
     private final OrganizationService organizationService;
     private final PermissionService permissionService;
+    private final StripeService stripeService;
 
     @Inject
     public EventResource(
-        FeatureService featureService,
         EventService eventService,
         ItemService itemService,
         OrganizationService organizationService,
-        PermissionService permissionService
+        PermissionService permissionService,
+        StripeService stripeService
     ) {
-        this.featureService = featureService;
         this.itemService = itemService;
         this.eventService = eventService;
         this.organizationService = organizationService;
         this.permissionService = permissionService;
+        this.stripeService = stripeService;
     }
 
     @GET
@@ -152,28 +153,39 @@ public class EventResource {
                 .field("organizationId").equal(original.organizationId)
                 .count();
 
+            boolean hasSubscriptionViolation;
+            StripeException stripeException = null;
+            List<Subscription> currentSubscriptions = null;
+
             if (event.status == this.eventService.getActiveEventStatus()) {
                 activeEventsCount++;
+
+                try {
+                    currentSubscriptions = this.stripeService.getCurrentSubscriptions(original.organizationId);
+                } catch (StripeException e) {
+                    stripeException = e;
+                }
+
+                hasSubscriptionViolation = currentSubscriptions != null &&
+                    activeEventsCount > currentSubscriptions.size() &&
+                    event.status == this.eventService.getActiveEventStatus();
+            } else {
+                hasSubscriptionViolation = false;
             }
-
-            List<Feature> currentOrganizationFeatures = this.featureService.getCurrentFeaturesQuery(new Date())
-                .disableValidation()
-                .field("organizationId").equal(original.organizationId)
-                .asList();
-
-            boolean hasFeatureViolation = activeEventsCount > currentOrganizationFeatures.size() &&
-                                          event.status == this.eventService.getActiveEventStatus();
 
             boolean hasPaymentProfileViolation = (event.paymentProfileId == null && event.currency != null) ||
                                                  (event.paymentProfileId != null && event.currency == null);
 
-            if (hasPaymentProfileViolation) {
+            if (stripeException != null) {
+                builder = Response.status(Status.SERVICE_UNAVAILABLE)
+                    .entity(stripeException);
+            }  else if (hasPaymentProfileViolation) {
                 builder = Response.status(Status.BAD_REQUEST)
                     .entity("{\"error\": \"paymentProfile\"}")
                     .type(MediaType.APPLICATION_JSON);
-            } else if (hasFeatureViolation) {
+            } else if (hasSubscriptionViolation) {
                 builder = Response.status(Status.BAD_REQUEST)
-                        .entity(currentOrganizationFeatures)
+                        .entity(currentSubscriptions)
                         .type(MediaType.APPLICATION_JSON);
             } else {
                 event.organizationId = original.organizationId;

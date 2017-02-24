@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.util.Base64;
+import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,24 +30,32 @@ import javax.ws.rs.core.Response.Status;
 import org.apache.commons.io.FileUtils;
 import org.bytedeco.javacpp.opencv_core.Mat;
 import org.bytedeco.javacpp.opencv_core.Size;
+import org.mongodb.morphia.Datastore;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.LimitUserRequest;
 import com.jivecake.api.filter.Log;
+import com.jivecake.api.model.AssetType;
+import com.jivecake.api.model.EntityAsset;
+import com.jivecake.api.model.EntityType;
 import com.jivecake.api.service.FacialRecognitionService;
 import com.jivecake.api.service.ImgurService;
 
 @CORS
 @Path("/user")
 public class UserResource {
+    private final Datastore datastore;
     private final FacialRecognitionService facialRecognitionService;
     private final ImgurService imgurService;
     private final Size selfieResize = new Size(200, 200);
+    private final ObjectMapper mapper = new ObjectMapper();
 
     @Inject
-    public UserResource(FacialRecognitionService facialRecognitionService, ImgurService imgurService) {
+    public UserResource(Datastore datastore, FacialRecognitionService facialRecognitionService, ImgurService imgurService) {
+        this.datastore = datastore;
         this.facialRecognitionService = facialRecognitionService;
         this.imgurService = imgurService;
     }
@@ -109,7 +118,29 @@ public class UserResource {
                         this.imgurService.postImageRequest(form).submit(new InvocationCallback<Response>() {
                             @Override
                             public void completed(Response response) {
-                                promise.resume(response);
+                                JsonNode node = null;
+                                IOException exception = null;
+
+                                try {
+                                    node = UserResource.this.mapper.readTree(response.readEntity(String.class));
+                                } catch (IOException e) {
+                                    exception = e;
+                                }
+
+                                if (exception == null) {
+                                    EntityAsset asset = new EntityAsset();
+                                    asset.entityId = user_id;
+                                    asset.data = node.get("data").toString().getBytes();
+                                    asset.assetType = AssetType.IMGUR_IMAGE;
+                                    asset.entityType = EntityType.USER;
+                                    asset.timeCreated = new Date();
+
+                                    UserResource.this.datastore.save(asset);
+
+                                    promise.resume(Response.ok(asset).build());
+                                } else {
+                                    promise.resume(exception);
+                                }
                             }
 
                             @Override
