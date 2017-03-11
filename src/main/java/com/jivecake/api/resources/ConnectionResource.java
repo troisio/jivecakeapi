@@ -59,7 +59,7 @@ public class ConnectionResource {
         boolean hasPermission = this.permissionService.has(
             claims.get("sub").asText(),
             Application.class,
-            this.applicationService.getReadPermission(),
+            PermissionService.READ,
             application.id
         );
 

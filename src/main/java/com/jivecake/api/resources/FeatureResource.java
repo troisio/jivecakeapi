@@ -30,7 +30,6 @@ import com.jivecake.api.model.OrganizationFeature;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.FeatureService;
-import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PermissionService;
 
 @CORS
@@ -38,14 +37,12 @@ import com.jivecake.api.service.PermissionService;
 public class FeatureResource {
     private final ApplicationService applicationService;
     private final PermissionService permissionService;
-    private final OrganizationService organizationService;
     private final FeatureService featureService;
 
     @Inject
-    public FeatureResource(ApplicationService applicationService, PermissionService permissionService, OrganizationService organizationService, FeatureService featureService) {
+    public FeatureResource(ApplicationService applicationService, PermissionService permissionService, FeatureService featureService) {
         this.applicationService = applicationService;
         this.permissionService = permissionService;
-        this.organizationService = organizationService;
         this.featureService = featureService;
     }
 
@@ -112,7 +109,7 @@ public class FeatureResource {
 
         boolean hasPermission = this.permissionService.hasAllHierarchicalPermission(
             claims.get("sub").asText(),
-            this.organizationService.getReadPermission(),
+            PermissionService.READ,
             organizationPermissionIds
         );
 
@@ -142,7 +139,7 @@ public class FeatureResource {
             boolean hasPermission = this.permissionService.has(
                 claims.get("sub").asText(),
                 Application.class,
-                this.applicationService.getWritePermission(),
+                PermissionService.WRITE,
                 application.id
             );
 

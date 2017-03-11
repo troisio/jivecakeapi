@@ -1,16 +1,12 @@
 package com.jivecake.api.resources;
 
-import java.util.Date;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
-import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
-import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
@@ -52,15 +48,6 @@ public class PermissionResource {
         this.organizationService = organizationService;
     }
 
-    @GET
-    @Path("/type")
-    @Authorized
-    public Response getPermissionTypes() {
-        Map<String, Set<String>> entity = this.permissionService.getPermissionsByObjectClass();
-        Response response = Response.ok(entity).build();
-        return response;
-    }
-
     @DELETE
     @Authorized
     @QueryRestrict(hasAny=true, target={"user_id", "objectId"})
@@ -87,7 +74,7 @@ public class PermissionResource {
 
             hasOrganizationPermission = this.permissionService.hasAllHierarchicalPermission(
                 claims.get("sub").asText(),
-                this.organizationService.getWritePermission(),
+                PermissionService.WRITE,
                 organizationIds
             );
         } else {
@@ -118,46 +105,13 @@ public class PermissionResource {
         return builder.build();
     }
 
-    @POST
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Authorized
-    public Response create(@Context JsonNode claims, List<Permission> permissions) {
-        Application application = this.applicationService.read();
-
-        boolean hasPermission = this.permissionService.has(
-            claims.get("sub").asText(),
-            Application.class,
-            this.applicationService.getWritePermission(),
-            application.id
-        );
-
-        ResponseBuilder builder;
-
-        if (hasPermission) {
-            Date timeCreated = new Date();
-
-            for (Permission permission : permissions) {
-                permission.id = null;
-                permission.timeCreated = timeCreated;
-                permission.objectClass = this.organizationService.getPermissionObjectClass();
-            }
-
-            this.permissionService.write(permissions);
-            builder = Response.ok();
-        } else {
-            builder = Response.status(Status.UNAUTHORIZED);
-        }
-
-        return builder.build();
-    }
-
     @GET
     @Authorized
     public Response search(
         @QueryParam("user_id") List<String> user_ids,
         @QueryParam("objectId") List<ObjectId> objectIds,
         @QueryParam("objectClass") List<String> objectClasses,
-        @QueryParam("permission") Set<String> permissions,
+        @QueryParam("permission") Set<Integer> permissions,
         @QueryParam("limit") Integer limit,
         @QueryParam("offset") Integer offset,
         @Context JsonNode claims
@@ -181,13 +135,13 @@ public class PermissionResource {
         if (!permissions.isEmpty()) {
             query.and(
                 query.or(
-                     query.criteria("include").equal(this.permissionService.getIncludeAllPermission()),
+                     query.criteria("include").equal(PermissionService.ALL),
                      query.and(
-                         query.criteria("include").equal(this.permissionService.getIncludePermision()),
+                         query.criteria("include").equal(PermissionService.INCLUDE),
                          query.criteria("permissions").equal(permissions)
                      ),
                      query.and(
-                         query.criteria("include").equal(this.permissionService.getExcludePermission()),
+                         query.criteria("include").equal(PermissionService.EXCLUDE),
                          query.criteria("permissions").notEqual(permissions)
                      )
                  )
@@ -218,7 +172,7 @@ public class PermissionResource {
         boolean hasApplicationRead = this.permissionService.has(
             user_id,
             Application.class,
-            this.applicationService.getReadPermission(),
+            PermissionService.READ,
             application.id
         );
 
@@ -232,7 +186,7 @@ public class PermissionResource {
         if (organizationIds.size() == entities.size()) {
             hasOrganizationPermission = this.permissionService.hasAllHierarchicalPermission(
                 user_id,
-                this.organizationService.getReadPermission(),
+                PermissionService.READ,
                 organizationIds
             );
         } else {

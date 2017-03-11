@@ -221,7 +221,7 @@ public class PaypalResource {
         boolean hasPermission = this.permissionService.has(
             claims.get("sub").asText(),
             Application.class,
-            this.applicationService.getReadPermission(),
+            PermissionService.READ,
             application.id
         );
 
@@ -297,7 +297,7 @@ public class PaypalResource {
         boolean hasPermission = this.permissionService.has(
             claims.get("sub").asText(),
             Application.class,
-            this.applicationService.getWritePermission(),
+            PermissionService.WRITE,
             application.id
         );
 

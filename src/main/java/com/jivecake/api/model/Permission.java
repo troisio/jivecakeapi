@@ -28,27 +28,6 @@ public class Permission {
 
     public int include;
     public String objectClass;
-    public Set<String> permissions;
+    public Set<Integer> permissions;
     public Date timeCreated;
-
-    public boolean has(Set<String> permissions) {
-        boolean result;
-
-        if (this.include == 0) {
-            result = true;
-        } else if (this.include == 1) {
-            result = this.permissions.containsAll(permissions);
-        } else {
-            result = true;
-
-            for (String subject : permissions) {
-                if (this.permissions.contains(subject)) {
-                    result = false;
-                    break;
-                }
-            }
-        }
-
-        return result;
-    }
 }

@@ -26,6 +26,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.jivecake.api.filter.AuthorizedFilter;
 import com.jivecake.api.filter.CORSFilter;
 import com.jivecake.api.filter.ClaimsFactory;
+import com.jivecake.api.filter.HasPermissionFilter;
 import com.jivecake.api.filter.HashDateCount;
 import com.jivecake.api.filter.LimitUserRequestFilter;
 import com.jivecake.api.filter.LogFilter;
@@ -90,6 +91,7 @@ public class APIApplication extends Application<APIConfiguration> {
     private final List<Class<?>> filters = Arrays.asList(
         AuthorizedFilter.class,
         CORSFilter.class,
+        HasPermissionFilter.class,
         LimitUserRequestFilter.class,
         LogFilter.class,
         OAuthConfiguration.class,
@@ -271,14 +273,14 @@ public class APIApplication extends Application<APIConfiguration> {
 
         for (String user_id: user_ids) {
             Permission organizationPermission = new Permission();
-            organizationPermission.include = permissionService.getIncludeAllPermission();
+            organizationPermission.include = PermissionService.ALL;
             organizationPermission.objectClass = Organization.class.getSimpleName();
             organizationPermission.objectId = organization.id;
             organizationPermission.timeCreated = time;
             organizationPermission.user_id = user_id;
 
             Permission applicationPermission = new Permission();
-            applicationPermission.include = permissionService.getIncludeAllPermission();
+            applicationPermission.include = PermissionService.ALL;
             applicationPermission.objectClass = Application.class.getSimpleName();
             applicationPermission.objectId = application.id;
             applicationPermission.timeCreated = time;

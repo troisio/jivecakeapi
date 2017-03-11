@@ -4,7 +4,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
@@ -26,13 +25,13 @@ import javax.ws.rs.core.Response.Status;
 
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Key;
-import org.mongodb.morphia.query.Criteria;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
+import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
@@ -298,20 +297,6 @@ public class ItemResource {
 
         Query<Item> query = this.itemService.query().disableValidation();
 
-        if (!organizationIds.isEmpty()) {
-            Set<ObjectId> organizationEventIds = this.eventService.query()
-                .field("organizationId").in(organizationIds)
-                .asList()
-                .stream()
-                .map(event -> event.id)
-                .collect(Collectors.toSet());
-
-            Criteria organizationIdCriteria = query.criteria("organizationId").in(organizationIds);
-            Criteria eventIdCriteria = query.criteria("eventId").in(organizationEventIds);
-
-            query.or(organizationIdCriteria, eventIdCriteria);
-        }
-
         if (!ids.isEmpty()) {
             query.field("id").in(ids);
         }
@@ -322,6 +307,10 @@ public class ItemResource {
 
         if (!eventIds.isEmpty()) {
             query.field("eventId").in(eventIds);
+        }
+
+        if (!organizationIds.isEmpty()) {
+            query.field("organizationId").in(organizationIds);
         }
 
         if (name != null) {
@@ -347,7 +336,7 @@ public class ItemResource {
         boolean hasPermission = this.permissionService.has(
             claims.get("sub").asText(),
             items,
-            this.organizationService.getReadPermission()
+            PermissionService.READ
         );
 
         if (hasPermission) {
@@ -379,7 +368,7 @@ public class ItemResource {
             boolean hasPermission = this.permissionService.has(
                 claims.get("sub").asText(),
                 Arrays.asList(organization),
-                this.organizationService.getWritePermission()
+                PermissionService.WRITE
             );
 
             if (!this.transactionService.isValidTransaction(transaction)) {
@@ -408,7 +397,7 @@ public class ItemResource {
                         hasParentTransactionPermissionViolation = !this.permissionService.has(
                             claims.get("sub").asText(),
                             Arrays.asList(parentTransaction),
-                            this.organizationService.getWritePermission()
+                            PermissionService.WRITE
                         );
                     } else {
                         hasParentTransactionPermissionViolation = true;
@@ -482,61 +471,28 @@ public class ItemResource {
     @GET
     @Path("/{id}")
     @Authorized
+    @HasPermission(clazz=Item.class, id="id", permission=PermissionService.READ)
     public Response read(@PathObject("id") Item item, @Context JsonNode claims) {
-        ResponseBuilder builder;
-
-        if (item == null) {
-            builder = Response.status(Status.UNAUTHORIZED);
-        } else {
-            Event event = this.eventService.read(item.eventId);
-            Organization organization = this.organizationService.read(event.organizationId);
-
-            boolean hasPermission = this.permissionService.hasAnyHierarchicalPermission(
-                organization.id,
-                claims.get("sub").asText(),
-                this.organizationService.getReadPermission()
-            );
-
-            if (hasPermission) {
-                builder = Response.ok(item).type(MediaType.APPLICATION_JSON);
-            } else {
-                builder = Response.status(Status.UNAUTHORIZED);
-            }
-        }
-
-        return builder.build();
+        return Response.ok(item).type(MediaType.APPLICATION_JSON).build();
     }
 
     @DELETE
     @Path("/{id}")
     @Authorized
+    @HasPermission(clazz=Item.class, id="id", permission=PermissionService.WRITE)
     public Response delete(@PathObject("id") Item item, @Context JsonNode claims) {
+
         ResponseBuilder builder;
 
-        if (item == null) {
-            builder = Response.status(Status.NOT_FOUND);
+        long transactionCount = this.transactionService.query()
+            .field("itemId").equal(item.id)
+            .count();
+
+        if (transactionCount == 0) {
+            Item deletedItem = this.itemService.delete(item.id);
+            builder = Response.ok(deletedItem).type(MediaType.APPLICATION_JSON);
         } else {
-            Event event = this.eventService.read(item.eventId);
-            Organization organization = this.organizationService.read(event.organizationId);
-
-            boolean hasPermission = this.permissionService.hasAnyHierarchicalPermission(
-                organization.id,
-                claims.get("sub").asText(),
-                this.organizationService.getWritePermission()
-            );
-
-            if (hasPermission) {
-                long transactionCount = this.transactionService.query().field("itemId").equal(item.id).count();
-
-                if (transactionCount == 0) {
-                    Item deletedItem = this.itemService.delete(item.id);
-                    builder = Response.ok(deletedItem).type(MediaType.APPLICATION_JSON);
-                } else {
-                    builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"transaction\"}").type(MediaType.APPLICATION_JSON);
-                }
-            } else {
-                builder = Response.status(Status.UNAUTHORIZED);
-            }
+            builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"transaction\"}").type(MediaType.APPLICATION_JSON);
         }
 
         return builder.build();
@@ -546,60 +502,45 @@ public class ItemResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Path("/{id}")
     @Authorized
+    @HasPermission(clazz=Item.class, id="id", permission=PermissionService.WRITE)
     public Response update(@PathObject("id") Item searchedItem, @Context JsonNode claims, Item item) {
         ResponseBuilder builder;
 
-        if (searchedItem == null) {
-            builder = Response.status(Status.NOT_FOUND);
+        boolean hasTimeAndCountViolation = item.timeAmounts != null && !item.timeAmounts.isEmpty() &&
+                                           item.countAmounts != null && !item.countAmounts.isEmpty();
+
+        boolean hasNegativeAmountViolation = item.timeAmounts != null && item.timeAmounts.stream().filter(t -> t.amount < 0).count() > 0 ||
+                                             item.countAmounts != null && item.countAmounts.stream().filter(t -> t.amount < 0).count() > 0;
+
+        if (hasTimeAndCountViolation || hasNegativeAmountViolation) {
+            builder = Response.status(Status.BAD_REQUEST);
         } else {
-            Event event = this.eventService.read(item.eventId);
-            Organization organization = this.organizationService.read(event.organizationId);
+            item.id = searchedItem.id;
+            item.timeCreated = searchedItem.timeCreated;
+            item.eventId = searchedItem.eventId;
+            item.organizationId = searchedItem.organizationId;
+            item.timeUpdated = new Date();
 
-            boolean hasPermission = this.permissionService.hasAnyHierarchicalPermission(
-                organization.id,
-                claims.get("sub").asText(),
-                this.organizationService.getWritePermission()
-            );
-
-            if (hasPermission) {
-                boolean hasTimeAndCountViolation = item.timeAmounts != null && !item.timeAmounts.isEmpty() &&
-                                                   item.countAmounts != null && !item.countAmounts.isEmpty();
-
-                boolean hasNegativeAmountViolation = item.timeAmounts != null && item.timeAmounts.stream().filter(t -> t.amount < 0).count() > 0 ||
-                                                     item.countAmounts != null && item.countAmounts.stream().filter(t -> t.amount < 0).count() > 0;
-
-                if (hasTimeAndCountViolation || hasNegativeAmountViolation) {
-                    builder = Response.status(Status.BAD_REQUEST);
+            if (item.timeAmounts != null) {
+                if (item.timeAmounts.isEmpty()) {
+                    item.timeAmounts = null;
                 } else {
-                    item.id = searchedItem.id;
-                    item.timeCreated = searchedItem.timeCreated;
-                    item.timeUpdated = new Date();
-                    item.eventId = searchedItem.eventId;
-
-                    if (item.timeAmounts != null) {
-                        if (item.timeAmounts.isEmpty()) {
-                            item.timeAmounts = null;
-                        } else {
-                            Collections.sort(item.timeAmounts, (first, second) -> first.after.compareTo(second.after));
-                        }
-                    }
-
-                    if (item.countAmounts != null) {
-                        if (item.countAmounts.isEmpty()) {
-                            item.countAmounts = null;
-                        } else {
-                            Collections.sort(item.countAmounts, (first, second) -> first.count - second.count);
-                        }
-                    }
-
-                    Key<Item> key = this.itemService.save(item);
-
-                    Item entity = this.itemService.read((ObjectId)key.getId());
-                    builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+                    Collections.sort(item.timeAmounts, (first, second) -> first.after.compareTo(second.after));
                 }
-            } else {
-                builder = Response.status(Status.UNAUTHORIZED);
             }
+
+            if (item.countAmounts != null) {
+                if (item.countAmounts.isEmpty()) {
+                    item.countAmounts = null;
+                } else {
+                    Collections.sort(item.countAmounts, (first, second) -> first.count - second.count);
+                }
+            }
+
+            Key<Item> key = this.itemService.save(item);
+
+            Item entity = this.itemService.read((ObjectId)key.getId());
+            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         }
 
         return builder.build();

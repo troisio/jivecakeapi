@@ -21,13 +21,13 @@ import org.mongodb.morphia.query.Query;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
+import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.filter.QueryRestrict;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.PaymentProfile;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.EventService;
-import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PaymentProfileService;
 import com.jivecake.api.service.PermissionService;
 
@@ -35,19 +35,16 @@ import com.jivecake.api.service.PermissionService;
 @CORS
 public class PaymentProfileResource {
     private final PaymentProfileService paymentProfileService;
-    private final OrganizationService organizationService;
     private final EventService eventService;
     private final PermissionService permissionService;
 
     @Inject
     public PaymentProfileResource(
-        OrganizationService organizationService,
         EventService eventService,
         PaymentProfileService paymentProfileService,
         PermissionService permissionService
     ) {
         this.paymentProfileService = paymentProfileService;
-        this.organizationService = organizationService;
         this.eventService = eventService;
         this.permissionService = permissionService;
     }
@@ -55,31 +52,13 @@ public class PaymentProfileResource {
     @GET
     @Authorized
     @Path("/{id}")
+    @HasPermission(clazz=PaymentProfile.class, id="id", permission=PermissionService.READ)
     public Response readPaymentProfile(@PathObject(value="id") PaymentProfile profile, @Context JsonNode claims) {
-        ResponseBuilder builder;
-
-        if (profile == null) {
-            builder = Response.status(Status.NOT_FOUND);
-        } else {
-            boolean hasPermission = this.permissionService.hasAnyHierarchicalPermission(
-                profile.organizationId,
-                claims.get("sub").asText(),
-                this.organizationService.getReadPermission()
-            );
-
-            if (hasPermission) {
-                builder = Response.ok(profile).type(MediaType.APPLICATION_JSON);
-            } else {
-                builder = Response.status(Status.UNAUTHORIZED);
-            }
-        }
-
-        return builder.build();
+        return Response.ok(profile).type(MediaType.APPLICATION_JSON).build();
     }
 
     @GET
     @Path("/search")
-    @QueryRestrict(hasAny=true, target={"id"})
     public Response search(
         @QueryParam("id") List<ObjectId> ids
     ) {
@@ -110,7 +89,7 @@ public class PaymentProfileResource {
 
         boolean hasPermission = this.permissionService.hasAllHierarchicalPermission(
             claims.get("sub").asText(),
-            this.organizationService.getReadPermission(),
+            PermissionService.READ,
             organizationIds
         );
 
@@ -149,33 +128,22 @@ public class PaymentProfileResource {
     @DELETE
     @Authorized
     @Path("/{id}")
+    @HasPermission(clazz=PaymentProfile.class, id="id", permission=PermissionService.WRITE)
     public Response delete(@PathObject("id") PaymentProfile profile, @Context JsonNode claims) {
         ResponseBuilder builder;
 
-        if (profile == null) {
-            builder = Response.status(Status.NOT_FOUND);
+        List<Event> eventsUsingProfile = this.eventService.query()
+            .field("paymentProfileId")
+            .equal(profile.id)
+            .asList();
+
+        if (eventsUsingProfile.isEmpty()) {
+            this.paymentProfileService.delete(profile.id);
+            builder = Response.ok();
         } else {
-            boolean hasPermission = this.permissionService.hasAnyHierarchicalPermission(
-                profile.organizationId,
-                claims.get("sub").asText(),
-                this.organizationService.getWritePermission()
-            );
-
-            if (hasPermission) {
-                List<Event> eventsUsingProfile = this.eventService.query()
-                    .field("paymentProfileId")
-                    .equal(profile.id)
-                    .asList();
-
-                if (eventsUsingProfile.isEmpty()) {
-                    this.paymentProfileService.delete(profile.id);
-                    builder = Response.ok().type(MediaType.APPLICATION_JSON);
-                } else {
-                    builder = Response.status(Status.BAD_REQUEST).entity(eventsUsingProfile).type(MediaType.APPLICATION_JSON);
-                }
-            } else {
-                builder = Response.status(Status.UNAUTHORIZED);
-            }
+            builder = Response.status(Status.BAD_REQUEST)
+                .entity(eventsUsingProfile)
+                .type(MediaType.APPLICATION_JSON);
         }
 
         return builder.build();

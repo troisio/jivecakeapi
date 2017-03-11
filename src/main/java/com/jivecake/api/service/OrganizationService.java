@@ -1,11 +1,8 @@
 package com.jivecake.api.service;
 
-import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -19,10 +16,6 @@ import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.OrganizationNode;
 
 public class OrganizationService {
-    private final Set<String> permissions = new HashSet<>(Arrays.asList(
-        this.getWritePermission(),
-        this.getReadPermission()
-    ));
     private final Datastore datastore;
 
     @Inject
@@ -54,10 +47,6 @@ public class OrganizationService {
         Query<Organization> deleteQuery = this.datastore.createQuery(Organization.class).filter("id", id);
         Organization result = this.datastore.findAndDelete(deleteQuery);
         return result;
-    }
-
-    public Set<String> getPermissions() {
-        return this.permissions;
     }
 
     public String getPermissionObjectClass() {
@@ -92,14 +81,6 @@ public class OrganizationService {
         }
 
         return result;
-    }
-
-    public String getWritePermission() {
-        return "WRITE";
-    }
-
-    public String getReadPermission() {
-        return "READ";
     }
 
     public Key<Organization> save(Organization organization) {
