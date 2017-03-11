@@ -38,6 +38,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
+import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
@@ -98,9 +99,6 @@ public class TransactionResource {
         @QueryParam("given_name") String given_name,
         @QueryParam("family_name") String family_name,
         @QueryParam("email") String email,
-        @QueryParam("quantity") Long quantity,
-        @QueryParam("amountLessThan") Double amountLessThan,
-        @QueryParam("amountGreaterThan") Double amountGreaterThan,
         @QueryParam("leaf") Boolean leaf,
         @QueryParam("status") List<Integer> statuses,
         @QueryParam("text") String text,
@@ -152,24 +150,12 @@ public class TransactionResource {
             query.field("email").startsWithIgnoreCase(email);
         }
 
-        if (quantity != null) {
-            query.field("quantity").equal(quantity);
-        }
-
         if (given_name != null) {
             query.field("given_name").startsWithIgnoreCase(given_name);
         }
 
         if (family_name != null) {
             query.field("family_name").startsWithIgnoreCase(family_name);
-        }
-
-        if (amountGreaterThan != null) {
-            query.field("amount").greaterThan(amountGreaterThan);
-        }
-
-        if (amountLessThan != null) {
-            query.field("amount").lessThan(amountLessThan);
         }
 
         if (Objects.equals(leaf, true)) {
@@ -221,11 +207,7 @@ public class TransactionResource {
             String user_id = claims.get("sub").asText();
 
             boolean hasUserIdPermission = userIds.size() == 1 && userIds.contains(user_id);
-            boolean hasPermission = this.permissionService.has(
-                user_id,
-                transactions,
-                this.organizationService.getReadPermission()
-            );
+            boolean hasPermission = this.permissionService.has(user_id, transactions, PermissionService.READ);
 
             ResponseBuilder builder;
 
@@ -282,7 +264,7 @@ public class TransactionResource {
                     this.permissionService.has(
                         requester,
                         Arrays.asList(transaction),
-                        this.organizationService.getWritePermission()
+                        PermissionService.WRITE
                     );
 
                 if (hasPermission) {
@@ -424,7 +406,7 @@ public class TransactionResource {
         boolean hasPermission = this.permissionService.has(
             requesterId,
             transactions,
-            this.organizationService.getReadPermission()
+            PermissionService.READ
         );
 
         if (!transactions.isEmpty() && (hasPermission || transactionsNotBelongingToRequester == 0)) {
@@ -470,7 +452,7 @@ public class TransactionResource {
                 hasPermission = this.permissionService.has(
                     userId,
                     Arrays.asList(transaction.id),
-                    this.organizationService.getReadPermission()
+                    PermissionService.READ
                 );
             }
 
@@ -505,7 +487,7 @@ public class TransactionResource {
 
             boolean hasPermission = this.permissionService.hasAllHierarchicalPermission(
                 (String)claims.get("sub"),
-                this.organizationService.getReadPermission(),
+                PermissionService.READ,
                 aggregatedOrganizationIds
             );
 
@@ -592,7 +574,7 @@ public class TransactionResource {
             boolean hasPermission = this.permissionService.has(
                 claims.get("sub").asText(),
                 Arrays.asList(organization),
-                this.organizationService.getWritePermission()
+                PermissionService.WRITE
             );
 
             boolean targetIsCompleted = transaction.status == this.transactionService.getPaymentCompleteStatus();
@@ -636,37 +618,20 @@ public class TransactionResource {
     @DELETE
     @Path("/{id}")
     @Authorized
+    @HasPermission(clazz=Transaction.class, id="id", permission=PermissionService.WRITE)
     public Response delete(@PathObject("id") Transaction transaction, @Context JsonNode claims) {
         ResponseBuilder builder;
 
-        if (transaction == null) {
-            builder = Response.status(Status.NOT_FOUND);
+        boolean isVendorTransaction = PaypalIPN.class.getSimpleName().equals(transaction.linkedObjectClass);
+        boolean hasChildTransaction = this.transactionService.query()
+            .field("parentTransactionId").equal(transaction.id)
+            .count() > 0;
+
+        if (isVendorTransaction || hasChildTransaction) {
+            builder = Response.status(Status.BAD_REQUEST);
         } else {
-            Item item = this.itemService.read(transaction.itemId);
-            Event event = this.eventService.read(item.eventId);
-            Organization organization = this.organizationService.read(event.organizationId);
-
-            boolean hasPermission = this.permissionService.hasAnyHierarchicalPermission(
-                organization.id,
-                claims.get("sub").asText(),
-                this.organizationService.getWritePermission()
-            );
-
-            if (hasPermission) {
-                boolean isVendorTransaction = PaypalIPN.class.getSimpleName().equals(transaction.linkedObjectClass);
-                boolean hasChildTransaction = this.transactionService.query()
-                    .field("parentTransactionId").equal(transaction.id)
-                    .count() > 0;
-
-                if (isVendorTransaction || hasChildTransaction) {
-                    builder = Response.status(Status.BAD_REQUEST);
-                } else {
-                    Transaction entity = this.transactionService.delete(transaction.id);
-                    builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-                }
-            } else {
-                builder = Response.status(Status.UNAUTHORIZED);
-            }
+            Transaction entity = this.transactionService.delete(transaction.id);
+            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         }
 
         return builder.build();

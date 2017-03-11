@@ -25,6 +25,7 @@ import org.mongodb.morphia.query.Query;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
+import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
@@ -135,69 +136,64 @@ public class EventResource {
 
     @POST
     @Path("/{id}")
-    @Authorized
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response update(@PathObject("id") Event original, @Context JsonNode claims, Event event) {
+    @Authorized
+    @HasPermission(clazz=Event.class, id="id", permission=PermissionService.WRITE)
+    public Response update(
+        @PathObject("id") Event original,
+        @Context JsonNode claims,
+        Event event
+    ) {
         ResponseBuilder builder;
 
-        boolean hasPermission = this.permissionService.hasAnyHierarchicalPermission(
-            event.organizationId,
-            claims.get("sub").asText(),
-            this.organizationService.getWritePermission()
-        );
+        long activeEventsCount = this.eventService.query()
+            .field("id").notEqual(original.id)
+            .field("status").equal(this.eventService.getActiveEventStatus())
+            .field("organizationId").equal(original.organizationId)
+            .count();
 
-        if (hasPermission) {
-            long activeEventsCount = this.eventService.query()
-                .field("id").notEqual(original.id)
-                .field("status").equal(this.eventService.getActiveEventStatus())
-                .field("organizationId").equal(original.organizationId)
-                .count();
+        boolean hasSubscriptionViolation;
+        StripeException stripeException = null;
+        List<Subscription> currentSubscriptions = null;
 
-            boolean hasSubscriptionViolation;
-            StripeException stripeException = null;
-            List<Subscription> currentSubscriptions = null;
+        if (event.status == this.eventService.getActiveEventStatus()) {
+            activeEventsCount++;
 
-            if (event.status == this.eventService.getActiveEventStatus()) {
-                activeEventsCount++;
-
-                try {
-                    currentSubscriptions = this.stripeService.getCurrentSubscriptions(original.organizationId);
-                } catch (StripeException e) {
-                    stripeException = e;
-                }
-
-                hasSubscriptionViolation = currentSubscriptions != null &&
-                    activeEventsCount > currentSubscriptions.size() &&
-                    event.status == this.eventService.getActiveEventStatus();
-            } else {
-                hasSubscriptionViolation = false;
+            try {
+                currentSubscriptions = this.stripeService.getCurrentSubscriptions(original.organizationId);
+            } catch (StripeException e) {
+                stripeException = e;
             }
 
-            boolean hasPaymentProfileViolation = (event.paymentProfileId == null && event.currency != null) ||
-                                                 (event.paymentProfileId != null && event.currency == null);
-
-            if (stripeException != null) {
-                builder = Response.status(Status.SERVICE_UNAVAILABLE)
-                    .entity(stripeException);
-            }  else if (hasPaymentProfileViolation) {
-                builder = Response.status(Status.BAD_REQUEST)
-                    .entity("{\"error\": \"paymentProfile\"}")
-                    .type(MediaType.APPLICATION_JSON);
-            } else if (hasSubscriptionViolation) {
-                builder = Response.status(Status.BAD_REQUEST)
-                        .entity(currentSubscriptions)
-                        .type(MediaType.APPLICATION_JSON);
-            } else {
-                event.organizationId = original.organizationId;
-                event.id = original.id;
-                event.timeCreated = original.timeCreated;
-                event.timeUpdated = new Date();
-                Key<Event> key = this.eventService.save(event);
-                Event searchedEvent = this.eventService.read((ObjectId)key.getId());
-                builder = Response.ok(searchedEvent).type(MediaType.APPLICATION_JSON);
-            }
+            hasSubscriptionViolation = currentSubscriptions != null &&
+                activeEventsCount > currentSubscriptions.size() &&
+                event.status == this.eventService.getActiveEventStatus();
         } else {
-            builder = Response.status(Status.UNAUTHORIZED);
+            hasSubscriptionViolation = false;
+        }
+
+        boolean hasPaymentProfileViolation = (event.paymentProfileId == null && event.currency != null) ||
+                                             (event.paymentProfileId != null && event.currency == null);
+
+        if (stripeException != null) {
+            builder = Response.status(Status.SERVICE_UNAVAILABLE)
+                .entity(stripeException);
+        }  else if (hasPaymentProfileViolation) {
+            builder = Response.status(Status.BAD_REQUEST)
+                .entity("{\"error\": \"paymentProfile\"}")
+                .type(MediaType.APPLICATION_JSON);
+        } else if (hasSubscriptionViolation) {
+            builder = Response.status(Status.BAD_REQUEST)
+                    .entity(currentSubscriptions)
+                    .type(MediaType.APPLICATION_JSON);
+        } else {
+            event.organizationId = original.organizationId;
+            event.id = original.id;
+            event.timeCreated = original.timeCreated;
+            event.timeUpdated = new Date();
+            Key<Event> key = this.eventService.save(event);
+            Event searchedEvent = this.eventService.read((ObjectId)key.getId());
+            builder = Response.ok(searchedEvent).type(MediaType.APPLICATION_JSON);
         }
 
         return builder.build();
@@ -207,67 +203,33 @@ public class EventResource {
     @Path("/{id}/item")
     @Authorized
     @Consumes(MediaType.APPLICATION_JSON)
+    @HasPermission(clazz=Event.class, id="id", permission=PermissionService.WRITE)
     public Response createItem(@PathObject("id") Event event, Item item, @Context JsonNode claims) {
-        ResponseBuilder builder;
+        item.eventId = event.id;
+        item.organizationId = event.organizationId;
+        item.timeCreated = new Date();
 
-        if (event == null) {
-            builder = Response.status(Status.NOT_FOUND);
-        } else {
-            boolean hasPermission = this.permissionService.hasAnyHierarchicalPermission(
-                event.organizationId,
-                claims.get("sub").asText(),
-                this.organizationService.getWritePermission()
-            );
-
-            if (hasPermission) {
-                item.eventId = event.id;
-                item.timeCreated = new Date();
-
-                Key<Item> key = this.itemService.save(item);
-                Item searchedItem = this.itemService.read((ObjectId)key.getId());
-                builder = Response.ok(searchedItem).type(MediaType.APPLICATION_JSON);
-            } else {
-                builder = Response.status(Status.UNAUTHORIZED);
-            }
-        }
-
-        return builder.build();
+        Key<Item> key = this.itemService.save(item);
+        Item searchedItem = this.itemService.read((ObjectId)key.getId());
+        return Response.ok(searchedItem).type(MediaType.APPLICATION_JSON).build();
     }
 
     @DELETE
-    @Authorized
     @Path("/{id}")
+    @Authorized
+    @HasPermission(clazz=Event.class, id="id", permission=PermissionService.WRITE)
     public Response delete(@PathObject("id") Event event, @Context JsonNode claims) {
+        long itemCount = this.itemService.query()
+            .field("eventId").equal(event.id)
+            .count();
+
         ResponseBuilder builder;
 
-        if (event == null) {
-            builder = Response.status(Status.NOT_FOUND);
+        if (itemCount == 0) {
+            Event entity = this.eventService.delete(event.id);
+            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         } else {
-            boolean hasPermission = this.permissionService.hasAnyHierarchicalPermission(
-                event.organizationId,
-                claims.get("sub").asText(),
-                this.organizationService.getWritePermission()
-            );
-
-            if (hasPermission) {
-                Query<Item> query = this.itemService.query().disableValidation();
-
-                query.or(
-                    query.criteria("eventId").equal(event.id),
-                    query.criteria("organizationId").equal(event.organizationId)
-                );
-
-                long itemCount = query.count();
-
-                if (itemCount == 0) {
-                    Event entity = this.eventService.delete(event.id);
-                    builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-                } else {
-                    builder = Response.status(Status.BAD_REQUEST).entity(itemCount).type(MediaType.APPLICATION_JSON);
-                }
-            } else {
-                builder = Response.status(Status.UNAUTHORIZED);
-            }
+            builder = Response.status(Status.BAD_REQUEST).entity(itemCount).type(MediaType.APPLICATION_JSON);
         }
 
         return builder.build();
@@ -341,7 +303,12 @@ public class EventResource {
         }
 
         List<Event> entities = query.asList(options);
-        boolean hasPermission = this.permissionService.has(claims.get("sub").asText(), entities, this.organizationService.getReadPermission());
+
+        boolean hasPermission = this.permissionService.has(
+            claims.get("sub").asText(),
+            entities,
+            PermissionService.READ
+        );
 
         if (hasPermission) {
             Paging<Event> entity = new Paging<>(entities, query.count());

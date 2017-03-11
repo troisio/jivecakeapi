@@ -29,6 +29,7 @@ import org.mongodb.morphia.query.Query;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
+import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Application;
 import com.jivecake.api.model.Event;
@@ -116,7 +117,7 @@ public class OrganizationResource {
             boolean hasPermission = this.permissionService.has(
                 claims.get("sub").asText(),
                 Application.class,
-                this.applicationService.getWritePermission(),
+                PermissionService.WRITE,
                 application.id
             );
 
@@ -140,108 +141,65 @@ public class OrganizationResource {
     @Path("/{id}/permission")
     @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
-    public Response write(@PathObject("id") Organization organization, @Context JsonNode claims, List<Permission> permissions) {
-        ResponseBuilder builder;
+    @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
+    public Response update(@PathObject("id") Organization organization, @Context JsonNode claims, List<Permission> permissions) {
+        Date timeCreated = new Date();
 
-        if (organization == null) {
-            builder = Response.status(Status.NOT_FOUND);
-        } else {
-            boolean hasPermission = this.permissionService.hasAnyHierarchicalPermission(
-                organization.id,
-                claims.get("sub").asText(),
-                this.organizationService.getWritePermission()
-            );
-
-            if (hasPermission) {
-                Date timeCreated = new Date();
-
-                for (Permission permission : permissions) {
-                    permission.id = null;
-                    permission.objectId = organization.id;
-                    permission.timeCreated = timeCreated;
-                    permission.objectClass = this.organizationService.getPermissionObjectClass();
-                }
-
-                this.permissionService.write(permissions);
-
-                List<Permission> entity = this.permissionService.query()
-                    .field("objectId").equal(organization.id)
-                    .field("objectClass").equal(this.organizationService.getPermissionObjectClass())
-                    .asList();
-
-                builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-            } else {
-                builder = Response.status(Status.UNAUTHORIZED);
-            }
+        for (Permission permission : permissions) {
+            permission.id = null;
+            permission.objectId = organization.id;
+            permission.timeCreated = timeCreated;
+            permission.objectClass = this.organizationService.getPermissionObjectClass();
         }
 
-        return builder.build();
+        this.permissionService.write(permissions);
+
+        List<Permission> entity = this.permissionService.query()
+            .field("objectId").equal(organization.id)
+            .field("objectClass").equal(this.organizationService.getPermissionObjectClass())
+            .asList();
+
+        return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
     }
 
     @POST
     @Path("/{id}/payment/detail")
     @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
+    @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
     public Response createSubscriptionPaymentDetail(@PathObject("id") Organization organization, @Context JsonNode claims, SubscriptionPaymentDetail detail) {
-        ResponseBuilder builder;
+        detail.custom = new ObjectId();
+        detail.organizationId = organization.id;
+        detail.user_id = claims.get("sub").asText();
+        detail.timeCreated = new Date();
 
-        boolean hasPermission = this.permissionService.hasAnyHierarchicalPermission(
-            organization.id,
-            claims.get("sub").asText(),
-            this.organizationService.getWritePermission()
-        );
+        Key<PaymentDetail> key = this.paymentService.save(detail);
+        PaymentDetail entity = this.paymentService.readPaymentDetail((ObjectId)key.getId());
 
-        if (hasPermission) {
-            detail.custom = new ObjectId();
-            detail.organizationId = organization.id;
-            detail.user_id = claims.get("sub").asText();
-            detail.timeCreated = new Date();
-
-            Key<PaymentDetail> key = this.paymentService.save(detail);
-            PaymentDetail entity = this.paymentService.readPaymentDetail((ObjectId)key.getId());
-
-            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-        } else {
-            builder = Response.status(Status.UNAUTHORIZED);
-        }
-
-        return builder.build();
+        return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
     }
 
     @POST
-    @Authorized
     @Path("/{id}/payment/profile/paypal")
     @Consumes(MediaType.APPLICATION_JSON)
+    @Authorized
+    @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
     public Response createPaypalPaymentProfile(@PathObject("id") Organization organization, @Context JsonNode claims, PaypalPaymentProfile profile) {
         ResponseBuilder builder;
 
-        if (organization == null) {
-            builder = Response.status(Status.NOT_FOUND);
+        long profileCount = this.paymentProfileService.query()
+            .field("organizationId").equal(organization.id)
+            .count();
+
+        if (profileCount > 50) {
+            builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"limit\"}").type(MediaType.APPLICATION_JSON);
         } else {
-            boolean hasPermission = this.permissionService.hasAnyHierarchicalPermission(
-                organization.id,
-                claims.get("sub").asText(),
-                this.organizationService.getWritePermission()
-            );
+            profile.organizationId = organization.id;
+            profile.timeCreated = new Date();
 
-            if (hasPermission) {
-                long profileCount = this.paymentProfileService.query()
-                    .field("organizationId").equal(organization.id)
-                    .count();
-
-                if (profileCount > 50) {
-                    builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"limit\"}").type(MediaType.APPLICATION_JSON);
-                } else {
-                    profile.organizationId = organization.id;
-                    profile.timeCreated = new Date();
-
-                    Key<PaymentProfile> key = this.paymentProfileService.save(profile);
-                    PaymentProfile entity = this.paymentProfileService.read((ObjectId)key.getId());
-                    builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-                }
-            } else {
-                builder = Response.status(Status.UNAUTHORIZED);
-            }
+            Key<PaymentProfile> key = this.paymentProfileService.save(profile);
+            PaymentProfile entity = this.paymentProfileService.read((ObjectId)key.getId());
+            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         }
 
         return builder.build();
@@ -250,91 +208,65 @@ public class OrganizationResource {
     @GET
     @Path("/{id}/tree")
     @Authorized
+    @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.READ)
     public Response getTree(@PathObject("id") Organization organization, @Context JsonNode claims) {
-        boolean hasPermission = this.permissionService.hasAnyHierarchicalPermission(
-            organization.id,
-            claims.get("sub").asText(),
-            this.applicationService.getReadPermission()
-        );
-
-        ResponseBuilder builder;
-
-        if (hasPermission) {
-            OrganizationNode tree = this.organizationService.getOrganizationTree(organization.id);
-            builder = Response.ok(tree).type(MediaType.APPLICATION_JSON);
-        } else {
-            builder = Response.status(Status.UNAUTHORIZED);
-        }
-
-        return builder.build();
+        OrganizationNode tree = this.organizationService.getOrganizationTree(organization.id);
+        return Response.ok(tree).type(MediaType.APPLICATION_JSON).build();
     }
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Path("/{id}/event")
     @Authorized
+    @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
     public Response createEvent(@PathObject("id") Organization organization, @Context JsonNode claims, Event event) {
         ResponseBuilder builder;
 
-        if (organization == null) {
-            builder = Response.status(Status.NOT_FOUND);
-        } else {
-            boolean hasPermission = this.permissionService.hasAnyHierarchicalPermission(
-                organization.id,
-                claims.get("sub").asText(),
-                this.applicationService.getWritePermission()
-            );
+        long activeEventsCount = this.eventService.query()
+            .field("status").equal(this.eventService.getActiveEventStatus())
+            .field("organizationId").equal(organization.id)
+            .count();
 
-            if (hasPermission) {
-                long activeEventsCount = this.eventService.query()
-                    .field("status").equal(this.eventService.getActiveEventStatus())
-                    .field("organizationId").equal(organization.id)
-                    .count();
+        boolean hasFeatureViolation;
 
-                boolean hasFeatureViolation;
+        StripeException stripeException = null;
 
-                StripeException stripeException = null;
+        if (event.status == this.eventService.getActiveEventStatus()) {
+            activeEventsCount++;
+            List<Subscription> subscriptions = null;
 
-                if (event.status == this.eventService.getActiveEventStatus()) {
-                    activeEventsCount++;
-                    List<Subscription> subscriptions = null;
-
-                    try {
-                        subscriptions = stripeService.getCurrentSubscriptions(organization.id);
-                    } catch (StripeException e) {
-                        stripeException = e;
-                    }
-
-                    hasFeatureViolation = subscriptions != null && activeEventsCount > subscriptions.size();
-                } else {
-                    hasFeatureViolation = false;
-                }
-
-                long eventCount = this.eventService.query()
-                    .field("organizationId").equal(organization.id)
-                    .count();
-
-                if (stripeException != null) {
-                    builder = Response.status(Status.SERVICE_UNAVAILABLE)
-                        .entity(stripeException);
-                } else if (eventCount > 100) {
-                    builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"limit\"}").type(MediaType.APPLICATION_JSON);
-                } else if (hasFeatureViolation) {
-                    builder = Response.status(Status.BAD_REQUEST)
-                        .entity("{\"error\": \"subscription\"}")
-                        .type(MediaType.APPLICATION_JSON);
-                } else {
-                    event.id = null;
-                    event.organizationId = organization.id;
-                    event.timeCreated = new Date();
-
-                    Key<Event> key = this.eventService.save(event);
-                    Event searchedEvent = this.eventService.read((ObjectId)key.getId());
-                    builder = Response.ok(searchedEvent).type(MediaType.APPLICATION_JSON);
-                }
-            } else {
-                builder = Response.status(Status.UNAUTHORIZED);
+            try {
+                subscriptions = stripeService.getCurrentSubscriptions(organization.id);
+            } catch (StripeException e) {
+                stripeException = e;
             }
+
+            hasFeatureViolation = subscriptions != null && activeEventsCount > subscriptions.size();
+        } else {
+            hasFeatureViolation = false;
+        }
+
+        long eventCount = this.eventService.query()
+            .field("organizationId").equal(organization.id)
+            .count();
+
+        if (stripeException != null) {
+            builder = Response.status(Status.SERVICE_UNAVAILABLE)
+                .entity(stripeException);
+        } else if (eventCount > 100) {
+            builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"limit\"}").type(MediaType.APPLICATION_JSON);
+        } else if (hasFeatureViolation) {
+            builder = Response.status(Status.BAD_REQUEST)
+                .entity("{\"error\": \"subscription\"}")
+                .type(MediaType.APPLICATION_JSON);
+        } else {
+            event.id = null;
+            event.organizationId = organization.id;
+            event.timeCreated = new Date();
+
+            Key<Event> key = this.eventService.save(event);
+            Event searchedEvent = this.eventService.read((ObjectId)key.getId());
+            builder = Response.ok(searchedEvent).type(MediaType.APPLICATION_JSON);
         }
 
         return builder.build();
@@ -366,7 +298,7 @@ public class OrganizationResource {
                     boolean hasApplicationWrite = permissionService.has(
                         claims.get("sub").asText(),
                         Application.class,
-                        this.applicationService.getWritePermission(),
+                        PermissionService.WRITE,
                         application.id
                     );
 
@@ -376,7 +308,7 @@ public class OrganizationResource {
                 long userOrganizationPermissions = this.permissionService.query()
                     .field("user_id").equal(claims.get("sub").asText())
                     .field("objectClass").equal(Organization.class.getSimpleName())
-                    .field("include").equal(this.permissionService.getIncludeAllPermission())
+                    .field("include").equal(PermissionService.ALL)
                     .count();
 
                 if (userOrganizationPermissions > this.maximumOrganizationsPerUser) {
@@ -392,7 +324,7 @@ public class OrganizationResource {
 
                     Permission permission = new Permission();
                     permission.user_id = claims.get("sub").asText();
-                    permission.include = this.permissionService.getIncludeAllPermission();
+                    permission.include = PermissionService.ALL;
                     permission.objectClass = Organization.class.getSimpleName();
                     permission.objectId = (ObjectId)key.getId();
                     permission.timeCreated = new Date();
@@ -440,7 +372,7 @@ public class OrganizationResource {
 
         boolean hasPermission = this.permissionService.hasAllHierarchicalPermission(
             claims.get("sub").asText(),
-            this.organizationService.getReadPermission(),
+            PermissionService.READ,
             searchedOrganizationIds
         );
 
@@ -567,7 +499,7 @@ public class OrganizationResource {
         boolean hasPermission = this.permissionService.has(
             claims.get("sub").asText(),
             organizations,
-            this.organizationService.getReadPermission()
+            PermissionService.READ
         );
 
         ResponseBuilder builder;
@@ -586,63 +518,50 @@ public class OrganizationResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Path("/{id}")
     @Authorized
+    @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
     public Response update(@PathObject("id") Organization queriedOrganization, @Context JsonNode claims, Organization organization) {
         ResponseBuilder builder;
 
-        if (queriedOrganization == null) {
-            builder = Response.status(Status.NOT_FOUND);
-        } else {
-            Query<Organization> query = this.organizationService.query()
-                .field("id").notEqual(queriedOrganization.id)
-                .field("email").equalIgnoreCase(organization.email);
+        Query<Organization> query = this.organizationService.query()
+            .field("id").notEqual(queriedOrganization.id)
+            .field("email").equalIgnoreCase(organization.email);
 
-            long sameEmailCount = query.count();
+        long sameEmailCount = query.count();
 
-            if (sameEmailCount == 0) {
-                boolean hasPermission = this.permissionService.hasAnyHierarchicalPermission(
-                    queriedOrganization.id,
+        if (sameEmailCount == 0) {
+            boolean parentIdChanged = !Objects.equals(queriedOrganization.parentId, organization.parentId);
+            boolean parentIdChangeViolation;
+
+            if (parentIdChanged) {
+                Application application = this.applicationService.read();
+                boolean hasApplicationWrite = this.permissionService.has(
                     claims.get("sub").asText(),
-                    this.applicationService.getWritePermission()
+                    Application.class,
+                    PermissionService.WRITE,
+                    application.id
                 );
 
-                if (hasPermission) {
-                    boolean parentIdChanged = !Objects.equals(queriedOrganization.parentId, organization.parentId);
-                    boolean parentIdChangeViolation;
-
-                    if (parentIdChanged) {
-                        Application application = this.applicationService.read();
-                        boolean hasApplicationWrite = this.permissionService.has(
-                            claims.get("sub").asText(),
-                            Application.class,
-                            this.applicationService.getWritePermission(),
-                            application.id
-                        );
-
-                        parentIdChangeViolation = !hasApplicationWrite;
-                    } else {
-                        parentIdChangeViolation = false;
-                    }
-
-                    if (parentIdChangeViolation) {
-                        builder = Response.status(Status.UNAUTHORIZED);
-                    } else {
-                        organization.id = queriedOrganization.id;
-                        organization.timeCreated = queriedOrganization.timeCreated;
-                        organization.timeUpdated = new Date();
-
-                        Key<Organization> key = this.organizationService.save(organization);
-                        Organization rootOrganization = this.organizationService.getRootOrganization();
-                        this.indexedOrganizationNodeService.writeIndexedOrganizationNodes(rootOrganization.id);
-
-                        Organization entity = this.organizationService.read((ObjectId)key.getId());
-                        builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-                    }
-                } else {
-                    builder = Response.status(Status.UNAUTHORIZED);
-                }
+                parentIdChangeViolation = !hasApplicationWrite;
             } else {
-                builder = Response.status(Status.CONFLICT);
+                parentIdChangeViolation = false;
             }
+
+            if (parentIdChangeViolation) {
+                builder = Response.status(Status.UNAUTHORIZED);
+            } else {
+                organization.id = queriedOrganization.id;
+                organization.timeCreated = queriedOrganization.timeCreated;
+                organization.timeUpdated = new Date();
+
+                Key<Organization> key = this.organizationService.save(organization);
+                Organization rootOrganization = this.organizationService.getRootOrganization();
+                this.indexedOrganizationNodeService.writeIndexedOrganizationNodes(rootOrganization.id);
+
+                Organization entity = this.organizationService.read((ObjectId)key.getId());
+                builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+            }
+        } else {
+            builder = Response.status(Status.CONFLICT);
         }
 
         return builder.build();
@@ -651,70 +570,39 @@ public class OrganizationResource {
     @GET
     @Path("/{id}")
     @Authorized
+    @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.READ)
     public Response read(@PathObject("id") Organization organization, @Context JsonNode claims) {
-        ResponseBuilder builder;
-
-        if (organization == null) {
-            builder = Response.status(Status.NOT_FOUND);
-        } else {
-            boolean hasPermission = this.permissionService.hasAnyHierarchicalPermission(
-                organization.id,
-                claims.get("sub").asText(),
-                this.organizationService.getReadPermission()
-            );
-
-            if (hasPermission) {
-                builder = Response.ok(organization).type(MediaType.APPLICATION_JSON);
-            } else {
-                builder = Response.status(Status.UNAUTHORIZED);
-            }
-        }
-
-        return builder.build();
+        return Response.ok(organization).type(MediaType.APPLICATION_JSON).build();
     }
 
     @DELETE
     @Path("/{id}")
     @Authorized
+    @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
     public Response delete(@PathObject("id") Organization searchedOrganization, @Context JsonNode claims) {
         ResponseBuilder builder;
 
-        if (searchedOrganization == null) {
-            builder = Response.status(Status.NOT_FOUND);
+        List<Event> events = this.eventService.query().field("organizationId").equal(searchedOrganization.id).asList();
+        List<Item> items = this.itemService.query().disableValidation().field("organizationId").equal(searchedOrganization.id).asList();
+
+        if (!events.isEmpty()) {
+            builder = Response.status(Status.CONFLICT).entity(events);
+        } else if (!items.isEmpty()) {
+            builder = Response.status(Status.CONFLICT).entity(items);
+        } else if (searchedOrganization.parentId == null) {
+            builder = Response.status(Status.CONFLICT);
         } else {
-            boolean hasPermission = this.permissionService.has(
-                claims.get("sub").asText(),
-                Organization.class,
-                this.organizationService.getWritePermission(),
-                searchedOrganization.id
-            );
+            Organization deletedOrganization = this.organizationService.delete(searchedOrganization.id);
 
-            if (hasPermission) {
-                List<Event> events = this.eventService.query().field("organizationId").equal(searchedOrganization.id).asList();
-                List<Item> items = this.itemService.query().disableValidation().field("organizationId").equal(searchedOrganization.id).asList();
+            Query<Permission> deleteQuery = this.permissionService.query()
+                .field("objectId").equal(searchedOrganization.id)
+                .field("objectClass").equal(Organization.class.getSimpleName());
+            this.permissionService.delete(deleteQuery);
 
-                if (!events.isEmpty()) {
-                    builder = Response.status(Status.CONFLICT).entity(events);
-                } else if (!items.isEmpty()) {
-                    builder = Response.status(Status.CONFLICT).entity(items);
-                } else if (searchedOrganization.parentId == null) {
-                    builder = Response.status(Status.CONFLICT);
-                } else {
-                    Organization deletedOrganization = this.organizationService.delete(searchedOrganization.id);
+            Organization rootOrganization = this.organizationService.getRootOrganization();
+            this.indexedOrganizationNodeService.writeIndexedOrganizationNodes(rootOrganization.id);
 
-                    Query<Permission> deleteQuery = this.permissionService.query()
-                                          .field("objectId").equal(searchedOrganization.id)
-                                          .field("objectClass").equal(Organization.class.getSimpleName());
-                    this.permissionService.delete(deleteQuery);
-
-                    Organization rootOrganization = this.organizationService.getRootOrganization();
-                    this.indexedOrganizationNodeService.writeIndexedOrganizationNodes(rootOrganization.id);
-
-                    builder = Response.ok(deletedOrganization);
-                }
-            } else {
-                builder = Response.status(Status.UNAUTHORIZED);
-            }
+            builder = Response.ok(deletedOrganization);
         }
 
         return builder.build();

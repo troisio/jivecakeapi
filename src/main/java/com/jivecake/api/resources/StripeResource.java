@@ -23,6 +23,7 @@ import org.bson.types.ObjectId;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
+import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.service.OrganizationService;
@@ -76,7 +77,7 @@ public class StripeResource {
             boolean hasPermission = this.permissionService.has(
                 claims.get("sub").asText(),
                 Arrays.asList(organization),
-                this.organizationService.getReadPermission()
+                PermissionService.READ
             );
 
             if (hasPermission) {
@@ -97,31 +98,18 @@ public class StripeResource {
     @GET
     @Path("{organizationId}/subscription")
     @Authorized
+    @HasPermission(clazz=Organization.class, id="organizationId", permission=PermissionService.READ)
     public Response subscribe(
         @PathObject("organizationId") Organization organization,
         @Context JsonNode claims
     ) {
         ResponseBuilder builder;
 
-        if (organization == null) {
-            builder = Response.status(Status.NOT_FOUND);
-        } else {
-            boolean hasPermission = this.permissionService.has(
-                claims.get("sub").asText(),
-                Arrays.asList(organization),
-                this.organizationService.getReadPermission()
-            );
-
-            if (hasPermission) {
-                try {
-                    List<Subscription> subscriptions = this.stripeService.getCurrentSubscriptions(organization.id);
-                    builder = Response.ok(subscriptions).type(MediaType.APPLICATION_JSON);
-                } catch (StripeException e) {
-                    builder = Response.status(Status.SERVICE_UNAVAILABLE).entity(e);
-                }
-            } else {
-                builder = Response.status(Status.UNAUTHORIZED);
-            }
+        try {
+            List<Subscription> subscriptions = this.stripeService.getCurrentSubscriptions(organization.id);
+            builder = Response.ok(subscriptions).type(MediaType.APPLICATION_JSON);
+        } catch (StripeException e) {
+            builder = Response.status(Status.SERVICE_UNAVAILABLE).entity(e);
         }
 
         return builder.build();
@@ -131,6 +119,7 @@ public class StripeResource {
     @Path("{organizationId}/subscribe")
     @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
+    @HasPermission(clazz=Organization.class, id="organizationId", permission=PermissionService.WRITE)
     public Response subscribe(
         @PathObject("organizationId") Organization organization,
         Map<String, Object> json,
@@ -138,32 +127,29 @@ public class StripeResource {
     ) {
         ResponseBuilder builder;
 
-        if (organization == null) {
-            builder = Response.status(Status.UNAUTHORIZED);
-        } else {
-            Map<String, Object> customerOptions = new HashMap<>();
-            customerOptions.put("email", json.get("email"));
-            customerOptions.put("source", json.get("source"));
-            customerOptions.put("plan", this.stripeService.getMonthly10PlanId());
+        Map<String, Object> customerOptions = new HashMap<>();
+        customerOptions.put("email", json.get("email"));
+        customerOptions.put("source", json.get("source"));
+        customerOptions.put("plan", this.stripeService.getMonthly10PlanId());
 
-            Map<String, Object> metadata = new HashMap<>();
-            metadata.put("sub", claims.get("sub").asText());
-            customerOptions.put("metadata", metadata);
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("sub", claims.get("sub").asText());
+        customerOptions.put("metadata", metadata);
 
-            Map<String, Object> subscriptionUpdate = new HashMap<>();
-            Map<String, Object> subscriptionMetaData = new HashMap<>();
-            subscriptionMetaData.put("organizationId", organization.id);
-            subscriptionUpdate.put("metadata", subscriptionMetaData);
+        Map<String, Object> subscriptionUpdate = new HashMap<>();
+        Map<String, Object> subscriptionMetaData = new HashMap<>();
+        subscriptionMetaData.put("organizationId", organization.id);
+        subscriptionMetaData.put("sub", claims.get("sub").asText());
+        subscriptionUpdate.put("metadata", subscriptionMetaData);
 
-            try {
-                Customer customer = Customer.create(customerOptions, this.stripeService.getRequestOptions());
-                List<Subscription> subscriptions = customer.getSubscriptions().getData();
-                subscriptions.get(0).update(subscriptionUpdate, this.stripeService.getRequestOptions());
+        try {
+            Customer customer = Customer.create(customerOptions, this.stripeService.getRequestOptions());
+            List<Subscription> subscriptions = customer.getSubscriptions().getData();
+            subscriptions.get(0).update(subscriptionUpdate, this.stripeService.getRequestOptions());
 
-                builder = Response.ok(customer).type(MediaType.APPLICATION_JSON);
-            } catch (StripeException e) {
-                builder = Response.status(400).entity(e);
-            }
+            builder = Response.ok(customer).type(MediaType.APPLICATION_JSON);
+        } catch (StripeException e) {
+            builder = Response.status(Status.SERVICE_UNAVAILABLE).entity(e);
         }
 
         return builder.build();

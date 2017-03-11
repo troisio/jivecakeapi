@@ -24,6 +24,9 @@ public class Item {
     @JsonSerialize(using=ObjectIdSerializer.class)
     public ObjectId eventId;
 
+    @JsonSerialize(using=ObjectIdSerializer.class)
+    public ObjectId organizationId;
+
     public String name;
     public String description;
     public Integer totalAvailible;
