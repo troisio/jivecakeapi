@@ -35,7 +35,6 @@ public class PermissionService {
     @Inject
     public PermissionService(
         Datastore datastore,
-        MappingService mappingService,
         ApplicationService applicationService,
         OrganizationService organizationService,
         IndexedOrganizationNodeService indexedOrganizationNodeService

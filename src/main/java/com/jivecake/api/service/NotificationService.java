@@ -8,34 +8,23 @@ import javax.ws.rs.core.MediaType;
 
 import org.bson.types.ObjectId;
 import org.glassfish.jersey.media.sse.OutboundEvent;
-import org.mongodb.morphia.Datastore;
 
-import com.jivecake.api.model.Event;
-import com.jivecake.api.model.Item;
-import com.jivecake.api.model.Organization;
-import com.jivecake.api.model.OrganizationFeature;
 import com.jivecake.api.model.Transaction;
 
 public class NotificationService {
-    private final Datastore datastore;
     private final TransactionService transactionService;
-    private final ItemService itemService;
     private final OrganizationService organizationService;
     private final PermissionService permissionService;
     private final ClientConnectionService clientConnectionService;
 
     @Inject
     public NotificationService(
-        Datastore datastore,
         TransactionService transactionService,
-        ItemService itemService,
         OrganizationService organizationService,
         PermissionService permissionService,
         ClientConnectionService clientConnectionService
     ) {
-        this.datastore = datastore;
         this.transactionService = transactionService;
-        this.itemService = itemService;
         this.organizationService = organizationService;
         this.permissionService = permissionService;
         this.clientConnectionService = clientConnectionService;
@@ -52,14 +41,11 @@ public class NotificationService {
 
     public void notifyItemTransaction(ObjectId id) {
         Transaction transaction = this.transactionService.read(id);
-        Item item = this.itemService.read(transaction.itemId);
-        Event event = this.datastore.find(Event.class).field("id").equal(item.eventId).get();
-        Organization organization = this.organizationService.read(event.organizationId);
 
         Set<String> userIds = this.permissionService.query()
             .project("user_id", true)
             .field("objectClass").equal(this.organizationService.getPermissionObjectClass())
-            .field("objectId").equal(organization.id)
+            .field("objectId").equal(transaction.organizationId)
             .asList()
             .stream()
             .map(permission -> permission.user_id)
@@ -76,8 +62,5 @@ public class NotificationService {
             .build();
 
         this.sendEvent(userIds, notification);
-    }
-
-    public void notifyNewSubscription(OrganizationFeature feature) {
     }
 }

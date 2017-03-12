@@ -65,7 +65,6 @@ import com.jivecake.api.service.ImgurService;
 import com.jivecake.api.service.IndexedOrganizationNodeService;
 import com.jivecake.api.service.ItemService;
 import com.jivecake.api.service.LogService;
-import com.jivecake.api.service.MappingService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PaymentProfileService;
@@ -130,7 +129,6 @@ public class APIApplication extends Application<APIConfiguration> {
         ImgurService.class,
         ItemService.class,
         LogService.class,
-        MappingService.class,
         NotificationService.class,
         OrganizationService.class,
         PaymentProfileService.class,
@@ -199,7 +197,6 @@ public class APIApplication extends Application<APIConfiguration> {
             )
         ));
 
-        MappingService mappingService = new MappingService(datastore);
         ApplicationService applicationService = new ApplicationService(application);
         OrganizationService organizationService = new OrganizationService(datastore);
         IndexedOrganizationNodeService indexedOrganizationNodeService = new IndexedOrganizationNodeService(
@@ -208,7 +205,6 @@ public class APIApplication extends Application<APIConfiguration> {
         );
         PermissionService permissionService = new PermissionService(
             datastore,
-            mappingService,
             applicationService,
             organizationService,
             indexedOrganizationNodeService

@@ -37,8 +37,6 @@ import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.Log;
 import com.jivecake.api.model.Application;
 import com.jivecake.api.model.CartPaymentDetails;
-import com.jivecake.api.model.Feature;
-import com.jivecake.api.model.OrganizationFeature;
 import com.jivecake.api.model.PaymentDetail;
 import com.jivecake.api.model.PaypalIPN;
 import com.jivecake.api.model.Transaction;
@@ -56,9 +54,7 @@ import com.jivecake.api.service.TransactionService;
 @CORS
 public class PaypalResource {
     private final Datastore datastore;
-    private final FeatureService featureService;
     private final PermissionService permissionService;
-    private final SubscriptionService subscriptionService;
     private final ApplicationService applicationService;
     private final PaypalService paypalService;
     private final NotificationService notificationService;
@@ -78,9 +74,7 @@ public class PaypalResource {
         TransactionService transactionService
     ) {
         this.datastore = datastore;
-        this.featureService = featureService;
         this.permissionService = permissionService;
-        this.subscriptionService = subscriptionService;
         this.applicationService = applicationService;
         this.paypalService = paypalService;
         this.notificationService = notificationService;
@@ -132,19 +126,7 @@ public class PaypalResource {
 
                         Key<PaypalIPN> paypalIPNKey = PaypalResource.this.paypalService.save(ipn);
 
-                        if ("subscr_payment".equals(ipn.txn_type)) {
-                            Key<Feature> key = PaypalResource.this.subscriptionService.processSubscription(ipn);
-
-                            if (key == null) {
-                                PaypalResource.this.logger.warn(String.format("Unable to process IPN:%n%s%n", PaypalResource.this.jsonTools.pretty(form)));
-                            } else {
-                                OrganizationFeature feature = (OrganizationFeature)PaypalResource.this.featureService.query()
-                                    .field("id").equal(key.getId())
-                                    .get();
-
-                                PaypalResource.this.notificationService.notifyNewSubscription(feature);
-                            }
-                        } else if ("cart".equals(ipn.txn_type)) {
+                        if ("cart".equals(ipn.txn_type)) {
                             Iterable<Key<Transaction>> transactionKeys = PaypalResource.this.paypalService.processTransactions(ipn);
 
                             if (transactionKeys == null) {
@@ -152,22 +134,6 @@ public class PaypalResource {
                             } else {
                                 for (Key<Transaction> key: transactionKeys) {
                                     PaypalResource.this.notificationService.notifyItemTransaction((ObjectId)key.getId());
-                                }
-                            }
-                        } else if ("subscr_eot".equals(ipn.txn_type)) {
-                        } else if ("subscr_cancel".equals(ipn.txn_type)) {
-                        } else if ("subscr_signup".equals(ipn.txn_type)) {
-                            if (ipn.period1 != null) {
-                                Key<Feature> key = PaypalResource.this.subscriptionService.processSubscription(ipn);
-
-                                if (key == null) {
-                                    PaypalResource.this.logger.warn(String.format("Unable to process IPN:%n%s%n", PaypalResource.this.jsonTools.pretty(form)));
-                                } else {
-                                    OrganizationFeature feature = (OrganizationFeature)PaypalResource.this.featureService.query()
-                                        .field("id").equal(key.getId())
-                                        .get();
-
-                                    PaypalResource.this.notificationService.notifyNewSubscription(feature);
                                 }
                             }
                         } else if ("Refunded".equals(ipn.payment_status)) {

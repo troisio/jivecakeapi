@@ -5,7 +5,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -49,7 +48,6 @@ import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.ItemService;
-import com.jivecake.api.service.MappingService;
 import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.TransactionService;
@@ -60,7 +58,6 @@ public class TransactionResource {
     private final TransactionService transactionService;
     private final ItemService itemService;
     private final EventService eventService;
-    private final MappingService mappingService;
     private final OrganizationService organizationService;
     private final PermissionService permissionService;
     private final Auth0Service auth0Service;
@@ -71,7 +68,6 @@ public class TransactionResource {
         ItemService itemService,
         EventService eventService,
         TransactionService transactionService,
-        MappingService mappingService,
         OrganizationService organizationService,
         PermissionService permissionService,
         Auth0Service auth0Service
@@ -79,7 +75,6 @@ public class TransactionResource {
         this.transactionService = transactionService;
         this.itemService = itemService;
         this.eventService = eventService;
-        this.mappingService = mappingService;
         this.organizationService = organizationService;
         this.permissionService = permissionService;
         this.auth0Service = auth0Service;
@@ -346,11 +341,16 @@ public class TransactionResource {
             .project("status", true)
             .project("parentTransactionId", true);
 
-        Set<ObjectId> idsFilter = this.mappingService.getTransactionIds(new HashSet<>(), eventIds, itemIds);
-        idsFilter.addAll(ids);
+        if (!ids.isEmpty()) {
+            query.field("id").in(ids);
+        }
 
-        if (!eventIds.isEmpty() || !itemIds.isEmpty() || !ids.isEmpty()) {
-            query.field("id").in(idsFilter);
+        if (!eventIds.isEmpty()) {
+            query.field("eventId").in(eventIds);
+        }
+
+        if (!itemIds.isEmpty()) {
+            query.field("itemId").in(itemIds);
         }
 
         if (!statuses.isEmpty()) {
@@ -479,17 +479,30 @@ public class TransactionResource {
         if (authorization == null || !authorization.startsWith("Bearer ")) {
             promise.resume(Response.status(Status.BAD_REQUEST).build());
         } else {
-            Set<ObjectId> aggregatedOrganizationIds = this.mappingService.getOrganizationIds(ids, itemIds, eventIds);
-            aggregatedOrganizationIds.addAll(aggregatedOrganizationIds);
-
             String token = authorization.substring("Bearer ".length());
             Map<String, Object> claims = this.auth0Service.getClaimsFromToken(token);
 
-            boolean hasPermission = this.permissionService.hasAllHierarchicalPermission(
-                (String)claims.get("sub"),
-                PermissionService.READ,
-                aggregatedOrganizationIds
-            );
+            Query<Transaction> query = this.transactionService.query();
+
+            if (!organizationIds.isEmpty()) {
+                query.field("organizationId").in(organizationIds);
+            }
+
+            if (!eventIds.isEmpty()) {
+                query.field("eventId").in(eventIds);
+            }
+
+            if (!itemIds.isEmpty()) {
+                query.field("itemId").in(itemIds);
+            }
+
+            if (!ids.isEmpty()) {
+                query.field("id").in(ids);
+            }
+
+            List<Transaction> transactions = query.asList();
+
+            boolean hasPermission = this.permissionService.has((String)claims.get("sub"), transactions, PermissionService.READ);
 
             if (hasPermission) {
                 File file;
@@ -504,13 +517,6 @@ public class TransactionResource {
                 File writeFile = file;
 
                 if (file != null) {
-                    Set<ObjectId> idsFilter = this.mappingService.getTransactionIds(organizationIds, eventIds, itemIds);
-                    idsFilter.addAll(ids);
-
-                    List<Transaction> transactions = this.transactionService.query()
-                        .field("id").in(idsFilter)
-                        .asList();
-
                     String userQuery = transactions.stream()
                         .filter(transaction -> transaction.user_id != null)
                         .map(transaction -> String.format("user_id: \"%s\"", transaction.user_id))
