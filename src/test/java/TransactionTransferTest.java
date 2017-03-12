@@ -29,7 +29,6 @@ import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.IndexedOrganizationNodeService;
 import com.jivecake.api.service.ItemService;
-import com.jivecake.api.service.MappingService;
 import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.TransactionService;
@@ -48,7 +47,6 @@ public class TransactionTransferTest {
         this.client = new MongoClient(Arrays.asList(new ServerAddress(System.getProperty("db"))));
         this.datastore = new Morphia().createDatastore(this.client, "test");
 
-        MappingService mappingService = new MappingService(this.datastore);
         OrganizationService organizationService = new OrganizationService(this.datastore);
 
         this.transactionService = new TransactionService(this.datastore);
@@ -58,11 +56,9 @@ public class TransactionTransferTest {
             new ItemService(this.datastore),
             this.eventService,
             this.transactionService,
-            mappingService,
             organizationService,
             new PermissionService(
                 this.datastore,
-                mappingService,
                 new ApplicationService(new Application()),
                 organizationService,
                 new IndexedOrganizationNodeService(this.datastore, organizationService)

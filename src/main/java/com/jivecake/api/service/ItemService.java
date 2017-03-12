@@ -33,35 +33,14 @@ public class ItemService {
     }
 
     public Item read(ObjectId id) {
-        Item result = this.datastore.find(Item.class)
+        return this.datastore.find(Item.class)
         .field("id").equal(id)
         .get();
-        return result;
-    }
-
-    public List<Item> read() {
-        List<Item> result = this.datastore.find(Item.class).asList();
-        return result;
     }
 
     public Item delete(ObjectId id) {
         Query<Item> deleteQuery = this.datastore.createQuery(Item.class).filter("id", id);
         Item result = this.datastore.findAndDelete(deleteQuery);
-        return result;
-    }
-
-    public Transaction readTransaction(ObjectId id) {
-        Transaction result = this.datastore.find(Transaction.class)
-            .field("id")
-            .equal(id)
-            .get();
-        return result;
-    }
-
-    public List<Transaction> readTransactions(ObjectId itemId) {
-        List<Transaction> result = this.datastore.find(Transaction.class)
-            .field("itemId").equal(itemId)
-            .asList();
         return result;
     }
 

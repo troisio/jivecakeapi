@@ -1,6 +1,5 @@
 package com.jivecake.api.resources;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
@@ -35,7 +34,6 @@ import com.jivecake.api.model.Application;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Feature;
 import com.jivecake.api.model.IndexedOrganizationNode;
-import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.OrganizationFeature;
 import com.jivecake.api.model.OrganizationNode;
@@ -49,8 +47,6 @@ import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.FeatureService;
 import com.jivecake.api.service.IndexedOrganizationNodeService;
-import com.jivecake.api.service.ItemService;
-import com.jivecake.api.service.MappingService;
 import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PaymentProfileService;
 import com.jivecake.api.service.PaymentService;
@@ -65,9 +61,7 @@ public class OrganizationResource {
     private final ApplicationService applicationService;
     private final OrganizationService organizationService;
     private final IndexedOrganizationNodeService indexedOrganizationNodeService;
-    private final MappingService mappingService;
     private final EventService eventService;
-    private final ItemService itemService;
     private final PaymentProfileService paymentProfileService;
     private final FeatureService featureService;
     private final PermissionService permissionService;
@@ -80,9 +74,7 @@ public class OrganizationResource {
         ApplicationService applicationService,
         OrganizationService organizationService,
         IndexedOrganizationNodeService indexedOrganizationNodeService,
-        MappingService mappingService,
         EventService eventService,
-        ItemService itemService,
         PaymentProfileService paymentProfileService,
         FeatureService featureService,
         PermissionService permissionService,
@@ -92,9 +84,7 @@ public class OrganizationResource {
         this.applicationService = applicationService;
         this.organizationService = organizationService;
         this.indexedOrganizationNodeService = indexedOrganizationNodeService;
-        this.mappingService = mappingService;
         this.eventService = eventService;
-        this.itemService = itemService;
         this.paymentProfileService = paymentProfileService;
         this.featureService = featureService;
         this.permissionService = permissionService;
@@ -448,7 +438,6 @@ public class OrganizationResource {
     @Authorized
     public Response search(
         @QueryParam("id") List<ObjectId> ids,
-        @QueryParam("eventId") List<ObjectId> eventIds,
         @QueryParam("name") String name,
         @QueryParam("email") String email,
         @QueryParam("order") String order,
@@ -460,16 +449,6 @@ public class OrganizationResource {
 
         if (!ids.isEmpty()) {
             query.field("id").in(ids);
-        }
-
-        if (!eventIds.isEmpty()) {
-            Set<ObjectId> organizationEventIds = this.mappingService.getOrganizationIds(
-                new ArrayList<>(),
-                new ArrayList<>(),
-                eventIds
-            );
-
-            query.field("id").in(organizationEventIds);
         }
 
         if (name != null) {
@@ -496,11 +475,7 @@ public class OrganizationResource {
 
         List<Organization> organizations = query.asList();
 
-        boolean hasPermission = this.permissionService.has(
-            claims.get("sub").asText(),
-            organizations,
-            PermissionService.READ
-        );
+        boolean hasPermission = this.permissionService.has(claims.get("sub").asText(), organizations, PermissionService.READ);
 
         ResponseBuilder builder;
 
@@ -582,15 +557,14 @@ public class OrganizationResource {
     public Response delete(@PathObject("id") Organization searchedOrganization, @Context JsonNode claims) {
         ResponseBuilder builder;
 
-        List<Event> events = this.eventService.query().field("organizationId").equal(searchedOrganization.id).asList();
-        List<Item> items = this.itemService.query().disableValidation().field("organizationId").equal(searchedOrganization.id).asList();
+        List<Event> events = this.eventService.query()
+            .field("organizationId").equal(searchedOrganization.id)
+            .asList();
 
         if (!events.isEmpty()) {
-            builder = Response.status(Status.CONFLICT).entity(events);
-        } else if (!items.isEmpty()) {
-            builder = Response.status(Status.CONFLICT).entity(items);
+            builder = Response.status(Status.BAD_REQUEST).entity(events);
         } else if (searchedOrganization.parentId == null) {
-            builder = Response.status(Status.CONFLICT);
+            builder = Response.status(Status.BAD_REQUEST);
         } else {
             Organization deletedOrganization = this.organizationService.delete(searchedOrganization.id);
 

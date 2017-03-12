@@ -1,7 +1,5 @@
 package com.jivecake.api.service;
 
-import java.util.List;
-
 import javax.inject.Inject;
 
 import org.bson.types.ObjectId;
@@ -34,11 +32,6 @@ public class EventService {
         Event result = this.datastore.find(Event.class)
             .field("id").equal(id)
             .get();
-        return result;
-    }
-
-    public List<Event> read() {
-        List<Event> result = this.datastore.find(Event.class).asList();
         return result;
     }
 
