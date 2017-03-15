@@ -44,7 +44,7 @@ public class PermissionService {
         this.indexedOrganizationNodeService = indexedOrganizationNodeService;
     }
 
-    public boolean has(String user_id, Collection<?> entities, int permission) {
+    public boolean has(String sub, Collection<?> entities, int permission) {
         Set<ObjectId> organizationIds = new HashSet<>();
 
         for (Object entity: entities) {
@@ -63,7 +63,7 @@ public class PermissionService {
             }
         }
 
-        return this.hasAllHierarchicalPermission(user_id, permission, organizationIds);
+        return this.hasAllHierarchicalPermission(sub, permission, organizationIds);
     }
 
     public boolean has(String user_id, Class<?> model, int permission, ObjectId objectId) {
@@ -116,9 +116,9 @@ public class PermissionService {
         return this.datastore.createQuery(Permission.class);
     }
 
-    public boolean hasAllHierarchicalPermission(String user_id, int permission, Set<ObjectId> organizationIds) {
+    public boolean hasAllHierarchicalPermission(String sub, int permission, Set<ObjectId> organizationIds) {
         Query<Permission> query = this.query();
-        query.field("user_id").equal(user_id)
+        query.field("user_id").equal(sub)
             .field("objectClass").equal(this.organizationService.getPermissionObjectClass())
             .and(
                 query.or(

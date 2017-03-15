@@ -369,9 +369,7 @@ public class TransactionResource {
         }
 
         Paging<Transaction> entity = new Paging<>(transactions, query.count());
-        ResponseBuilder builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-
-        return builder.build();
+        return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
     }
 
     @GET
@@ -525,29 +523,31 @@ public class TransactionResource {
                     this.auth0Service.queryUsers(userQuery, new InvocationCallback<Response>() {
                         @Override
                         public void completed(Response response) {
-                            List<JsonNode> users;
+                            List<JsonNode> users = null;
+                            Exception exception = null;
 
                             try {
                                 users = Arrays.asList(
                                     TransactionResource.this.mapper.readValue(response.readEntity(String.class), JsonNode[].class)
                                 );
                             } catch (IOException e) {
-                                users = null;
-                                promise.resume(e);
+                                exception = e;
                             }
 
-                            if (users != null) {
+                            if (exception == null) {
                                 try {
                                     TransactionResource.this.transactionService.writeToExcel(transactions, users, writeFile);
                                     Response result = Response.ok(writeFile)
                                         .type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                                        .header("Content-Disposition", String.format("attachment; filename=%s", writeFile.getName()))
+                                        .header("Content-Disposition", "attachment; filename=transactions")
                                         .build();
 
                                     promise.resume(result);
                                 } catch (IOException e) {
                                     promise.resume(e);
                                 }
+                            } else {
+                                promise.resume(Response.serverError().entity(exception).build());
                             }
                         }
 

@@ -44,6 +44,20 @@ public class ItemService {
         return result;
     }
 
+    public boolean isValid(Item item) {
+        boolean hasTimeAndCountViolation = item.timeAmounts != null && !item.timeAmounts.isEmpty() &&
+                item.countAmounts != null && !item.countAmounts.isEmpty();
+
+        boolean hasNegativeAmountViolation = item.timeAmounts != null && item.timeAmounts.stream().filter(t -> t.amount < 0).count() > 0 ||
+                  item.countAmounts != null && item.countAmounts.stream().filter(t -> t.amount < 0).count() > 0;
+
+        return (item.amount >= 0) &&
+            (item.maximumPerUser == null || item.maximumPerUser >= 0) &&
+            (item.totalAvailible == null || item.totalAvailible >= 0) &&
+            !hasTimeAndCountViolation &&
+            !hasNegativeAmountViolation;
+    }
+
     public Query<Item> query() {
         return this.datastore.createQuery(Item.class);
     }

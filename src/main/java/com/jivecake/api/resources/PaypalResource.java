@@ -47,7 +47,6 @@ import com.jivecake.api.service.FeatureService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.PaypalService;
 import com.jivecake.api.service.PermissionService;
-import com.jivecake.api.service.SubscriptionService;
 import com.jivecake.api.service.TransactionService;
 
 @Path("/paypal")
@@ -67,7 +66,6 @@ public class PaypalResource {
         Datastore datastore,
         FeatureService featureService,
         PermissionService permissionService,
-        SubscriptionService subscriptionService,
         ApplicationService applicationService,
         PaypalService paypalService,
         NotificationService notificationService,
@@ -82,15 +80,17 @@ public class PaypalResource {
     }
 
     @POST
-    @Authorized
     @Path("/detail")
     public Response getPaymentDetails(@Context JsonNode claims) {
         PaymentDetail detail = new CartPaymentDetails();
-        detail.user_id = claims.get("sub").asText();
         detail.custom = new ObjectId();
         detail.timeCreated = new Date();
 
-        Key<PaymentDetail> key = this.paypalService.create(detail);
+        if (claims != null) {
+            detail.user_id = claims.get("sub").asText();
+        }
+
+        Key<PaymentDetail> key = this.paypalService.save(detail);
         PaymentDetail entity = this.paypalService.readPaypalPaymentDetails((ObjectId)key.getId());
         return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
     }
@@ -129,17 +129,20 @@ public class PaypalResource {
                         if ("cart".equals(ipn.txn_type)) {
                             Iterable<Key<Transaction>> transactionKeys = PaypalResource.this.paypalService.processTransactions(ipn);
 
-                            if (transactionKeys == null) {
-                                PaypalResource.this.logger.warn(String.format("paypal IPN with id %s did not save transaction", paypalIPNKey.getId()));
-                            } else {
-                                for (Key<Transaction> key: transactionKeys) {
-                                    PaypalResource.this.notificationService.notifyItemTransaction((ObjectId)key.getId());
-                                }
+                            int count = 0;
+
+                            for (Key<Transaction> key: transactionKeys) {
+                                PaypalResource.this.notificationService.notifyItemTransaction((ObjectId)key.getId());
+                                count++;
+                            }
+
+                            if (count == 0) {
+                                PaypalResource.this.logger.warn(String.format("paypal Cart IPN %s did not produce processed transactions", paypalIPNKey.getId()));
                             }
                         } else if ("Refunded".equals(ipn.payment_status)) {
                             PaypalResource.this.paypalService.processRefund(ipn);
                         } else {
-                            PaypalResource.this.logger.warn(String.format("paypal IPN did not match any processed scopes", paypalIPNKey.getId()));
+                            PaypalResource.this.logger.warn(String.format("paypal IPN %s did not match any processed scopes", paypalIPNKey.getId()));
                         }
                     }
                 } else {
