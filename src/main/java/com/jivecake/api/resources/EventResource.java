@@ -205,13 +205,25 @@ public class EventResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @HasPermission(clazz=Event.class, id="id", permission=PermissionService.WRITE)
     public Response createItem(@PathObject("id") Event event, Item item, @Context JsonNode claims) {
-        item.eventId = event.id;
-        item.organizationId = event.organizationId;
-        item.timeCreated = new Date();
+        ResponseBuilder builder;
 
-        Key<Item> key = this.itemService.save(item);
-        Item searchedItem = this.itemService.read((ObjectId)key.getId());
-        return Response.ok(searchedItem).type(MediaType.APPLICATION_JSON).build();
+        boolean isValid = this.itemService.isValid(item);
+
+        if (isValid) {
+            item.eventId = event.id;
+            item.organizationId = event.organizationId;
+            item.timeCreated = new Date();
+            item.timeUpdated = null;
+
+            Key<Item> key = this.itemService.save(item);
+            Item searchedItem = this.itemService.read((ObjectId)key.getId());
+
+            builder = Response.ok(searchedItem).type(MediaType.APPLICATION_JSON);
+        } else {
+            builder = Response.status(Status.BAD_REQUEST);
+        }
+
+        return builder.build();
     }
 
     @DELETE

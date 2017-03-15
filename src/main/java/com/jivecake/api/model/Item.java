@@ -31,7 +31,7 @@ public class Item {
     public String description;
     public Integer totalAvailible;
     public Integer maximumPerUser;
-    public Double amount;
+    public double amount;
 
     public List<ItemTimeAmount> timeAmounts;
     public List<ItemCountAmount> countAmounts;

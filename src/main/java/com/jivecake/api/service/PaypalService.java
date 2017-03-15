@@ -66,7 +66,7 @@ public class PaypalService {
         this.transactionService = transactionService;
     }
 
-    public Key<PaymentDetail> create(PaymentDetail details) {
+    public Key<PaymentDetail> save(PaymentDetail details) {
         Key<PaymentDetail> key = this.datastore.save(details);
         return key;
     }
@@ -282,8 +282,6 @@ public class PaypalService {
                         amount = item.getDerivedAmountFromCounts(count);
                     } else if (item.timeAmounts != null) {
                         amount = item.getDerivedAmountFromTime(currentDate);
-                    } else if (item.amount == null) {
-                        amount = 0.0;
                     } else {
                         amount = item.amount;
                     }
@@ -309,7 +307,7 @@ public class PaypalService {
                     transaction.amount = amountPaid;
                 }
 
-                if (details == null) {
+                if (details == null || details.user_id == null) {
                     transaction.email = ipn.payer_email;
                     transaction.given_name = ipn.first_name;
                     transaction.family_name = ipn.last_name;
@@ -343,7 +341,11 @@ public class PaypalService {
                 transactions.add(transaction);
             }
 
-            result = this.datastore.save(transactions);
+            if (details == null) {
+                result = new ArrayList<>();
+            } else {
+                result = this.datastore.save(transactions);
+            }
         }
 
         return result;
@@ -441,7 +443,7 @@ public class PaypalService {
                     */
                 }
             } else {
-                result = this.datastore.save(Arrays.asList());
+                result = new ArrayList<>();
             }
         }
 

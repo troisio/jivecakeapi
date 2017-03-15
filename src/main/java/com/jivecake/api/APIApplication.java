@@ -72,7 +72,6 @@ import com.jivecake.api.service.PaymentService;
 import com.jivecake.api.service.PaypalService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.StripeService;
-import com.jivecake.api.service.SubscriptionService;
 import com.jivecake.api.service.TransactionService;
 import com.mongodb.MongoClient;
 import com.mongodb.ServerAddress;
@@ -136,7 +135,6 @@ public class APIApplication extends Application<APIConfiguration> {
         PaypalService.class,
         PermissionService.class,
         StripeService.class,
-        SubscriptionService.class,
         TransactionService.class
     );
 

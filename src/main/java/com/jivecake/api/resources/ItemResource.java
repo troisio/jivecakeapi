@@ -83,29 +83,16 @@ public class ItemResource {
     @GET
     @Path("/aggregated")
     public Response getAggregatedItemData(
-        @QueryParam("id") List<ObjectId> ids,
         @QueryParam("eventId") List<ObjectId> eventIds,
-        @QueryParam("organizationId") List<ObjectId> organizationIds,
         @Context JsonNode node
     ) {
         ResponseBuilder builder;
 
-        if (ids.isEmpty() && eventIds.isEmpty() && organizationIds.isEmpty()) {
+        if (eventIds.isEmpty()) {
             builder = Response.status(Status.BAD_REQUEST);
         } else {
-            Query<Item> query = this.itemService.query().disableValidation();
-
-            if (!ids.isEmpty()) {
-                query.field("id").in(ids);
-            }
-
-            if (!eventIds.isEmpty()) {
-                query.field("eventId").in(eventIds);
-            }
-
-            if (!organizationIds.isEmpty()) {
-                query.field("organizationId").in(organizationIds);
-            }
+            Query<Item> query = this.itemService.query()
+                .field("eventId").in(eventIds);
 
             List<Item> items = query.asList();
             List<AggregatedItemGroup> groups = this.itemService.getAggregatedaGroupData(items, this.transactionService, new Date());
@@ -153,7 +140,7 @@ public class ItemResource {
 
         if (item == null) {
             builder = Response.status(Status.NOT_FOUND);
-        } else if (item.amount == null) {
+        } else if (item.amount == 0) {
             Event event = this.eventService.read(item.eventId);
 
             List<Transaction> countedTransactions = this.transactionService.getTransactionsForItemTotal(item.id);
@@ -506,15 +493,9 @@ public class ItemResource {
     public Response update(@PathObject("id") Item searchedItem, @Context JsonNode claims, Item item) {
         ResponseBuilder builder;
 
-        boolean hasTimeAndCountViolation = item.timeAmounts != null && !item.timeAmounts.isEmpty() &&
-                                           item.countAmounts != null && !item.countAmounts.isEmpty();
+        boolean isValid = this.itemService.isValid(item);
 
-        boolean hasNegativeAmountViolation = item.timeAmounts != null && item.timeAmounts.stream().filter(t -> t.amount < 0).count() > 0 ||
-                                             item.countAmounts != null && item.countAmounts.stream().filter(t -> t.amount < 0).count() > 0;
-
-        if (hasTimeAndCountViolation || hasNegativeAmountViolation) {
-            builder = Response.status(Status.BAD_REQUEST);
-        } else {
+        if (isValid) {
             item.id = searchedItem.id;
             item.timeCreated = searchedItem.timeCreated;
             item.eventId = searchedItem.eventId;
@@ -541,6 +522,8 @@ public class ItemResource {
 
             Item entity = this.itemService.read((ObjectId)key.getId());
             builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+        } else {
+            builder = Response.status(Status.BAD_REQUEST);
         }
 
         return builder.build();
