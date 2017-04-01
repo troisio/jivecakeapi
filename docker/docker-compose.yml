@@ -8,6 +8,6 @@ services:
       - mongo
     volumes:
       - ..:/root/jivecakeapi
-      - ./example-settings.yml:/root/settings.yml
+      - ./settings:/root/settings.yml
   mongo:
     image: mongo:3.4.1
