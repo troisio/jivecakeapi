@@ -15,17 +15,6 @@ if [ ! -d $SOURCE_DIRECTORY ]; then
   fi
 fi
 
-if [ -d /root/tls ]; then
-  mkdir /root/tls_copy
-  cp /root/tls/keystore.jks /root/tls_copy/
-
-  if [ -a /root/tls/intermediate.crt ]; then
-    keytool -import -trustcacerts -noprompt -alias root -file /root/tls/intermediate.crt -keystore /root/tls_copy/keystore.jks -storepass $KEY_STORE_PASSWORD
-  fi
-
-  keytool -import -trustcacerts -noprompt -alias server -file /root/tls/server.crt -keystore /root/tls_copy/keystore.jks -storepass $KEY_STORE_PASSWORD
-fi
-
 cd $SOURCE_DIRECTORY
 
 if [ ! -d $SOURCE_DIRECTORY/build ]; then
