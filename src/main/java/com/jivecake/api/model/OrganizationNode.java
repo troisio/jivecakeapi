@@ -7,7 +7,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Queue;
 import java.util.Set;
-import java.util.function.Consumer;
 
 import org.bson.types.ObjectId;
 
@@ -37,17 +36,6 @@ public class OrganizationNode {
         }
 
         return result;
-    }
-
-    public void traverse(Consumer<OrganizationNode> consumer) {
-        Queue<OrganizationNode> visit = new ArrayDeque<>();
-        visit.add(this);
-
-        while (!visit.isEmpty()) {
-            OrganizationNode node = visit.poll();
-            visit.addAll(node.children);
-            consumer.accept(node);
-        }
     }
 
     public OrganizationNode find(ObjectId id) {

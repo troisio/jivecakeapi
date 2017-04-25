@@ -1,8 +1,9 @@
 package com.jivecake.api.service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -11,9 +12,9 @@ import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.Query;
+import org.mongodb.morphia.query.UpdateOperations;
 
 import com.jivecake.api.model.Organization;
-import com.jivecake.api.model.OrganizationNode;
 
 public class OrganizationService {
     private final Datastore datastore;
@@ -24,8 +25,7 @@ public class OrganizationService {
     }
 
     public Key<Organization> create(Organization organization) {
-        Key<Organization> result = this.datastore.save(organization);
-        return result;
+        return this.datastore.save(organization);
     }
 
     public Organization getRootOrganization() {
@@ -45,42 +45,45 @@ public class OrganizationService {
 
     public Organization delete(ObjectId id) {
         Query<Organization> deleteQuery = this.datastore.createQuery(Organization.class).filter("id", id);
-        Organization result = this.datastore.findAndDelete(deleteQuery);
-        return result;
+        return this.datastore.findAndDelete(deleteQuery);
     }
 
     public String getPermissionObjectClass() {
         return Organization.class.getSimpleName();
     }
 
-    public OrganizationNode getOrganizationTree(ObjectId id) {
-        OrganizationNode result;
-        List<Organization> organizations = this.query().asList();
+    public void reindex() {
+        Map<Organization, List<Organization>> organizationToDescendants = this.getDescendants();
 
-        Optional<Organization> optionalRoot = organizations.stream()
-            .filter(org -> org.id.equals(id))
-            .findFirst();
+        organizationToDescendants.forEach((organization, children) -> {
+            List<ObjectId> childIds = children.stream()
+                .map(org -> org.id)
+                .collect(Collectors.toList());
 
-        if (optionalRoot.isPresent()) {
-            Map<ObjectId, OrganizationNode> idToNode = organizations.stream()
-                .collect(Collectors.toMap(organization -> organization.id, organization -> new OrganizationNode(organization)));
+            UpdateOperations<Organization> operations = this.datastore
+                .createUpdateOperations(Organization.class)
+                .set("children", childIds);
+            this.datastore.update(organization, operations);
+        });
+    }
 
-            for (Organization organization: organizations) {
-                OrganizationNode parent = idToNode.get(organization.parentId);
+    public Map<Organization, List<Organization>> getDescendants() {
+        List<Organization> organizations = this.datastore.createQuery(Organization.class)
+            .asList();
 
-                if (parent != null) {
-                    OrganizationNode self = idToNode.get(organization.id);
-                    self.parent = parent;
-                    parent.children.add(self);
-                }
+        Map<ObjectId, Organization> organizationToId = organizations.stream()
+            .collect(Collectors.toMap(organization -> organization.id, Function.identity()));
+
+        Map<Organization, List<Organization>> organizationToDescendants = organizations.stream()
+            .collect(Collectors.toMap(Function.identity(), organization -> new ArrayList<>()));
+
+        for (Organization organization: organizations) {
+            for (Organization pointer = organizationToId.get(organization.parentId); pointer != null; pointer = organizationToId.get(pointer.parentId)) {
+                organizationToDescendants.get(pointer).add(organization);
             }
-
-            result = idToNode.get(id);
-        } else {
-            result = null;
         }
 
-        return result;
+        return organizationToDescendants;
     }
 
     public Key<Organization> save(Organization organization) {

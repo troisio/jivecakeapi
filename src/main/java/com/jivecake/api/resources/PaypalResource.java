@@ -1,6 +1,7 @@
 package com.jivecake.api.resources;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -90,8 +91,8 @@ public class PaypalResource {
             detail.user_id = claims.get("sub").asText();
         }
 
-        Key<PaymentDetail> key = this.paypalService.save(detail);
-        PaymentDetail entity = this.paypalService.readPaypalPaymentDetails((ObjectId)key.getId());
+        this.paypalService.save(detail);
+        PaymentDetail entity = this.paypalService.readPaypalPaymentDetails(detail.id);
         return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
     }
 
@@ -189,9 +190,8 @@ public class PaypalResource {
 
         boolean hasPermission = this.permissionService.has(
             claims.get("sub").asText(),
-            Application.class,
-            PermissionService.READ,
-            application.id
+            Arrays.asList(application),
+            PermissionService.READ
         );
 
         if (hasPermission) {
@@ -265,9 +265,8 @@ public class PaypalResource {
         Application application = this.applicationService.read();
         boolean hasPermission = this.permissionService.has(
             claims.get("sub").asText(),
-            Application.class,
-            PermissionService.WRITE,
-            application.id
+            Arrays.asList(application),
+            PermissionService.WRITE
         );
 
         if (hasPermission) {

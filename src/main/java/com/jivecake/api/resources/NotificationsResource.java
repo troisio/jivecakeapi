@@ -1,5 +1,6 @@
 package com.jivecake.api.resources;
 
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
 
@@ -70,9 +71,8 @@ public class NotificationsResource {
 
         boolean hasPermission = this.permissionService.has(
             claims.get("sub").asText(),
-            Application.class,
-            PermissionService.WRITE,
-            application.id
+            Arrays.asList(application),
+            PermissionService.WRITE
         );
 
         if (hasPermission) {

@@ -5,7 +5,6 @@ import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import org.bson.types.ObjectId;
 import org.glassfish.jersey.media.sse.EventOutput;
 import org.glassfish.jersey.media.sse.SseBroadcaster;
 
@@ -27,7 +26,7 @@ public class ClientConnectionService {
 
         if (broadcasters.isEmpty()) {
             broadcaster = new SseBroadcaster();
-            EventBroadcaster eventBroadcaster = new EventBroadcaster(new ObjectId(), broadcaster, user_id, new Date());
+            EventBroadcaster eventBroadcaster = new EventBroadcaster(broadcaster, user_id, new Date());
             this.broadcasters.add(eventBroadcaster);
         } else {
             broadcaster = broadcasters.get(0).broadcaster;

@@ -1,5 +1,6 @@
 package com.jivecake.api.resources;
 
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 
@@ -62,9 +63,8 @@ public class LogResource {
 
         boolean hasPermission = this.permissionService.has(
             claims.get("sub").asText(),
-            Application.class,
-            PermissionService.READ,
-            application.id
+            Arrays.asList(application),
+            PermissionService.READ
         );
 
         if (hasPermission) {

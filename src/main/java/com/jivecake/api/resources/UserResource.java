@@ -12,9 +12,11 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 import javax.ws.rs.Consumes;
+import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
@@ -25,12 +27,15 @@ import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.MultivaluedHashMap;
 import javax.ws.rs.core.Response;
+import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
 import org.apache.commons.io.FileUtils;
+import org.bson.types.ObjectId;
 import org.bytedeco.javacpp.opencv_core.Mat;
 import org.bytedeco.javacpp.opencv_core.Size;
 import org.mongodb.morphia.Datastore;
+import org.mongodb.morphia.query.Query;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -41,23 +46,77 @@ import com.jivecake.api.filter.Log;
 import com.jivecake.api.model.AssetType;
 import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.EntityType;
+import com.jivecake.api.model.Organization;
+import com.jivecake.api.model.Permission;
 import com.jivecake.api.service.FacialRecognitionService;
 import com.jivecake.api.service.ImgurService;
+import com.jivecake.api.service.OrganizationService;
 
 @CORS
 @Path("/user")
 public class UserResource {
     private final Datastore datastore;
+    private final OrganizationService organizationService;
     private final FacialRecognitionService facialRecognitionService;
     private final ImgurService imgurService;
     private final Size selfieResize = new Size(200, 200);
     private final ObjectMapper mapper = new ObjectMapper();
 
     @Inject
-    public UserResource(Datastore datastore, FacialRecognitionService facialRecognitionService, ImgurService imgurService) {
+    public UserResource(
+        Datastore datastore,
+        OrganizationService organizationService,
+        FacialRecognitionService facialRecognitionService,
+        ImgurService imgurService
+    ) {
         this.datastore = datastore;
+        this.organizationService = organizationService;
         this.facialRecognitionService = facialRecognitionService;
         this.imgurService = imgurService;
+    }
+
+    @GET
+    @Path("/{user_id}/organization")
+    @Authorized
+    public Response getOrganizations(
+        @PathParam("user_id") String userId,
+        @Context JsonNode claims
+    ) {
+        String user_id = claims.get("sub").asText();
+        boolean hasPermission = userId.equals(user_id);
+
+        ResponseBuilder builder;
+
+        if (hasPermission) {
+            List<ObjectId> organizationIds = this.datastore.createQuery(Permission.class)
+                .field("user_id").equal(userId)
+                .field("objectClass").equal(this.organizationService.getPermissionObjectClass())
+                .asList()
+                .stream()
+                .map(permission -> permission.objectId)
+                .collect(Collectors.toList());
+
+            List<Organization> organizations = this.datastore.createQuery(Organization.class)
+                .field("id").in(organizationIds)
+                .asList();
+
+            List<ObjectId> childrenIds = organizations.stream()
+                .map(organization -> organization.children)
+                .flatMap(collection -> collection.stream())
+                .collect(Collectors.toList());
+
+            Query<Organization> query = this.datastore.createQuery(Organization.class);
+            query.or(
+                query.criteria("id").in(organizationIds),
+                query.criteria("id").in(childrenIds)
+            );
+
+            builder = Response.ok(query.asList()).type(MediaType.APPLICATION_JSON);
+        } else {
+            builder = Response.status(Status.UNAUTHORIZED);
+        }
+
+        return builder.build();
     }
 
     @POST
