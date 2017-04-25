@@ -1,11 +1,12 @@
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.junit.After;
 import org.junit.Before;
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Morphia;
 
-import com.jivecake.api.model.Transaction;
 import com.mongodb.MongoClient;
 import com.mongodb.ServerAddress;
 
@@ -29,6 +30,8 @@ public class Test {
 
     @org.junit.Test
     public void test() {
-        this.datastore.delete(this.datastore.createQuery(Transaction.class));
+        Map<String, String> map = new HashMap<>();
+
+        System.out.println(map.get(null));
     }
 }

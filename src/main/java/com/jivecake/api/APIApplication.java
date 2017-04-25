@@ -42,7 +42,6 @@ import com.jivecake.api.resources.AssetResource;
 import com.jivecake.api.resources.Auth0Resource;
 import com.jivecake.api.resources.ConnectionResource;
 import com.jivecake.api.resources.EventResource;
-import com.jivecake.api.resources.FeatureResource;
 import com.jivecake.api.resources.ItemResource;
 import com.jivecake.api.resources.LogResource;
 import com.jivecake.api.resources.NotificationsResource;
@@ -62,7 +61,6 @@ import com.jivecake.api.service.FacialRecognitionService;
 import com.jivecake.api.service.FeatureService;
 import com.jivecake.api.service.HttpService;
 import com.jivecake.api.service.ImgurService;
-import com.jivecake.api.service.IndexedOrganizationNodeService;
 import com.jivecake.api.service.ItemService;
 import com.jivecake.api.service.LogService;
 import com.jivecake.api.service.NotificationService;
@@ -102,7 +100,6 @@ public class APIApplication extends Application<APIConfiguration> {
         AssetResource.class,
         ConnectionResource.class,
         EventResource.class,
-        FeatureResource.class,
         ItemResource.class,
         LogResource.class,
         NotificationsResource.class,
@@ -124,7 +121,6 @@ public class APIApplication extends Application<APIConfiguration> {
         FacialRecognitionService.class,
         FeatureService.class,
         HttpService.class,
-        IndexedOrganizationNodeService.class,
         ImgurService.class,
         ItemService.class,
         LogService.class,
@@ -179,6 +175,7 @@ public class APIApplication extends Application<APIConfiguration> {
 
         Organization organization = new Organization();
         organization.id = new ObjectId("55865027c1fcce003aa0aa40");
+        organization.children = new ArrayList<>();
         organization.name = "JiveCake";
         organization.email = "luis@trois.io";
         organization.timeCreated = new Date();
@@ -197,18 +194,13 @@ public class APIApplication extends Application<APIConfiguration> {
 
         ApplicationService applicationService = new ApplicationService(application);
         OrganizationService organizationService = new OrganizationService(datastore);
-        IndexedOrganizationNodeService indexedOrganizationNodeService = new IndexedOrganizationNodeService(
-            datastore,
-            new OrganizationService(datastore)
-        );
+
         PermissionService permissionService = new PermissionService(
             datastore,
             applicationService,
-            organizationService,
-            indexedOrganizationNodeService
+            organizationService
         );
 
-        indexedOrganizationNodeService.writeIndexedOrganizationNodes(organization.id);
         this.establishRootUsers(
             permissionService,
             application,

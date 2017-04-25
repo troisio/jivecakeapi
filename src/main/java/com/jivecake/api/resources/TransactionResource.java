@@ -41,14 +41,12 @@ import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
-import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.PaypalIPN;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.ItemService;
-import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.TransactionService;
 
@@ -58,7 +56,6 @@ public class TransactionResource {
     private final TransactionService transactionService;
     private final ItemService itemService;
     private final EventService eventService;
-    private final OrganizationService organizationService;
     private final PermissionService permissionService;
     private final Auth0Service auth0Service;
     private final ObjectMapper mapper = new ObjectMapper();
@@ -68,14 +65,12 @@ public class TransactionResource {
         ItemService itemService,
         EventService eventService,
         TransactionService transactionService,
-        OrganizationService organizationService,
         PermissionService permissionService,
         Auth0Service auth0Service
     ) {
         this.transactionService = transactionService;
         this.itemService = itemService;
         this.eventService = eventService;
-        this.organizationService = organizationService;
         this.permissionService = permissionService;
         this.auth0Service = auth0Service;
     }
@@ -567,54 +562,41 @@ public class TransactionResource {
     @POST
     @Path("/{id}/revoke")
     @Authorized
+    @HasPermission(clazz=Transaction.class, permission=PermissionService.WRITE, id="id")
     public Response revoke(@PathObject("id") Transaction transaction, @Context JsonNode claims) {
         ResponseBuilder builder;
 
-        if (transaction == null) {
-            builder = Response.status(Status.NOT_FOUND);
+        boolean targetIsCompleted = transaction.status == this.transactionService.getPaymentCompleteStatus();
+        boolean hasChildTransaction = this.transactionService.query()
+            .field("parentTransactionId").equal(transaction.id)
+            .count() > 0;
+
+        if (hasChildTransaction) {
+            builder = Response.status(Status.BAD_REQUEST)
+                    .entity("{\"error\": \"childtransaction\"}")
+                    .type(MediaType.APPLICATION_JSON);
         } else {
-            Item item = this.itemService.read(transaction.itemId);
-            Event event = this.eventService.read(item.eventId);
-            Organization organization = this.organizationService.read(event.organizationId);
+            if (targetIsCompleted) {
+                Transaction revokedTransaction = new Transaction();
+                revokedTransaction.given_name = transaction.given_name;
+                revokedTransaction.middleName = transaction.middleName;
+                revokedTransaction.family_name = transaction.family_name;
+                revokedTransaction.itemId = transaction.itemId;
+                revokedTransaction.eventId = transaction.eventId;
+                revokedTransaction.organizationId = transaction.organizationId;
+                revokedTransaction.status = this.transactionService.getRevokedStatus();
+                revokedTransaction.user_id = transaction.user_id;
+                revokedTransaction.parentTransactionId = transaction.id;
+                revokedTransaction.timeCreated = new Date();
 
-            boolean hasPermission = this.permissionService.has(
-                claims.get("sub").asText(),
-                Arrays.asList(organization),
-                PermissionService.WRITE
-            );
+                Key<Transaction> key = this.transactionService.save(revokedTransaction);
+                Transaction entity = this.transactionService.read((ObjectId)key.getId());
 
-            boolean targetIsCompleted = transaction.status == this.transactionService.getPaymentCompleteStatus();
-            boolean hasChildTransaction = this.transactionService.query()
-                .field("parentTransactionId").equal(transaction.id)
-                .count() > 0;
-
-            if (hasChildTransaction) {
-                builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"childtransaction\"}").type(MediaType.APPLICATION_JSON);
+                builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
             } else {
-                if (targetIsCompleted) {
-                    if (hasPermission) {
-                        Transaction revokedTransaction = new Transaction();
-                        revokedTransaction.given_name = transaction.given_name;
-                        revokedTransaction.middleName = transaction.middleName;
-                        revokedTransaction.family_name = transaction.family_name;
-                        revokedTransaction.itemId = transaction.itemId;
-                        revokedTransaction.eventId = transaction.eventId;
-                        revokedTransaction.organizationId = transaction.organizationId;
-                        revokedTransaction.status = this.transactionService.getRevokedStatus();
-                        revokedTransaction.user_id = transaction.user_id;
-                        revokedTransaction.parentTransactionId = transaction.id;
-                        revokedTransaction.timeCreated = new Date();
-
-                        Key<Transaction> key = this.transactionService.save(revokedTransaction);
-                        Transaction entity = this.transactionService.read((ObjectId)key.getId());
-
-                        builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-                    } else {
-                        builder = Response.status(Status.UNAUTHORIZED);
-                    }
-                } else {
-                    builder = Response.status(Status.BAD_REQUEST);
-                }
+                builder = Response.status(Status.BAD_REQUEST)
+                    .entity("{\"error\": \"complete\"}")
+                    .type(MediaType.APPLICATION_JSON);
             }
         }
 

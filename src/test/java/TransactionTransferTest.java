@@ -27,7 +27,6 @@ import com.jivecake.api.resources.TransactionResource;
 import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.EventService;
-import com.jivecake.api.service.IndexedOrganizationNodeService;
 import com.jivecake.api.service.ItemService;
 import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PermissionService;
@@ -56,12 +55,10 @@ public class TransactionTransferTest {
             new ItemService(this.datastore),
             this.eventService,
             this.transactionService,
-            organizationService,
             new PermissionService(
                 this.datastore,
                 new ApplicationService(new Application()),
-                organizationService,
-                new IndexedOrganizationNodeService(this.datastore, organizationService)
+                organizationService
             ),
             new Auth0Service(new OAuthConfiguration(), Arrays.asList()) {
                 @Override

@@ -23,10 +23,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.QueryRestrict;
-import com.jivecake.api.model.Application;
 import com.jivecake.api.model.Permission;
 import com.jivecake.api.request.Paging;
-import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PermissionService;
 
@@ -34,17 +32,14 @@ import com.jivecake.api.service.PermissionService;
 @CORS
 public class PermissionResource {
     private final PermissionService permissionService;
-    private final ApplicationService applicationService;
     private final OrganizationService organizationService;
 
     @Inject
     public PermissionResource(
         PermissionService permissionService,
-        ApplicationService applicationService,
         OrganizationService organizationService
     ) {
         this.permissionService = permissionService;
-        this.applicationService = applicationService;
         this.organizationService = organizationService;
     }
 
@@ -60,7 +55,8 @@ public class PermissionResource {
         ResponseBuilder builder;
 
         boolean hasUserPermission = userIds.size() == 1 && claims.get("sub").asText().equals(userIds.get(0));
-        boolean isOrganizationQuery = this.organizationService.getPermissionObjectClass().equals(objectClass) && !objectIds.isEmpty();
+        boolean isOrganizationQuery = this.organizationService.getPermissionObjectClass().equals(objectClass) &&
+            !objectIds.isEmpty();
         boolean hasOrganizationPermission;
 
         if (isOrganizationQuery) {
@@ -167,33 +163,18 @@ public class PermissionResource {
 
         boolean hasUserPermission = permissionsNotBelongingToRequester.isEmpty();
 
-        Application application = this.applicationService.read();
-
-        boolean hasApplicationRead = this.permissionService.has(
-            user_id,
-            Application.class,
-            PermissionService.READ,
-            application.id
-        );
-
-        boolean hasOrganizationPermission;
-
-        Set<ObjectId> organizationIds = entities.stream()
+        List<ObjectId> organizationIds = entities.stream()
             .filter(permission -> permission.objectClass.equals(this.organizationService.getPermissionObjectClass()))
             .map(permission -> permission.objectId)
-            .collect(Collectors.toSet());
+            .collect(Collectors.toList());
 
-        if (organizationIds.size() == entities.size()) {
-            hasOrganizationPermission = this.permissionService.hasAllHierarchicalPermission(
-                user_id,
-                PermissionService.READ,
-                organizationIds
-            );
-        } else {
-            hasOrganizationPermission = false;
-        }
+        boolean hasOrganizationPermission = this.permissionService.hasAllHierarchicalPermission(
+            user_id,
+            PermissionService.READ,
+            organizationIds
+        );
 
-        if (hasUserPermission || hasOrganizationPermission || hasApplicationRead) {
+        if (hasUserPermission || hasOrganizationPermission) {
             Paging<Permission> entity = new Paging<>(entities, query.count());
             builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         } else {

@@ -1,11 +1,12 @@
 package com.jivecake.api.resources;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.ws.rs.Consumes;
@@ -33,10 +34,8 @@ import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Application;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Feature;
-import com.jivecake.api.model.IndexedOrganizationNode;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.OrganizationFeature;
-import com.jivecake.api.model.OrganizationNode;
 import com.jivecake.api.model.PaymentDetail;
 import com.jivecake.api.model.PaymentProfile;
 import com.jivecake.api.model.PaypalPaymentProfile;
@@ -46,7 +45,6 @@ import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.FeatureService;
-import com.jivecake.api.service.IndexedOrganizationNodeService;
 import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PaymentProfileService;
 import com.jivecake.api.service.PaymentService;
@@ -60,7 +58,6 @@ import com.stripe.model.Subscription;
 public class OrganizationResource {
     private final ApplicationService applicationService;
     private final OrganizationService organizationService;
-    private final IndexedOrganizationNodeService indexedOrganizationNodeService;
     private final EventService eventService;
     private final PaymentProfileService paymentProfileService;
     private final FeatureService featureService;
@@ -68,12 +65,12 @@ public class OrganizationResource {
     private final PaymentService paymentService;
     private final StripeService stripeService;
     private final long maximumOrganizationsPerUser = 50;
+    private final ExecutorService reindexExecutor = Executors.newSingleThreadExecutor();
 
     @Inject
     public OrganizationResource(
         ApplicationService applicationService,
         OrganizationService organizationService,
-        IndexedOrganizationNodeService indexedOrganizationNodeService,
         EventService eventService,
         PaymentProfileService paymentProfileService,
         FeatureService featureService,
@@ -83,7 +80,6 @@ public class OrganizationResource {
     ) {
         this.applicationService = applicationService;
         this.organizationService = organizationService;
-        this.indexedOrganizationNodeService = indexedOrganizationNodeService;
         this.eventService = eventService;
         this.paymentProfileService = paymentProfileService;
         this.featureService = featureService;
@@ -106,9 +102,8 @@ public class OrganizationResource {
 
             boolean hasPermission = this.permissionService.has(
                 claims.get("sub").asText(),
-                Application.class,
-                PermissionService.WRITE,
-                application.id
+                Arrays.asList(application),
+                PermissionService.WRITE
             );
 
             if (hasPermission) {
@@ -195,15 +190,6 @@ public class OrganizationResource {
         return builder.build();
     }
 
-    @GET
-    @Path("/{id}/tree")
-    @Authorized
-    @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.READ)
-    public Response getTree(@PathObject("id") Organization organization, @Context JsonNode claims) {
-        OrganizationNode tree = this.organizationService.getOrganizationTree(organization.id);
-        return Response.ok(tree).type(MediaType.APPLICATION_JSON).build();
-    }
-
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Path("/{id}/event")
@@ -265,7 +251,10 @@ public class OrganizationResource {
     @POST
     @Authorized
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response create(@Context JsonNode claims, Organization organization) {
+    public Response create(
+        @Context JsonNode claims,
+        Organization organization
+    ) {
         ResponseBuilder builder;
 
         long sameEmailCount = this.organizationService.query()
@@ -276,6 +265,7 @@ public class OrganizationResource {
             if (organization.parentId == null) {
                 builder = Response.status(Status.BAD_REQUEST);
             } else {
+                String userId = claims.get("sub").asText();
                 Application application = this.applicationService.read();
 
                 Organization rootOrganization = this.organizationService.getRootOrganization();
@@ -286,17 +276,16 @@ public class OrganizationResource {
                     parentIdOrganizationViolation = false;
                 } else {
                     boolean hasApplicationWrite = permissionService.has(
-                        claims.get("sub").asText(),
-                        Application.class,
-                        PermissionService.WRITE,
-                        application.id
+                        userId,
+                        Arrays.asList(application),
+                        PermissionService.WRITE
                     );
 
                     parentIdOrganizationViolation = !hasApplicationWrite;
                 }
 
                 long userOrganizationPermissions = this.permissionService.query()
-                    .field("user_id").equal(claims.get("sub").asText())
+                    .field("user_id").equal(userId)
                     .field("objectClass").equal(Organization.class.getSimpleName())
                     .field("include").equal(PermissionService.ALL)
                     .count();
@@ -306,6 +295,7 @@ public class OrganizationResource {
                 } else if (parentIdOrganizationViolation) {
                     builder = Response.status(Status.UNAUTHORIZED);
                 } else {
+                    organization.children = new ArrayList<>();
                     organization.timeCreated = new Date();
                     organization.timeUpdated = null;
                     organization.id = null;
@@ -313,7 +303,7 @@ public class OrganizationResource {
                     Key<Organization> key = this.organizationService.create(organization);
 
                     Permission permission = new Permission();
-                    permission.user_id = claims.get("sub").asText();
+                    permission.user_id = userId;
                     permission.include = PermissionService.ALL;
                     permission.objectClass = Organization.class.getSimpleName();
                     permission.objectId = (ObjectId)key.getId();
@@ -321,58 +311,19 @@ public class OrganizationResource {
 
                     this.permissionService.write(Arrays.asList(permission));
 
-                    this.indexedOrganizationNodeService.writeIndexedOrganizationNodes(rootOrganization.id);
-
                     Organization entity = this.organizationService.read((ObjectId)key.getId());
                     builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+
+                    this.reindexExecutor.submit(new Runnable() {
+                        @Override
+                        public void run() {
+                            OrganizationResource.this.organizationService.reindex();
+                        }
+                    });
                 }
             }
         } else {
             builder = Response.status(Status.CONFLICT);
-        }
-
-        return builder.build();
-    }
-
-    @GET
-    @Path("/index")
-    @Authorized
-    public Response read(
-        @QueryParam("organizationIds") Set<ObjectId> organizationIds,
-        @QueryParam("parentIds") List<ObjectId> parentIds,
-        @QueryParam("childIds") List<ObjectId> childIds,
-        @Context JsonNode claims
-    ) {
-        Query<IndexedOrganizationNode> query = this.indexedOrganizationNodeService.query();
-
-        if (!organizationIds.isEmpty()) {
-            query.field("organizationId").in(organizationIds);
-        }
-
-        if (!parentIds.isEmpty()) {
-            query.field("parentIds").equal(parentIds);
-        }
-
-        if (!childIds.isEmpty()) {
-            query.field("childIds").equal(childIds);
-        }
-
-        List<IndexedOrganizationNode> nodes = query.asList();
-        Set<ObjectId> searchedOrganizationIds = nodes.stream().map(node -> node.organizationId).collect(Collectors.toSet());
-
-        boolean hasPermission = this.permissionService.hasAllHierarchicalPermission(
-            claims.get("sub").asText(),
-            PermissionService.READ,
-            searchedOrganizationIds
-        );
-
-        ResponseBuilder builder;
-
-        if (hasPermission) {
-            Paging<IndexedOrganizationNode> paging = new Paging<>(nodes, query.count());
-            builder = Response.ok(paging).type(MediaType.APPLICATION_JSON);
-        } else {
-            builder = Response.status(Status.UNAUTHORIZED);
         }
 
         return builder.build();
@@ -494,7 +445,11 @@ public class OrganizationResource {
     @Path("/{id}")
     @Authorized
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
-    public Response update(@PathObject("id") Organization queriedOrganization, @Context JsonNode claims, Organization organization) {
+    public Response update(
+        @PathObject("id") Organization queriedOrganization,
+        Organization organization,
+        @Context JsonNode claims
+    ) {
         ResponseBuilder builder;
 
         Query<Organization> query = this.organizationService.query()
@@ -504,33 +459,17 @@ public class OrganizationResource {
         long sameEmailCount = query.count();
 
         if (sameEmailCount == 0) {
-            boolean parentIdChanged = !Objects.equals(queriedOrganization.parentId, organization.parentId);
-            boolean parentIdChangeViolation;
-
-            if (parentIdChanged) {
-                Application application = this.applicationService.read();
-                boolean hasApplicationWrite = this.permissionService.has(
-                    claims.get("sub").asText(),
-                    Application.class,
-                    PermissionService.WRITE,
-                    application.id
-                );
-
-                parentIdChangeViolation = !hasApplicationWrite;
-            } else {
-                parentIdChangeViolation = false;
-            }
+            boolean parentIdChangeViolation = !Objects.equals(queriedOrganization.parentId, organization.parentId);
 
             if (parentIdChangeViolation) {
-                builder = Response.status(Status.UNAUTHORIZED);
+                builder = Response.status(Status.BAD_REQUEST);
             } else {
+                organization.children = queriedOrganization.children;
                 organization.id = queriedOrganization.id;
                 organization.timeCreated = queriedOrganization.timeCreated;
                 organization.timeUpdated = new Date();
 
                 Key<Organization> key = this.organizationService.save(organization);
-                Organization rootOrganization = this.organizationService.getRootOrganization();
-                this.indexedOrganizationNodeService.writeIndexedOrganizationNodes(rootOrganization.id);
 
                 Organization entity = this.organizationService.read((ObjectId)key.getId());
                 builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
@@ -557,12 +496,14 @@ public class OrganizationResource {
     public Response delete(@PathObject("id") Organization searchedOrganization, @Context JsonNode claims) {
         ResponseBuilder builder;
 
-        List<Event> events = this.eventService.query()
+        long count = this.eventService.query()
             .field("organizationId").equal(searchedOrganization.id)
-            .asList();
+            .count();
 
-        if (!events.isEmpty()) {
-            builder = Response.status(Status.BAD_REQUEST).entity(events);
+        if (count > 0) {
+            builder = Response.status(Status.BAD_REQUEST)
+                .entity("{\"error\": \"count\"}")
+                .type(MediaType.APPLICATION_JSON);
         } else if (searchedOrganization.parentId == null) {
             builder = Response.status(Status.BAD_REQUEST);
         } else {
@@ -573,10 +514,14 @@ public class OrganizationResource {
                 .field("objectClass").equal(Organization.class.getSimpleName());
             this.permissionService.delete(deleteQuery);
 
-            Organization rootOrganization = this.organizationService.getRootOrganization();
-            this.indexedOrganizationNodeService.writeIndexedOrganizationNodes(rootOrganization.id);
+            builder = Response.ok(deletedOrganization).type(MediaType.APPLICATION_JSON);
 
-            builder = Response.ok(deletedOrganization);
+            this.reindexExecutor.submit(new Runnable() {
+                @Override
+                public void run() {
+                    OrganizationResource.this.organizationService.reindex();
+                }
+            });
         }
 
         return builder.build();

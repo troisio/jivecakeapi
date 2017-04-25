@@ -1,5 +1,6 @@
 package com.jivecake.api.service;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -14,6 +15,7 @@ import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.CriteriaContainer;
 import org.mongodb.morphia.query.Query;
 
+import com.jivecake.api.model.Application;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
@@ -30,22 +32,20 @@ public class PermissionService {
     public static final int WRITE = 1;
     private final Datastore datastore;
     private final OrganizationService organizationService;
-    private final IndexedOrganizationNodeService indexedOrganizationNodeService;
 
     @Inject
     public PermissionService(
         Datastore datastore,
         ApplicationService applicationService,
-        OrganizationService organizationService,
-        IndexedOrganizationNodeService indexedOrganizationNodeService
+        OrganizationService organizationService
     ) {
         this.datastore = datastore;
         this.organizationService = organizationService;
-        this.indexedOrganizationNodeService = indexedOrganizationNodeService;
     }
 
     public boolean has(String sub, Collection<?> entities, int permission) {
         Set<ObjectId> organizationIds = new HashSet<>();
+        List<ObjectId> applicationIds = new ArrayList<>();
 
         for (Object entity: entities) {
             if (entity instanceof Transaction) {
@@ -58,12 +58,23 @@ public class PermissionService {
                 organizationIds.add(((Organization)entity).id);
             } else if (entity instanceof PaymentProfile) {
                 organizationIds.add(((PaymentProfile)entity).organizationId);
+            } else if (entity instanceof Application) {
+                applicationIds.add(((Application)entity).id);
             } else {
-                return false;
+                throw new RuntimeException(entity.getClass() + " is not a valid class for permissions");
             }
         }
 
-        return this.hasAllHierarchicalPermission(sub, permission, organizationIds);
+        if (applicationIds.size() > 1) {
+            throw new RuntimeException("argument \"entities\" contains more than 1 Application");
+        }
+
+        boolean hasApplicationPermission = applicationIds.isEmpty() ||
+            this.has(sub, Application.class, permission, applicationIds.get(0));
+        boolean hasOrganizationPermissions = organizationIds.isEmpty() ||
+            this.hasAllHierarchicalPermission(sub, permission, organizationIds);
+
+        return hasApplicationPermission && hasOrganizationPermissions;
     }
 
     public boolean has(String user_id, Class<?> model, int permission, ObjectId objectId) {
@@ -108,15 +119,14 @@ public class PermissionService {
             this.datastore.delete(query);
         }
 
-       Iterable<Key<Permission>> result = this.datastore.save(permissions);
-       return result;
+        return this.datastore.save(permissions);
     }
 
     public Query<Permission> query() {
         return this.datastore.createQuery(Permission.class);
     }
 
-    public boolean hasAllHierarchicalPermission(String sub, int permission, Set<ObjectId> organizationIds) {
+    public boolean hasAllHierarchicalPermission(String sub, int permission, Collection<ObjectId> organizationIds) {
         Query<Permission> query = this.query();
         query.field("user_id").equal(sub)
             .field("objectClass").equal(this.organizationService.getPermissionObjectClass())
@@ -134,32 +144,17 @@ public class PermissionService {
                  )
              );
 
-        /*
-         * Though the below logic is correct, more filtering needs to be
-         * done on 'organizationIdsWithPermission' in a performant manner.
-         * This set may also include vertices which are descendants of
-         * other vertices in this collection. In this set, we only wish to obtain
-         * vertices where no vertex is a descendant of another vertex
-         */
-        Set<ObjectId> organizationIdsWithPermission = query.asList()
+        Set<ObjectId> hasOrganizationPermissions = query.asList()
             .stream()
             .map(p -> p.objectId)
             .collect(Collectors.toSet());
 
-        Set<ObjectId> userHasPermissions = this.indexedOrganizationNodeService.query()
-            .field("organizationId").in(organizationIdsWithPermission)
+        this.datastore.createQuery(Organization.class)
+            .field("id").in(hasOrganizationPermissions)
             .asList()
-            .stream()
-            .map(node -> node.childIds)
-            .flatMap(Set::stream)
-            .collect(Collectors.toSet());
+            .forEach(organization -> hasOrganizationPermissions.addAll(organization.children));
 
-        Set<ObjectId> treePermissions = new HashSet<>();
-        treePermissions.addAll(organizationIdsWithPermission);
-        treePermissions.addAll(userHasPermissions);
-
-        boolean result = treePermissions.containsAll(organizationIds);
-        return result;
+        return hasOrganizationPermissions.containsAll(organizationIds);
     }
 
     public WriteResult delete(Query<Permission> query) {

@@ -59,17 +59,17 @@ public class PaymentProfileResource {
 
     @GET
     @Path("/search")
+    @QueryRestrict(hasAny=true, target={"id"})
     public Response search(
         @QueryParam("id") List<ObjectId> ids
     ) {
-        Query<PaymentProfile> query = this.paymentProfileService.query();
+        Query<PaymentProfile> query = this.paymentProfileService.query()
+            .field("id").in(ids);
 
-        if (!ids.isEmpty()) {
-            query.field("id").in(ids);
-        }
+        FindOptions options = new FindOptions();
+        options.limit(100);
 
-        Paging<PaymentProfile> paging = new Paging<>(query.asList(), query.count());
-
+        Paging<PaymentProfile> paging = new Paging<>(query.asList(options), query.count());
         ResponseBuilder builder = Response.ok(paging).type(MediaType.APPLICATION_JSON);
         return builder.build();
     }

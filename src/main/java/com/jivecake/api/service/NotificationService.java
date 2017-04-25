@@ -34,9 +34,7 @@ public class NotificationService {
         this.clientConnectionService.getBroadcasters()
             .stream()
             .filter(broadcaster -> user_ids.contains(broadcaster.user_id))
-            .forEach((broadcaster) -> {
-                broadcaster.broadcaster.broadcast(chunk);
-             });
+            .forEach((broadcaster) -> broadcaster.broadcaster.broadcast(chunk));
     }
 
     public void notifyItemTransaction(ObjectId id) {
