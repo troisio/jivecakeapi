@@ -6,41 +6,37 @@ import java.util.stream.Collectors;
 import javax.inject.Inject;
 import javax.ws.rs.core.MediaType;
 
-import org.bson.types.ObjectId;
 import org.glassfish.jersey.media.sse.OutboundEvent;
+import org.mongodb.morphia.Datastore;
 
+import com.jivecake.api.model.Permission;
 import com.jivecake.api.model.Transaction;
 
 public class NotificationService {
-    private final TransactionService transactionService;
     private final OrganizationService organizationService;
-    private final PermissionService permissionService;
     private final ClientConnectionService clientConnectionService;
+    private final Datastore datastore;
 
     @Inject
     public NotificationService(
-        TransactionService transactionService,
         OrganizationService organizationService,
-        PermissionService permissionService,
-        ClientConnectionService clientConnectionService
+        ClientConnectionService clientConnectionService,
+        Datastore datastore
     ) {
-        this.transactionService = transactionService;
         this.organizationService = organizationService;
-        this.permissionService = permissionService;
         this.clientConnectionService = clientConnectionService;
+        this.datastore = datastore;
     }
 
     public void sendEvent(Set<String> user_ids, OutboundEvent chunk) {
-        this.clientConnectionService.getBroadcasters()
+        this.clientConnectionService.broadcasters
             .stream()
             .filter(broadcaster -> user_ids.contains(broadcaster.user_id))
             .forEach((broadcaster) -> broadcaster.broadcaster.broadcast(chunk));
     }
 
-    public void notifyItemTransaction(ObjectId id) {
-        Transaction transaction = this.transactionService.read(id);
-
-        Set<String> userIds = this.permissionService.query()
+    public void notifyItemTransaction(Transaction transaction) {
+        Set<String> userIds = this.datastore.createQuery(Permission.class)
             .project("user_id", true)
             .field("objectClass").equal(this.organizationService.getPermissionObjectClass())
             .field("objectId").equal(transaction.organizationId)
@@ -55,7 +51,7 @@ public class NotificationService {
 
         OutboundEvent notification = new OutboundEvent.Builder()
             .mediaType(MediaType.APPLICATION_JSON_TYPE)
-            .name(this.transactionService.getItemTransactionCreatedEventName())
+            .name("transaction.created")
             .data(Transaction.class, transaction)
             .build();
 

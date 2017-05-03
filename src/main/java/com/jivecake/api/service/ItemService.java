@@ -10,8 +10,6 @@ import javax.inject.Inject;
 
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
-import org.mongodb.morphia.Key;
-import org.mongodb.morphia.query.Query;
 
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
@@ -25,23 +23,6 @@ public class ItemService {
     @Inject
     public ItemService(Datastore datastore) {
         this.datastore = datastore;
-    }
-
-    public Key<Item> save(Item item) {
-        Key<Item> result = this.datastore.save(item);
-        return result;
-    }
-
-    public Item read(ObjectId id) {
-        return this.datastore.find(Item.class)
-        .field("id").equal(id)
-        .get();
-    }
-
-    public Item delete(ObjectId id) {
-        Query<Item> deleteQuery = this.datastore.createQuery(Item.class).filter("id", id);
-        Item result = this.datastore.findAndDelete(deleteQuery);
-        return result;
     }
 
     public boolean isValid(Item item) {
@@ -58,25 +39,16 @@ public class ItemService {
             !hasNegativeAmountViolation;
     }
 
-    public Query<Item> query() {
-        return this.datastore.createQuery(Item.class);
-    }
-
-    public List<AggregatedItemGroup> getAggregatedaGroupData(List<Item> items, TransactionService transactionService, Date currentTime) {
-        List<ObjectId> itemIds = items.stream().map(item -> item.id).collect(Collectors.toList());
-        List<ObjectId> eventIds = items.stream().map(item -> item.eventId).collect(Collectors.toList());
-
-        List<Event> events = this.datastore.createQuery(Event.class)
-            .field("id").in(eventIds)
+    public AggregatedItemGroup getAggregatedaGroupData(
+        Event event,
+        TransactionService transactionService,
+        Date currentTime
+    ) {
+        List<Transaction> transactions = this.datastore.createQuery(Transaction.class)
+            .field("eventId").equal(event.id)
             .asList();
-
-        List<Event> parentEntities = new ArrayList<>();
-        parentEntities.addAll(events);
-
-        Map<ObjectId, List<Item>> eventIdToItems = items.stream().collect(Collectors.groupingBy(item -> item.eventId));
-
-        List<Transaction> transactions = transactionService.query()
-            .field("itemId").in(itemIds)
+        List<Item> items = this.datastore.createQuery(Item.class)
+            .field("eventId").equal(event.id)
             .asList();
 
         List<List<Transaction>> forest = transactionService.getTransactionForest(transactions);
@@ -86,47 +58,43 @@ public class ItemService {
             .map(lineage -> lineage.get(0))
             .collect(Collectors.toList());
 
-        Map<ObjectId, List<Transaction>> itemToTransactions = leafTransactions.stream()
-            .collect(Collectors.groupingBy(transaction -> transaction.itemId));
+        Map<ObjectId, List<Transaction>> itemToTransactions = items.stream()
+            .collect(Collectors.toMap(item -> item.id, item -> new ArrayList<>()));
 
-        List<AggregatedItemGroup> groups = parentEntities.stream().map(event -> {
-            AggregatedItemGroup itemGroup = new AggregatedItemGroup();
+        for (Transaction transaction: leafTransactions) {
+            itemToTransactions.get(transaction.itemId).add(transaction);
+        }
 
-            List<Item> parentItems = eventIdToItems.get(event.id);
+        List<ItemData> itemData = items.stream().map(item -> {
+            ItemData result = new ItemData();
+            result.item = item;
+            result.transactions = itemToTransactions.get(item.id);
 
-            List<ItemData> itemData = parentItems.stream().map(item -> {
-                ItemData result = new ItemData();
-                result.item = item;
-                result.transactions = itemToTransactions.containsKey(item.id) ? itemToTransactions.get(item.id) : new ArrayList<>();
+            Double amount;
 
-                Double amount;
+            if (item.countAmounts != null) {
+                long count = result.transactions.stream().filter(
+                    transaction -> transaction.status == transactionService.getPaymentCompleteStatus() ||
+                    transaction.status == transactionService.getPaymentPendingStatus()
+                ).map(transaction -> transaction.quantity)
+                 .reduce(0L, Long::sum);
 
-                if (item.countAmounts != null) {
-                    long count = result.transactions.stream().filter(
-                        transaction -> transaction.status == transactionService.getPaymentCompleteStatus() ||
-                        transaction.status == transactionService.getPaymentPendingStatus()
-                    ).map(transaction -> transaction.quantity)
-                     .reduce(0L, Long::sum);
+                amount = item.getDerivedAmountFromCounts(count);
+            } else if (item.timeAmounts != null) {
+                amount = item.getDerivedAmountFromTime(currentTime);
+            } else {
+                amount = item.amount;
+            }
 
-                    amount = item.getDerivedAmountFromCounts(count);
-                } else if (item.timeAmounts != null) {
-                    amount = item.getDerivedAmountFromTime(currentTime);
-                } else {
-                    amount = item.amount;
-                }
+            result.amount = amount;
 
-                result.amount = amount;
-
-                return result;
-            }).collect(Collectors.toList());
-
-            itemGroup.parent = event;
-            itemGroup.itemData = itemData;
-
-            return itemGroup;
+            return result;
         }).collect(Collectors.toList());
 
-        return groups;
+        AggregatedItemGroup group = new AggregatedItemGroup();
+        group.event = event;
+        group.itemData = itemData;
+        return group;
     }
 
     public int getActiveItemStatus() {

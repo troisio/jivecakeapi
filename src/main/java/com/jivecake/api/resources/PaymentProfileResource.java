@@ -1,5 +1,7 @@
 package com.jivecake.api.resources;
 
+import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
 import java.util.Set;
 
@@ -15,6 +17,7 @@ import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
 import org.bson.types.ObjectId;
+import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
@@ -27,26 +30,25 @@ import com.jivecake.api.filter.QueryRestrict;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.PaymentProfile;
 import com.jivecake.api.request.Paging;
-import com.jivecake.api.service.EventService;
-import com.jivecake.api.service.PaymentProfileService;
+import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.PermissionService;
 
 @Path("/payment/profile")
 @CORS
 public class PaymentProfileResource {
-    private final PaymentProfileService paymentProfileService;
-    private final EventService eventService;
     private final PermissionService permissionService;
+    private final EntityService entityService;
+    private final Datastore datastore;
 
     @Inject
     public PaymentProfileResource(
-        EventService eventService,
-        PaymentProfileService paymentProfileService,
-        PermissionService permissionService
+        PermissionService permissionService,
+        EntityService entityService,
+        Datastore datastore
     ) {
-        this.paymentProfileService = paymentProfileService;
-        this.eventService = eventService;
         this.permissionService = permissionService;
+        this.entityService = entityService;
+        this.datastore = datastore;
     }
 
     @GET
@@ -60,18 +62,15 @@ public class PaymentProfileResource {
     @GET
     @Path("/search")
     @QueryRestrict(hasAny=true, target={"id"})
-    public Response search(
-        @QueryParam("id") List<ObjectId> ids
-    ) {
-        Query<PaymentProfile> query = this.paymentProfileService.query()
+    public Response search(@QueryParam("id") List<ObjectId> ids) {
+        Query<PaymentProfile> query = this.datastore.createQuery(PaymentProfile.class)
             .field("id").in(ids);
 
         FindOptions options = new FindOptions();
         options.limit(100);
 
         Paging<PaymentProfile> paging = new Paging<>(query.asList(options), query.count());
-        ResponseBuilder builder = Response.ok(paging).type(MediaType.APPLICATION_JSON);
-        return builder.build();
+        return Response.ok(paging).type(MediaType.APPLICATION_JSON).build();
     }
 
     @GET
@@ -94,7 +93,8 @@ public class PaymentProfileResource {
         );
 
         if (hasPermission) {
-            Query<PaymentProfile> query = this.paymentProfileService.query().field("organizationId").in(organizationIds);
+            Query<PaymentProfile> query = this.datastore.createQuery(PaymentProfile.class)
+                .field("organizationId").in(organizationIds);
 
             if (name != null) {
                 query.field("name").startsWithIgnoreCase(name);
@@ -114,7 +114,7 @@ public class PaymentProfileResource {
                 options.skip(offset);
             }
 
-            List<PaymentProfile> profiles = query.asList();
+            List<PaymentProfile> profiles = query.asList(options);
             Paging<PaymentProfile> paging = new Paging<>(profiles, query.count());
 
             builder = Response.ok(paging).type(MediaType.APPLICATION_JSON);
@@ -132,13 +132,14 @@ public class PaymentProfileResource {
     public Response delete(@PathObject("id") PaymentProfile profile, @Context JsonNode claims) {
         ResponseBuilder builder;
 
-        List<Event> eventsUsingProfile = this.eventService.query()
+        List<Event> eventsUsingProfile = this.datastore.createQuery(Event.class)
             .field("paymentProfileId")
             .equal(profile.id)
             .asList();
 
         if (eventsUsingProfile.isEmpty()) {
-            this.paymentProfileService.delete(profile.id);
+            this.datastore.delete(PaymentProfile.class, profile.id);
+            this.entityService.cascadeLastActivity(Arrays.asList(profile), new Date());
             builder = Response.ok();
         } else {
             builder = Response.status(Status.BAD_REQUEST)

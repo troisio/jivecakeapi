@@ -22,7 +22,6 @@ import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.PaymentProfile;
 import com.jivecake.api.model.Permission;
 import com.jivecake.api.model.Transaction;
-import com.mongodb.WriteResult;
 
 public class PermissionService {
     public static final int ALL = 0;
@@ -61,12 +60,12 @@ public class PermissionService {
             } else if (entity instanceof Application) {
                 applicationIds.add(((Application)entity).id);
             } else {
-                throw new RuntimeException(entity.getClass() + " is not a valid class for permissions");
+                throw new IllegalArgumentException(entity.getClass() + " is not a valid class for permissions");
             }
         }
 
         if (applicationIds.size() > 1) {
-            throw new RuntimeException("argument \"entities\" contains more than 1 Application");
+            throw new IllegalArgumentException("argument \"entities\" contains more than 1 Application");
         }
 
         boolean hasApplicationPermission = applicationIds.isEmpty() ||
@@ -101,7 +100,7 @@ public class PermissionService {
     }
 
     public Iterable<Key<Permission>> write(Collection<Permission> permissions) {
-        Query<Permission> query = this.query();
+        Query<Permission> query = this.datastore.createQuery(Permission.class);
 
         CriteriaContainer[] criterium = permissions.stream()
             .map(permission -> {
@@ -122,12 +121,9 @@ public class PermissionService {
         return this.datastore.save(permissions);
     }
 
-    public Query<Permission> query() {
-        return this.datastore.createQuery(Permission.class);
-    }
-
     public boolean hasAllHierarchicalPermission(String sub, int permission, Collection<ObjectId> organizationIds) {
-        Query<Permission> query = this.query();
+        Query<Permission> query = this.datastore.createQuery(Permission.class);
+
         query.field("user_id").equal(sub)
             .field("objectClass").equal(this.organizationService.getPermissionObjectClass())
             .and(
@@ -155,10 +151,5 @@ public class PermissionService {
             .forEach(organization -> hasOrganizationPermissions.addAll(organization.children));
 
         return hasOrganizationPermissions.containsAll(organizationIds);
-    }
-
-    public WriteResult delete(Query<Permission> query) {
-        WriteResult result = this.datastore.delete(query);
-        return result;
     }
 }

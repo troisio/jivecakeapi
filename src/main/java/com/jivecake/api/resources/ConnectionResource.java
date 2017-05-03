@@ -2,7 +2,6 @@ package com.jivecake.api.resources;
 
 import java.util.Arrays;
 import java.util.Date;
-import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -64,8 +63,7 @@ public class ConnectionResource {
         );
 
         if (hasPermission) {
-            List<EventBroadcaster> broadcasters = this.clientConnectionService.getBroadcasters();
-            Stream<EventBroadcaster> stream = broadcasters.stream();
+            Stream<EventBroadcaster> stream = this.clientConnectionService.broadcasters.stream();
 
             if (!user_ids.isEmpty()) {
                 stream = stream.filter(broadcaster -> user_ids.contains(broadcaster.user_id));
@@ -79,7 +77,10 @@ public class ConnectionResource {
                 stream = stream.filter(broadcaster -> broadcaster.timeCreated.before(new Date(timeCreatedBefore)));
             }
 
-            Paging<EventBroadcaster> entity = new Paging<>(stream.collect(Collectors.toList()), broadcasters.size());
+            Paging<EventBroadcaster> entity = new Paging<>(
+                stream.collect(Collectors.toList()),
+                this.clientConnectionService.broadcasters.size()
+            );
             builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);

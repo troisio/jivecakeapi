@@ -1,5 +1,6 @@
 package com.jivecake.api.resources;
 
+import java.util.Date;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -16,6 +17,7 @@ import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
 import org.bson.types.ObjectId;
+import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
@@ -23,8 +25,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.QueryRestrict;
+import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.Permission;
 import com.jivecake.api.request.Paging;
+import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PermissionService;
 
@@ -33,14 +37,20 @@ import com.jivecake.api.service.PermissionService;
 public class PermissionResource {
     private final PermissionService permissionService;
     private final OrganizationService organizationService;
+    private final EntityService entityService;
+    private final Datastore datastore;
 
     @Inject
     public PermissionResource(
         PermissionService permissionService,
-        OrganizationService organizationService
+        OrganizationService organizationService,
+        EntityService entityService,
+        Datastore datastore
     ) {
         this.permissionService = permissionService;
         this.organizationService = organizationService;
+        this.entityService = entityService;
+        this.datastore = datastore;
     }
 
     @DELETE
@@ -48,7 +58,7 @@ public class PermissionResource {
     @QueryRestrict(hasAny=true, target={"user_id", "objectId"})
     public Response write(
         @QueryParam("user_id") List<String> userIds,
-        @QueryParam("objectId") Set<ObjectId> objectIds,
+        @QueryParam("objectId") List<ObjectId> objectIds,
         @QueryParam("objectClass") String objectClass,
         @Context JsonNode claims
     ) {
@@ -60,25 +70,17 @@ public class PermissionResource {
         boolean hasOrganizationPermission;
 
         if (isOrganizationQuery) {
-            Set<ObjectId> organizationIds = this.permissionService.query()
-                .field("objectClass").equal(objectClass)
-                .field("objectId").in(objectIds)
-                .asList()
-                .stream()
-                .map(permission -> permission.objectId)
-                .collect(Collectors.toSet());
-
             hasOrganizationPermission = this.permissionService.hasAllHierarchicalPermission(
                 claims.get("sub").asText(),
                 PermissionService.WRITE,
-                organizationIds
+                objectIds
             );
         } else {
             hasOrganizationPermission = false;
         }
 
         if (hasUserPermission || hasOrganizationPermission) {
-            Query<Permission> query = this.permissionService.query();
+            Query<Permission> query = this.datastore.createQuery(Permission.class);
 
             if (!userIds.isEmpty()) {
                 query.field("user_id").in(userIds);
@@ -92,8 +94,14 @@ public class PermissionResource {
                 query.field("objectId").in(objectIds);
             }
 
-            this.permissionService.delete(query);
-            builder = Response.ok().type(MediaType.APPLICATION_JSON);
+            this.datastore.delete(query);
+            builder = Response.ok();
+
+            if (hasOrganizationPermission) {
+                List<Organization> organizations = this.datastore.get(Organization.class, objectIds)
+                    .asList();
+                this.entityService.cascadeLastActivity(organizations, new Date());
+            }
         } else {
             builder = Response.status(Status.UNAUTHORIZED);
         }
@@ -114,7 +122,7 @@ public class PermissionResource {
      ) {
         ResponseBuilder builder;
 
-        Query<Permission> query = this.permissionService.query();
+        Query<Permission> query = this.datastore.createQuery(Permission.class);
 
         if (!user_ids.isEmpty()) {
             query.field("user_id").in(user_ids);
@@ -154,7 +162,7 @@ public class PermissionResource {
             options.skip(offset);
         }
 
-        List<Permission> entities = query.asList();
+        List<Permission> entities = query.asList(options);
 
         String user_id = claims.get("sub").asText();
         List<Permission> permissionsNotBelongingToRequester = entities.stream()

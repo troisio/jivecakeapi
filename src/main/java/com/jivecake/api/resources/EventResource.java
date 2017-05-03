@@ -1,5 +1,6 @@
 package com.jivecake.api.resources;
 
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -18,6 +19,7 @@ import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
 import org.bson.types.ObjectId;
+import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
@@ -29,12 +31,17 @@ import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
+import com.jivecake.api.model.Organization;
+import com.jivecake.api.model.Transaction;
+import com.jivecake.api.request.AggregatedItemGroup;
+import com.jivecake.api.request.ItemData;
 import com.jivecake.api.request.Paging;
+import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.ItemService;
-import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.StripeService;
+import com.jivecake.api.service.TransactionService;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Subscription;
 
@@ -43,23 +50,73 @@ import com.stripe.model.Subscription;
 public class EventResource {
     private final EventService eventService;
     private final ItemService itemService;
-    private final OrganizationService organizationService;
     private final PermissionService permissionService;
+    private final TransactionService transactionService;
     private final StripeService stripeService;
+    private final EntityService entityService;
+    private final Datastore datastore;
 
     @Inject
     public EventResource(
         EventService eventService,
         ItemService itemService,
-        OrganizationService organizationService,
         PermissionService permissionService,
-        StripeService stripeService
+        TransactionService transactionService,
+        StripeService stripeService,
+        EntityService entityService,
+        Datastore datastore
     ) {
         this.itemService = itemService;
         this.eventService = eventService;
-        this.organizationService = organizationService;
         this.permissionService = permissionService;
+        this.transactionService = transactionService;
         this.stripeService = stripeService;
+        this.entityService = entityService;
+        this.datastore = datastore;
+    }
+
+    @GET
+    @Path("/{eventId}/aggregated")
+    public Response getAggregatedItemData(@PathObject("eventId") Event event, @Context JsonNode node) {
+        ResponseBuilder builder;
+
+        if (event == null) {
+            builder = Response.status(Status.NOT_FOUND);
+        } else if (event.status == this.eventService.getActiveEventStatus()) {
+            AggregatedItemGroup group = this.itemService.getAggregatedaGroupData(
+                event,
+                this.transactionService,
+                new Date()
+            );
+
+            group.itemData = group.itemData.stream()
+                .filter(itemData -> itemData.item.status == this.itemService.getActiveItemStatus())
+                .collect(Collectors.toList());
+
+            for (ItemData datum: group.itemData) {
+                for (Transaction transaction: datum.transactions) {
+                    if (node != null) {
+                        String sub = node.get("sub").asText();
+
+                        if (!sub.equals(transaction.user_id)) {
+                            transaction.user_id = null;
+                        }
+                    }
+
+                    transaction.given_name = null;
+                    transaction.middleName = null;
+                    transaction.family_name = null;
+                }
+            }
+
+            builder = Response.ok(group).type(MediaType.APPLICATION_JSON);
+        } else {
+            builder = Response.status(Status.BAD_REQUEST)
+                .encoding("{\"error\": \"status\"}")
+                .type(MediaType.APPLICATION_JSON);
+        }
+
+        return builder.build();
     }
 
     @GET
@@ -78,11 +135,11 @@ public class EventResource {
         FindOptions options = new FindOptions();
         options.limit(1000);
 
-        Query<Event> query = this.eventService.query()
+        Query<Event> query = this.datastore.createQuery(Event.class)
             .field("status").equal(this.eventService.getActiveEventStatus());
 
         if (text != null && !text.isEmpty()) {
-            List<ObjectId> organizationIds = this.organizationService.query()
+            List<ObjectId> organizationIds = this.datastore.createQuery(Organization.class)
                 .field("name").containsIgnoreCase(text)
                 .asList()
                 .stream()
@@ -146,7 +203,7 @@ public class EventResource {
     ) {
         ResponseBuilder builder;
 
-        long activeEventsCount = this.eventService.query()
+        long activeEventsCount = this.datastore.createQuery(Event.class)
             .field("id").notEqual(original.id)
             .field("status").equal(this.eventService.getActiveEventStatus())
             .field("organizationId").equal(original.organizationId)
@@ -187,12 +244,18 @@ public class EventResource {
                     .entity(currentSubscriptions)
                     .type(MediaType.APPLICATION_JSON);
         } else {
+            Date currentTime = new Date();
+
             event.organizationId = original.organizationId;
             event.id = original.id;
             event.timeCreated = original.timeCreated;
-            event.timeUpdated = new Date();
-            Key<Event> key = this.eventService.save(event);
-            Event searchedEvent = this.eventService.read((ObjectId)key.getId());
+            event.timeUpdated = currentTime;
+            event.lastActivity = currentTime;
+
+            Key<Event> key = this.datastore.save(event);
+            this.entityService.cascadeLastActivity(Arrays.asList(event), currentTime);
+
+            Event searchedEvent = this.datastore.get(Event.class, key.getId());
             builder = Response.ok(searchedEvent).type(MediaType.APPLICATION_JSON);
         }
 
@@ -210,13 +273,16 @@ public class EventResource {
         boolean isValid = this.itemService.isValid(item);
 
         if (isValid) {
+            Date currentTime = new Date();
+
             item.eventId = event.id;
             item.organizationId = event.organizationId;
-            item.timeCreated = new Date();
+            item.timeCreated = currentTime;
             item.timeUpdated = null;
 
-            Key<Item> key = this.itemService.save(item);
-            Item searchedItem = this.itemService.read((ObjectId)key.getId());
+            Key<Item> key = this.datastore.save(item);
+            this.entityService.cascadeLastActivity(Arrays.asList(item), currentTime);
+            Item searchedItem = this.datastore.get(Item.class, key.getId());
 
             builder = Response.ok(searchedItem).type(MediaType.APPLICATION_JSON);
         } else {
@@ -231,15 +297,15 @@ public class EventResource {
     @Authorized
     @HasPermission(clazz=Event.class, id="id", permission=PermissionService.WRITE)
     public Response delete(@PathObject("id") Event event, @Context JsonNode claims) {
-        long itemCount = this.itemService.query()
+        long itemCount = this.datastore.createQuery(Item.class)
             .field("eventId").equal(event.id)
             .count();
 
         ResponseBuilder builder;
 
         if (itemCount == 0) {
-            Event entity = this.eventService.delete(event.id);
-            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+            this.datastore.delete(Event.class, event.id);
+            builder = Response.ok();
         } else {
             builder = Response.status(Status.BAD_REQUEST).entity(itemCount).type(MediaType.APPLICATION_JSON);
         }
@@ -266,7 +332,7 @@ public class EventResource {
     ) {
         ResponseBuilder builder;
 
-        Query<Event> query = this.eventService.query();
+        Query<Event> query = this.datastore.createQuery(Event.class);
 
         if (!ids.isEmpty()) {
             query.field("id").in(ids);

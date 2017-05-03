@@ -10,8 +10,6 @@ import javax.inject.Inject;
 
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
-import org.mongodb.morphia.Key;
-import org.mongodb.morphia.query.Query;
 import org.mongodb.morphia.query.UpdateOperations;
 
 import com.jivecake.api.model.Organization;
@@ -24,28 +22,8 @@ public class OrganizationService {
         this.datastore = datastore;
     }
 
-    public Key<Organization> create(Organization organization) {
-        return this.datastore.save(organization);
-    }
-
     public Organization getRootOrganization() {
         return this.datastore.createQuery(Organization.class).field("parentId").equal(null).get();
-    }
-
-    public Query<Organization> query() {
-        return this.datastore.createQuery(Organization.class);
-    }
-
-    public Organization read(ObjectId id) {
-        Organization result = this.datastore.find(Organization.class)
-            .field("id").equal(id)
-            .get();
-        return result;
-    }
-
-    public Organization delete(ObjectId id) {
-        Query<Organization> deleteQuery = this.datastore.createQuery(Organization.class).filter("id", id);
-        return this.datastore.findAndDelete(deleteQuery);
     }
 
     public String getPermissionObjectClass() {
@@ -84,9 +62,5 @@ public class OrganizationService {
         }
 
         return organizationToDescendants;
-    }
-
-    public Key<Organization> save(Organization organization) {
-        return this.datastore.save(organization);
     }
 }

@@ -26,13 +26,11 @@ public class Item {
 
     @JsonSerialize(using=ObjectIdSerializer.class)
     public ObjectId organizationId;
-
     public String name;
     public String description;
     public Integer totalAvailible;
     public Integer maximumPerUser;
     public double amount;
-
     public List<ItemTimeAmount> timeAmounts;
     public List<ItemCountAmount> countAmounts;
     public int status;
@@ -40,9 +38,10 @@ public class Item {
     public Date timeEnd;
     public Date timeUpdated;
     public Date timeCreated;
+    public Date lastActivity;
 
-    public Double getDerivedAmountFromCounts(long numberOfTransactions) {
-        Double result = this.amount;
+    public double getDerivedAmountFromCounts(long numberOfTransactions) {
+        double result = this.amount;
 
         for (int index = this.countAmounts.size() - 1; index > -1; index--) {
             ItemCountAmount countAmount = this.countAmounts.get(index);

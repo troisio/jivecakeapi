@@ -24,6 +24,7 @@ import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
 import org.bson.types.ObjectId;
+import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
@@ -37,15 +38,12 @@ import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.Transaction;
-import com.jivecake.api.request.AggregatedItemGroup;
-import com.jivecake.api.request.ItemData;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.Auth0Service;
+import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.ItemService;
 import com.jivecake.api.service.NotificationService;
-import com.jivecake.api.service.OrganizationService;
-import com.jivecake.api.service.PaymentProfileService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.TransactionService;
 
@@ -55,76 +53,31 @@ public class ItemResource {
     private final Auth0Service auth0Service;
     private final ItemService itemService;
     private final EventService eventService;
-    private final OrganizationService organizationService;
     private final PermissionService permissionService;
     private final TransactionService transactionService;
     private final NotificationService notificationService;
+    private final EntityService entityService;
+    private final Datastore datastore;
 
     @Inject
     public ItemResource(
         Auth0Service auth0Service,
         ItemService itemService,
         EventService eventService,
-        PaymentProfileService paymentProfileService,
-        OrganizationService organizationService,
         PermissionService permissionService,
         TransactionService transactionService,
-        NotificationService notificationService
+        NotificationService notificationService,
+        EntityService entityService,
+        Datastore datastore
     ) {
         this.auth0Service = auth0Service;
         this.itemService = itemService;
         this.eventService = eventService;
-        this.organizationService = organizationService;
         this.permissionService = permissionService;
         this.transactionService = transactionService;
         this.notificationService = notificationService;
-    }
-
-    @GET
-    @Path("/aggregated")
-    public Response getAggregatedItemData(
-        @QueryParam("eventId") List<ObjectId> eventIds,
-        @Context JsonNode node
-    ) {
-        ResponseBuilder builder;
-
-        if (eventIds.isEmpty()) {
-            builder = Response.status(Status.BAD_REQUEST);
-        } else {
-            Query<Item> query = this.itemService.query()
-                .field("eventId").in(eventIds);
-
-            List<Item> items = query.asList();
-            List<AggregatedItemGroup> groups = this.itemService.getAggregatedaGroupData(items, this.transactionService, new Date());
-
-            groups = groups.stream()
-                .filter(group -> group.parent.status == this.eventService.getActiveEventStatus())
-                .collect(Collectors.toList());
-
-            for (AggregatedItemGroup group: groups) {
-                group.itemData = group.itemData.stream()
-                    .filter(itemData -> itemData.item.status == this.itemService.getActiveItemStatus())
-                    .collect(Collectors.toList());
-            }
-
-            if (node != null) {
-                String user_id = node.get("sub").asText();
-
-                for (AggregatedItemGroup group : groups) {
-                    for (ItemData itemDatum: group.itemData) {
-                        for (Transaction transaction: itemDatum.transactions) {
-                            if (!user_id.equals(transaction.user_id)) {
-                                transaction.user_id = null;
-                            }
-                        }
-                    }
-                }
-            }
-
-            builder = Response.ok(groups).type(MediaType.APPLICATION_JSON);
-        }
-
-        return builder.build();
+        this.entityService = entityService;
+        this.datastore = datastore;
     }
 
     @POST
@@ -141,7 +94,7 @@ public class ItemResource {
         if (item == null) {
             builder = Response.status(Status.NOT_FOUND);
         } else if (item.amount == 0) {
-            Event event = this.eventService.read(item.eventId);
+            Event event = this.datastore.get(Event.class, item.eventId);
 
             List<Transaction> countedTransactions = this.transactionService.getTransactionsForItemTotal(item.id);
 
@@ -174,7 +127,9 @@ public class ItemResource {
                     .entity("{\"error\": \"limit\"}")
                     .type(MediaType.APPLICATION_JSON);
             } else {
-                Organization organization = this.organizationService.read(event.organizationId);
+                Organization organization = this.datastore.get(Organization.class, event.organizationId);
+
+                Date currentTime = new Date();
 
                 Transaction userTransaction = new Transaction();
                 userTransaction.user_id = claims.get("sub").asText();
@@ -185,11 +140,12 @@ public class ItemResource {
                 userTransaction.organizationId = organization.id;
                 userTransaction.currency = event.currency;
                 userTransaction.amount = 0;
-                userTransaction.timeCreated = new Date();
+                userTransaction.timeCreated = currentTime;
 
-                Key<Transaction> key = this.transactionService.save(userTransaction);
+                this.datastore.save(userTransaction);
 
-                this.notificationService.notifyItemTransaction((ObjectId)key.getId());
+                this.notificationService.notifyItemTransaction(userTransaction);
+                this.entityService.cascadeLastActivity(Arrays.asList(userTransaction), currentTime);
 
                 builder = Response.ok(userTransaction).type(MediaType.APPLICATION_JSON);
             }
@@ -228,7 +184,7 @@ public class ItemResource {
         @QueryParam("timeEndGreaterThan") Long timeEndGreaterThan,
         @QueryParam("timeEndLessThan") Long timeEndLessThan
     ) {
-        Query<Item> query = this.itemService.query().disableValidation();
+        Query<Item> query = this.datastore.createQuery(Item.class);
 
         if (!ids.isEmpty()) {
             query.field("id").in(ids);
@@ -282,7 +238,7 @@ public class ItemResource {
     ) {
         ResponseBuilder builder;
 
-        Query<Item> query = this.itemService.query().disableValidation();
+        Query<Item> query = this.datastore.createQuery(Item.class);
 
         if (!ids.isEmpty()) {
             query.field("id").in(ids);
@@ -349,8 +305,8 @@ public class ItemResource {
         if (item == null) {
             promise.resume(Response.status(Status.NOT_FOUND).build());
         } else {
-            Event event = this.eventService.read(item.eventId);
-            Organization organization = this.organizationService.read(event.organizationId);
+            Event event = this.datastore.get(Event.class, item.eventId);
+            Organization organization = this.datastore.get(Organization.class, event.organizationId);
 
             boolean hasPermission = this.permissionService.has(
                 claims.get("sub").asText(),
@@ -378,7 +334,7 @@ public class ItemResource {
                 boolean hasParentTransactionPermissionViolation = false;
 
                 if (transaction.parentTransactionId != null) {
-                    Transaction parentTransaction = this.transactionService.read(transaction.parentTransactionId);
+                    Transaction parentTransaction = this.datastore.get(Transaction.class, transaction.parentTransactionId);
 
                     if (parentTransaction == null) {
                         hasParentTransactionPermissionViolation = !this.permissionService.has(
@@ -424,6 +380,8 @@ public class ItemResource {
 
                     hasValidUserIdPromise.thenAcceptAsync(hasValidUserId -> {
                         if (hasValidUserId) {
+                            Date currentTime = new Date();
+
                             transaction.status = ItemResource.this.transactionService.getPaymentCompleteStatus();
                             transaction.linkedId = null;
                             transaction.linkedObjectClass = null;
@@ -431,18 +389,21 @@ public class ItemResource {
                             transaction.eventId = item.eventId;
                             transaction.organizationId = organization.id;
                             transaction.currency = event.currency;
-                            transaction.timeCreated = new Date();
+                            transaction.timeCreated = currentTime;
 
-                            Key<Transaction> key = ItemResource.this.transactionService.save(transaction);
+                            Key<Transaction> key = ItemResource.this.datastore.save(transaction);
+                            this.entityService.cascadeLastActivity(Arrays.asList(transaction), currentTime);
 
-                            ItemResource.this.notificationService.notifyItemTransaction((ObjectId)key.getId());
+                            ItemResource.this.notificationService.notifyItemTransaction(transaction);
 
-                            Transaction entity = ItemResource.this.transactionService.read((ObjectId)key.getId());
+                            Transaction entity = ItemResource.this.datastore.get(Transaction.class, key.getId());
                             promise.resume(
                                 Response.ok(entity).type(MediaType.APPLICATION_JSON).build()
                             );
                         } else {
-                            promise.resume(Response.status(Status.BAD_REQUEST).entity("{\"error\": \"user\"}").type(MediaType.APPLICATION_JSON).build());
+                            promise.resume(Response.status(Status.BAD_REQUEST)
+                                .entity("{\"error\": \"user\"}")
+                                .type(MediaType.APPLICATION_JSON).build());
                         }
                     }).exceptionally(e -> {
                         promise.resume(e);
@@ -468,16 +429,16 @@ public class ItemResource {
     @Authorized
     @HasPermission(clazz=Item.class, id="id", permission=PermissionService.WRITE)
     public Response delete(@PathObject("id") Item item, @Context JsonNode claims) {
-
         ResponseBuilder builder;
 
-        long transactionCount = this.transactionService.query()
+        long transactionCount = this.datastore.createQuery(Transaction.class)
             .field("itemId").equal(item.id)
             .count();
 
         if (transactionCount == 0) {
-            Item deletedItem = this.itemService.delete(item.id);
-            builder = Response.ok(deletedItem).type(MediaType.APPLICATION_JSON);
+            this.datastore.delete(Item.class, item.id);
+            builder = Response.ok();
+            this.entityService.cascadeLastActivity(Arrays.asList(item), new Date());
         } else {
             builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"transaction\"}").type(MediaType.APPLICATION_JSON);
         }
@@ -496,11 +457,14 @@ public class ItemResource {
         boolean isValid = this.itemService.isValid(item);
 
         if (isValid) {
+            Date currentDate = new Date();
+
             item.id = searchedItem.id;
             item.timeCreated = searchedItem.timeCreated;
             item.eventId = searchedItem.eventId;
             item.organizationId = searchedItem.organizationId;
-            item.timeUpdated = new Date();
+            item.lastActivity = currentDate;
+            item.timeUpdated = currentDate;
 
             if (item.timeAmounts != null) {
                 if (item.timeAmounts.isEmpty()) {
@@ -518,9 +482,10 @@ public class ItemResource {
                 }
             }
 
-            Key<Item> key = this.itemService.save(item);
+            Key<Item> key = this.datastore.save(item);
+            this.entityService.cascadeLastActivity(Arrays.asList(item), new Date());
 
-            Item entity = this.itemService.read((ObjectId)key.getId());
+            Item entity = this.datastore.get(Item.class, key.getId());
             builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.BAD_REQUEST);

@@ -1,6 +1,7 @@
 package com.jivecake.api.resources;
 
 import java.util.Arrays;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +20,7 @@ import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
 import org.bson.types.ObjectId;
+import org.mongodb.morphia.Datastore;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jivecake.api.filter.Authorized;
@@ -26,7 +28,7 @@ import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Organization;
-import com.jivecake.api.service.OrganizationService;
+import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.StripeService;
 import com.stripe.exception.StripeException;
@@ -38,13 +40,15 @@ import com.stripe.model.Subscription;
 public class StripeResource {
     private final StripeService stripeService;
     private final PermissionService permissionService;
-    private final OrganizationService organizationService;
+    private final Datastore datastore;
+    private final EntityService entityService;
 
     @Inject
-    public StripeResource(StripeService stripeService,  PermissionService permissionService, OrganizationService organizationService) {
+    public StripeResource(StripeService stripeService, PermissionService permissionService, EntityService entityService, Datastore datastore) {
         this.stripeService = stripeService;
         this.permissionService = permissionService;
-        this.organizationService = organizationService;
+        this.entityService = entityService;
+        this.datastore = datastore;
     }
 
     @DELETE
@@ -72,7 +76,7 @@ public class StripeResource {
             builder = Response.status(Status.NOT_FOUND);
         } else {
             String organizationId = subscription.getMetadata().get("organizationId");
-            Organization organization = this.organizationService.read(new ObjectId(organizationId));
+            Organization organization = this.datastore.get(Organization.class, new ObjectId(organizationId));
 
             boolean hasPermission = this.permissionService.has(
                 claims.get("sub").asText(),
@@ -81,11 +85,20 @@ public class StripeResource {
             );
 
             if (hasPermission) {
+                StripeException exception;
+
                 try {
                     subscription.cancel(new HashMap<>(), this.stripeService.getRequestOptions());
-                    builder = Response.ok();
+                    exception = null;
                 } catch (StripeException e) {
-                    builder = Response.status(Status.SERVICE_UNAVAILABLE).entity(e);
+                    exception = e;
+                }
+
+                if (exception == null) {
+                    this.entityService.cascadeLastActivity(Arrays.asList(organization), new Date());
+                    builder = Response.ok();
+                } else {
+                    builder = Response.status(Status.SERVICE_UNAVAILABLE).entity(exception);
                 }
             } else {
                 builder = Response.status(Status.UNAUTHORIZED);
@@ -146,6 +159,7 @@ public class StripeResource {
             Customer customer = Customer.create(customerOptions, this.stripeService.getRequestOptions());
             List<Subscription> subscriptions = customer.getSubscriptions().getData();
             subscriptions.get(0).update(subscriptionUpdate, this.stripeService.getRequestOptions());
+            this.entityService.cascadeLastActivity(Arrays.asList(organization), new Date());
 
             builder = Response.ok(customer).type(MediaType.APPLICATION_JSON);
         } catch (StripeException e) {

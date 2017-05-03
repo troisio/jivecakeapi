@@ -21,13 +21,12 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jivecake.api.OAuthConfiguration;
 import com.jivecake.api.model.Application;
 import com.jivecake.api.model.Event;
-import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.resources.TransactionResource;
 import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.Auth0Service;
+import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
-import com.jivecake.api.service.ItemService;
 import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.TransactionService;
@@ -49,10 +48,9 @@ public class TransactionTransferTest {
         OrganizationService organizationService = new OrganizationService(this.datastore);
 
         this.transactionService = new TransactionService(this.datastore);
-        this.eventService = new EventService(this.datastore);
+        this.eventService = new EventService();
 
         this.transactionResource = new TransactionResource(
-            new ItemService(this.datastore),
             this.eventService,
             this.transactionService,
             new PermissionService(
@@ -60,6 +58,7 @@ public class TransactionTransferTest {
                 new ApplicationService(new Application()),
                 organizationService
             ),
+            new EntityService(this.datastore),
             new Auth0Service(new OAuthConfiguration(), Arrays.asList()) {
                 @Override
                 public Future<Response> queryUsers(String query, InvocationCallback<Response> callback) {
@@ -67,7 +66,8 @@ public class TransactionTransferTest {
                     callback.completed(response);
                     return new CompletableFuture<Response>();
                 }
-            }
+            },
+            this.datastore
         );
     }
 
@@ -83,12 +83,8 @@ public class TransactionTransferTest {
         event.id = new ObjectId();
         event.status = this.eventService.getActiveEventStatus();
 
-        Item item = new Item();
-        item.id = new ObjectId();
-        item.eventId = event.id;
-
         Transaction transaction = new Transaction();
-        transaction.itemId = item.id;
+        transaction.eventId = event.id;
         transaction.user_id = "auth0|0000";
         transaction.status = this.transactionService.getPaymentCompleteStatus();
         transaction.currency = "USD";
@@ -98,7 +94,6 @@ public class TransactionTransferTest {
         this.datastore.save(
             Arrays.asList(
                 event,
-                item,
                 transaction
             )
         );

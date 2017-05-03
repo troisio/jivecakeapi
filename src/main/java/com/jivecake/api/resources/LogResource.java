@@ -14,6 +14,7 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
+import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
@@ -24,25 +25,24 @@ import com.jivecake.api.model.Application;
 import com.jivecake.api.model.Request;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.ApplicationService;
-import com.jivecake.api.service.LogService;
 import com.jivecake.api.service.PermissionService;
 
 @Path("/log")
 @CORS
 public class LogResource {
     private final ApplicationService applicationService;
-    private final LogService logService;
     private final PermissionService permissionService;
+    private final Datastore datastore;
 
     @Inject
     public LogResource(
         ApplicationService applicationService,
-        LogService logService,
-        PermissionService permissionService
+        PermissionService permissionService,
+        Datastore datastore
     ) {
         this.applicationService = applicationService;
-        this.logService = logService;
         this.permissionService = permissionService;
+        this.datastore = datastore;
     }
 
     @GET
@@ -68,7 +68,7 @@ public class LogResource {
         );
 
         if (hasPermission) {
-            Query<Request> query = this.logService.query();
+            Query<Request> query = this.datastore.createQuery(Request.class);
 
             if (!userIds.isEmpty()) {
                 query.field("user_id").in(userIds);

@@ -35,4 +35,5 @@ public class Organization {
     public String name;
     public Date timeCreated;
     public Date timeUpdated;
+    public Date lastActivity;
 }
