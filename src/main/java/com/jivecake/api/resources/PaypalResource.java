@@ -44,7 +44,7 @@ import com.jivecake.api.model.Transaction;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.serializer.JsonTools;
 import com.jivecake.api.service.ApplicationService;
-import com.jivecake.api.service.FeatureService;
+import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.PaypalService;
 import com.jivecake.api.service.PermissionService;
@@ -59,18 +59,19 @@ public class PaypalResource {
     private final PaypalService paypalService;
     private final NotificationService notificationService;
     private final TransactionService transactionService;
+    private final EntityService entityService;
     private final Logger logger = LogManager.getLogger(PaypalResource.class);
     private final JsonTools jsonTools = new JsonTools();
 
     @Inject
     public PaypalResource(
         Datastore datastore,
-        FeatureService featureService,
         PermissionService permissionService,
         ApplicationService applicationService,
         PaypalService paypalService,
         NotificationService notificationService,
-        TransactionService transactionService
+        TransactionService transactionService,
+        EntityService entityService
     ) {
         this.datastore = datastore;
         this.permissionService = permissionService;
@@ -78,6 +79,7 @@ public class PaypalResource {
         this.paypalService = paypalService;
         this.notificationService = notificationService;
         this.transactionService = transactionService;
+        this.entityService = entityService;
     }
 
     @POST
@@ -91,8 +93,8 @@ public class PaypalResource {
             detail.user_id = claims.get("sub").asText();
         }
 
-        this.paypalService.save(detail);
-        PaymentDetail entity = this.paypalService.readPaypalPaymentDetails(detail.id);
+        this.datastore.save(detail);
+        PaymentDetail entity = this.datastore.get(PaymentDetail.class, detail.id);
         return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
     }
 
@@ -111,19 +113,20 @@ public class PaypalResource {
                     if (form.getFirst("txn_id") == null) {
                         ipns = new ArrayList<>();
                     } else {
-                        ipns = PaypalResource.this.paypalService.query()
+                        ipns = PaypalResource.this.datastore.createQuery(PaypalIPN.class)
                             .field("txn_id").equal(form.getFirst("txn_id"))
                             .field("payment_status").equal(form.getFirst("payment_status"))
                             .asList();
                     }
 
                     boolean transactionHasBeenProcessed = !ipns.isEmpty();
+                    Date currentTime = new Date();
 
                     if (transactionHasBeenProcessed) {
                         PaypalResource.this.logger.warn(String.format("%s has already been processed", PaypalResource.this.jsonTools.pretty(form)));
                     } else {
                         PaypalIPN ipn = PaypalResource.this.paypalService.create(form);
-                        ipn.timeCreated = new Date();
+                        ipn.timeCreated = currentTime;
 
                         Key<PaypalIPN> paypalIPNKey = PaypalResource.this.paypalService.save(ipn);
 
@@ -132,8 +135,11 @@ public class PaypalResource {
 
                             int count = 0;
 
-                            for (Key<Transaction> key: transactionKeys) {
-                                PaypalResource.this.notificationService.notifyItemTransaction((ObjectId)key.getId());
+                            List<Transaction> transactions = PaypalResource.this.datastore.getByKeys(transactionKeys);
+                            PaypalResource.this.entityService.cascadeLastActivity(transactions, currentTime);
+
+                            for (Transaction transaction: transactions) {
+                                PaypalResource.this.notificationService.notifyItemTransaction(transaction);
                                 count++;
                             }
 
@@ -195,7 +201,7 @@ public class PaypalResource {
         );
 
         if (hasPermission) {
-            Query<PaypalIPN> query = this.paypalService.query();
+            Query<PaypalIPN> query = this.datastore.createQuery(PaypalIPN.class);
 
             if (id != null) {
                 query.field("id").equal(id);

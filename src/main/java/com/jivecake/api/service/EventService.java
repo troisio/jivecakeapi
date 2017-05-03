@@ -1,42 +1,25 @@
 package com.jivecake.api.service;
 
-import javax.inject.Inject;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.bson.types.ObjectId;
-import org.mongodb.morphia.Datastore;
-import org.mongodb.morphia.Key;
-import org.mongodb.morphia.query.Query;
 
-import com.jivecake.api.model.Event;
+import com.jivecake.api.request.AggregatedItemGroup;
 
 public class EventService {
-    private final Datastore datastore;
+    private final Map<String, AggregatedItemGroup> cache = new HashMap<>();
 
-    @Inject
-    public EventService(Datastore datastore) {
-        this.datastore = datastore;
+    public AggregatedItemGroup read(ObjectId eventId) {
+        return this.cache.get(this.getAggregatedCacheKey(eventId));
     }
 
-    public Event delete(ObjectId id) {
-        Query<Event> deleteQuery = this.datastore.createQuery(Event.class).filter("id", id);
-        Event result = this.datastore.findAndDelete(deleteQuery);
-        return result;
+    public String getAggregatedCacheKey(ObjectId eventId) {
+        return "AggregatedItemGroup|" + eventId.toString();
     }
 
-    public Key<Event> save(Event event) {
-        Key<Event> result = this.datastore.save(event);
-        return result;
-    }
-
-    public Event read(ObjectId id) {
-        Event result = this.datastore.find(Event.class)
-            .field("id").equal(id)
-            .get();
-        return result;
-    }
-
-    public Query<Event> query() {
-        return this.datastore.find(Event.class);
+    public void invalidateAggregatedEventCache(ObjectId eventId) {
+        this.cache.remove(this.getAggregatedCacheKey(eventId));
     }
 
     public int getInactiveEventStatus() {

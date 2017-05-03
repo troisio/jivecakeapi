@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +30,7 @@ import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
 import org.bson.types.ObjectId;
+import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
@@ -40,13 +42,12 @@ import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Event;
-import com.jivecake.api.model.Item;
 import com.jivecake.api.model.PaypalIPN;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.Auth0Service;
+import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
-import com.jivecake.api.service.ItemService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.TransactionService;
 
@@ -54,25 +55,28 @@ import com.jivecake.api.service.TransactionService;
 @CORS
 public class TransactionResource {
     private final TransactionService transactionService;
-    private final ItemService itemService;
     private final EventService eventService;
     private final PermissionService permissionService;
+    private final EntityService entityService;
     private final Auth0Service auth0Service;
+    private final Datastore datastore;
     private final ObjectMapper mapper = new ObjectMapper();
 
     @Inject
     public TransactionResource(
-        ItemService itemService,
         EventService eventService,
         TransactionService transactionService,
         PermissionService permissionService,
-        Auth0Service auth0Service
+        EntityService entityService,
+        Auth0Service auth0Service,
+        Datastore datastore
     ) {
         this.transactionService = transactionService;
-        this.itemService = itemService;
         this.eventService = eventService;
         this.permissionService = permissionService;
         this.auth0Service = auth0Service;
+        this.entityService = entityService;
+        this.datastore = datastore;
     }
 
     @GET
@@ -98,7 +102,7 @@ public class TransactionResource {
         @Context JsonNode claims,
         @Suspended AsyncResponse futureResponse
     ) {
-        Query<Transaction> query = this.transactionService.query();
+        Query<Transaction> query = this.datastore.createQuery(Transaction.class);
 
         if (!ids.isEmpty()) {
             query.field("id").in(ids);
@@ -178,6 +182,10 @@ public class TransactionResource {
                 query.field("id").in(textTransactionIds);
             }
 
+            if (order != null) {
+                query.order(order);
+            }
+
             FindOptions options = new FindOptions();
 
             if (limit != null && limit > -1) {
@@ -188,11 +196,7 @@ public class TransactionResource {
                 options.skip(offset);
             }
 
-            if (order != null) {
-                query.order(order);
-            }
-
-            List<Transaction> transactions = query.asList();
+            List<Transaction> transactions = query.asList(options);
 
             String user_id = claims.get("sub").asText();
 
@@ -229,14 +233,13 @@ public class TransactionResource {
         } else if (transaction.status != this.transactionService.getPaymentCompleteStatus()) {
             promise.resume(Response.status(Status.BAD_REQUEST).build());
         } else {
-            Item item = this.itemService.read(transaction.itemId);
-            Event event = this.eventService.read(item.eventId);
+            Event event = this.datastore.get(Event.class, transaction.eventId);
 
             String requester = claims.get("sub").asText();
 
             boolean hasTransferTimeViolation = false;
 
-            Transaction parentTransaction = this.transactionService.read(transaction.parentTransactionId);
+            Transaction parentTransaction = this.datastore.get(Transaction.class, transaction.parentTransactionId);
 
             if (parentTransaction != null && parentTransaction.status == this.transactionService.getTransferredStatus()) {
                 hasTransferTimeViolation = event.minimumTimeBetweenTransactionTransfer > new Date().getTime() - parentTransaction.timeCreated.getTime();
@@ -277,6 +280,8 @@ public class TransactionResource {
                                 if (users.length == 0) {
                                     promise.resume(Response.status(Status.NOT_FOUND).build());
                                 } else {
+                                    Date currentDate = new Date();
+
                                     Transaction transfer = new Transaction();
                                     transfer.id = new ObjectId();
                                     transfer.parentTransactionId = transaction.id;
@@ -285,7 +290,7 @@ public class TransactionResource {
                                     transfer.organizationId = transaction.organizationId;
                                     transfer.user_id = transaction.user_id;
                                     transfer.status = TransactionResource.this.transactionService.getTransferredStatus();
-                                    transfer.timeCreated = new Date();
+                                    transfer.timeCreated = currentDate;
 
                                     Transaction completed = new Transaction();
                                     completed.itemId = transaction.itemId;
@@ -294,13 +299,15 @@ public class TransactionResource {
                                     completed.parentTransactionId = transfer.id;
                                     completed.user_id = users[0].get("user_id").asText();
                                     completed.status = TransactionResource.this.transactionService.getPaymentCompleteStatus();
-                                    completed.timeCreated = new Date();
+                                    completed.timeCreated = currentDate;
 
-                                    TransactionResource.this.transactionService.save(transfer);
-                                    TransactionResource.this.transactionService.save(completed);
+                                    Collection<Transaction> transactions = Arrays.asList(transfer, completed);
+                                    TransactionResource.this.datastore.save(transactions);
 
-                                    Transaction transferAfter = TransactionResource.this.transactionService.read(transfer.id);
-                                    Transaction completedAfter = TransactionResource.this.transactionService.read(completed.id);
+                                    TransactionResource.this.entityService.cascadeLastActivity(transactions, currentDate);
+
+                                    Transaction transferAfter = TransactionResource.this.datastore.get(Transaction.class, transfer.id);
+                                    Transaction completedAfter = TransactionResource.this.datastore.get(Transaction.class, completed.id);
 
                                     promise.resume(
                                         Response.ok(Arrays.asList(transferAfter, completedAfter)).type(MediaType.APPLICATION_JSON).build()
@@ -330,7 +337,7 @@ public class TransactionResource {
         @QueryParam("status") List<Integer> statuses,
         @QueryParam("leaf") Boolean leaf
     ) {
-        Query<Transaction> query = this.transactionService.query()
+        Query<Transaction> query = this.datastore.createQuery(Transaction.class)
             .project("id", true)
             .project("itemId", true)
             .project("status", true)
@@ -380,7 +387,7 @@ public class TransactionResource {
         if (ids.isEmpty()) {
             transactions = new ArrayList<>();
         } else {
-            transactions = this.transactionService.query()
+            transactions = this.datastore.createQuery(Transaction.class)
                 .field("id").in(ids)
                 .asList();
         }
@@ -475,7 +482,7 @@ public class TransactionResource {
             String token = authorization.substring("Bearer ".length());
             Map<String, Object> claims = this.auth0Service.getClaimsFromToken(token);
 
-            Query<Transaction> query = this.transactionService.query();
+            Query<Transaction> query = this.datastore.createQuery(Transaction.class);
 
             if (!organizationIds.isEmpty()) {
                 query.field("organizationId").in(organizationIds);
@@ -523,7 +530,10 @@ public class TransactionResource {
 
                             try {
                                 users = Arrays.asList(
-                                    TransactionResource.this.mapper.readValue(response.readEntity(String.class), JsonNode[].class)
+                                    TransactionResource.this.mapper.readValue(
+                                        response.readEntity(String.class),
+                                        JsonNode[].class
+                                     )
                                 );
                             } catch (IOException e) {
                                 exception = e;
@@ -534,7 +544,7 @@ public class TransactionResource {
                                     TransactionResource.this.transactionService.writeToExcel(transactions, users, writeFile);
                                     Response result = Response.ok(writeFile)
                                         .type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                                        .header("Content-Disposition", "attachment; filename=transactions")
+                                        .header("Content-Disposition", "attachment; filename=transactions.xlsx")
                                         .build();
 
                                     promise.resume(result);
@@ -567,7 +577,7 @@ public class TransactionResource {
         ResponseBuilder builder;
 
         boolean targetIsCompleted = transaction.status == this.transactionService.getPaymentCompleteStatus();
-        boolean hasChildTransaction = this.transactionService.query()
+        boolean hasChildTransaction = this.datastore.createQuery(Transaction.class)
             .field("parentTransactionId").equal(transaction.id)
             .count() > 0;
 
@@ -577,6 +587,8 @@ public class TransactionResource {
                     .type(MediaType.APPLICATION_JSON);
         } else {
             if (targetIsCompleted) {
+                Date currentTime = new Date();
+
                 Transaction revokedTransaction = new Transaction();
                 revokedTransaction.given_name = transaction.given_name;
                 revokedTransaction.middleName = transaction.middleName;
@@ -587,10 +599,12 @@ public class TransactionResource {
                 revokedTransaction.status = this.transactionService.getRevokedStatus();
                 revokedTransaction.user_id = transaction.user_id;
                 revokedTransaction.parentTransactionId = transaction.id;
-                revokedTransaction.timeCreated = new Date();
+                revokedTransaction.timeCreated = currentTime;
 
-                Key<Transaction> key = this.transactionService.save(revokedTransaction);
-                Transaction entity = this.transactionService.read((ObjectId)key.getId());
+                Key<Transaction> key = this.datastore.save(revokedTransaction);
+                this.entityService.cascadeLastActivity(Arrays.asList(revokedTransaction), currentTime);
+
+                Transaction entity = this.datastore.get(Transaction.class, key.getId());
 
                 builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
             } else {
@@ -611,15 +625,16 @@ public class TransactionResource {
         ResponseBuilder builder;
 
         boolean isVendorTransaction = PaypalIPN.class.getSimpleName().equals(transaction.linkedObjectClass);
-        boolean hasChildTransaction = this.transactionService.query()
+        boolean hasChildTransaction = this.datastore.createQuery(Transaction.class)
             .field("parentTransactionId").equal(transaction.id)
             .count() > 0;
 
         if (isVendorTransaction || hasChildTransaction) {
             builder = Response.status(Status.BAD_REQUEST);
         } else {
-            Transaction entity = this.transactionService.delete(transaction.id);
-            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+            this.datastore.delete(Transaction.class, transaction.id);
+            this.entityService.cascadeLastActivity(Arrays.asList(transaction), new Date());
+            builder = Response.ok();
         }
 
         return builder.build();

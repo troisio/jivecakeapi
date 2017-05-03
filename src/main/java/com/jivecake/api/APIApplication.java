@@ -56,17 +56,14 @@ import com.jivecake.api.resources.UserResource;
 import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.ClientConnectionService;
+import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.FacialRecognitionService;
-import com.jivecake.api.service.FeatureService;
 import com.jivecake.api.service.HttpService;
 import com.jivecake.api.service.ImgurService;
 import com.jivecake.api.service.ItemService;
-import com.jivecake.api.service.LogService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.OrganizationService;
-import com.jivecake.api.service.PaymentProfileService;
-import com.jivecake.api.service.PaymentService;
 import com.jivecake.api.service.PaypalService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.StripeService;
@@ -117,17 +114,14 @@ public class APIApplication extends Application<APIConfiguration> {
         ApplicationService.class,
         Auth0Service.class,
         ClientConnectionService.class,
+        EntityService.class,
         EventService.class,
         FacialRecognitionService.class,
-        FeatureService.class,
         HttpService.class,
         ImgurService.class,
         ItemService.class,
-        LogService.class,
         NotificationService.class,
         OrganizationService.class,
-        PaymentProfileService.class,
-        PaymentService.class,
         PaypalService.class,
         PermissionService.class,
         StripeService.class,

@@ -37,4 +37,5 @@ public class Event {
     public Date timeEnd;
     public Date timeUpdated;
     public Date timeCreated;
+    public Date lastActivity;
 }

@@ -88,17 +88,6 @@ public class TransactionService {
         return future;
     }
 
-    public Query<Transaction> query() {
-        return this.datastore.createQuery(Transaction.class);
-    }
-
-    public Transaction read(ObjectId id) {
-        Transaction result = this.datastore.find(Transaction.class)
-            .field("id").equal(id)
-            .get();
-        return result;
-    }
-
     public List<Transaction> getTransactionsForItemTotal(ObjectId itemId) {
         List<Transaction> transactions = this.datastore.createQuery(Transaction.class)
             .field("itemId").equal(itemId)
@@ -115,22 +104,8 @@ public class TransactionService {
         return pendingOrCompleteLeafTransactions;
     }
 
-    public Transaction delete(ObjectId id) {
-        Query<Transaction> deleteQuery = this.datastore.createQuery(Transaction.class).filter("id", id);
-        Transaction result = this.datastore.findAndDelete(deleteQuery);
-        return result;
-    }
-
-    public Key<Transaction> save(Transaction transaction) {
-        return this.datastore.save(transaction);
-    }
-
     public boolean isValidTransaction(Transaction transaction) {
         return transaction.quantity > 0 && this.currencies.contains(transaction.currency);
-    }
-
-    public String getItemTransactionCreatedEventName() {
-        return "transaction.created";
     }
 
     public List<List<Transaction>> getTransactionForest(List<Transaction> transactions) {

@@ -11,11 +11,7 @@ import org.glassfish.jersey.media.sse.SseBroadcaster;
 import com.jivecake.api.model.EventBroadcaster;
 
 public class ClientConnectionService {
-    private final List<EventBroadcaster> broadcasters = new ArrayList<>();
-
-    public List<EventBroadcaster> getBroadcasters() {
-        return this.broadcasters;
-    }
+    public final List<EventBroadcaster> broadcasters = new ArrayList<>();
 
     public EventOutput createEventOutput(String user_id) {
         List<EventBroadcaster> broadcasters = this.broadcasters.stream()

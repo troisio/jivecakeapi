@@ -17,9 +17,6 @@ import com.jivecake.api.serializer.ObjectIdSerializer;
     @Index(fields = {
         @Field(value = "entityId"),
         @Field(value = "entityType")
-    }),
-    @Index(fields = {
-        @Field(value = "assetType")
     })
 })
 public class EntityAsset {

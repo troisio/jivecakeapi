@@ -20,6 +20,7 @@ import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
+import javax.ws.rs.QueryParam;
 import javax.ws.rs.client.InvocationCallback;
 import javax.ws.rs.container.AsyncResponse;
 import javax.ws.rs.container.Suspended;
@@ -80,6 +81,7 @@ public class UserResource {
     @Authorized
     public Response getOrganizations(
         @PathParam("user_id") String userId,
+        @QueryParam("order") String order,
         @Context JsonNode claims
     ) {
         String user_id = claims.get("sub").asText();
@@ -110,6 +112,10 @@ public class UserResource {
                 query.criteria("id").in(organizationIds),
                 query.criteria("id").in(childrenIds)
             );
+
+            if (order != null) {
+                query.order(order);
+            }
 
             builder = Response.ok(query.asList()).type(MediaType.APPLICATION_JSON);
         } else {

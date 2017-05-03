@@ -21,7 +21,6 @@ import javax.ws.rs.core.Response;
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Key;
-import org.mongodb.morphia.query.Query;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -66,11 +65,6 @@ public class PaypalService {
         this.transactionService = transactionService;
     }
 
-    public Key<PaymentDetail> save(PaymentDetail details) {
-        Key<PaymentDetail> key = this.datastore.save(details);
-        return key;
-    }
-
     public Future<Response> isValidIPN(MultivaluedMap<String, String> paramaters, String paypalUrl, InvocationCallback<Response> callback) {
         String url = String.format("%s?cmd=_notify-validate", paypalUrl);
 
@@ -98,11 +92,6 @@ public class PaypalService {
 
     public String getInvalid() {
         return "INVALID";
-    }
-
-    public List<PaypalIPN> read() {
-        List<PaypalIPN> result = this.datastore.find(PaypalIPN.class).asList();
-        return result;
     }
 
     public PaypalIPN create(Map<String, List<String>> parameters) {
@@ -205,7 +194,7 @@ public class PaypalService {
     public Iterable<Key<Transaction>> processTransactions(PaypalIPN ipn) {
         Iterable<Key<Transaction>> result;
 
-        PaypalIPN previousPendingIpn = this.query()
+        PaypalIPN previousPendingIpn = this.datastore.createQuery(PaypalIPN.class)
             .field("txn_id").equal(ipn.txn_id)
             .field("payment_status").equal("Pending")
             .get();
@@ -315,12 +304,12 @@ public class PaypalService {
                     transaction.user_id = details.user_id;
                 }
 
-                PaypalIPN parentIpn = this.query()
+                PaypalIPN parentIpn = this.datastore.createQuery(PaypalIPN.class)
                     .field("txn_id").equal(ipn.parent_txn_id)
                     .get();
 
                 if (parentIpn != null) {
-                    Transaction parentTransaction = this.transactionService.query()
+                    Transaction parentTransaction = this.datastore.createQuery(Transaction.class)
                         .field("linkedId").equal(parentIpn.id)
                         .field("linkedObjectClass").equal(PaypalIPN.class.getSimpleName())
                         .get();
@@ -351,16 +340,6 @@ public class PaypalService {
         return result;
     }
 
-    public Query<PaypalIPN> query() {
-        return this.datastore.createQuery(PaypalIPN.class);
-    }
-
-    public PaymentDetail readPaypalPaymentDetails(ObjectId id) {
-        return this.datastore.find(PaymentDetail.class)
-            .field("id").equal(id)
-            .get();
-    }
-
     public Iterable<Key<Transaction>> processRefund(PaypalIPN ipn) {
         ObjectId custom;
 
@@ -374,7 +353,7 @@ public class PaypalService {
             .field("custom").equal(custom)
             .get();
 
-        PaypalIPN parentIpn = this.query()
+        PaypalIPN parentIpn = this.datastore.createQuery(PaypalIPN.class)
             .field("txn_id").equal(ipn.parent_txn_id)
             .get();
 
@@ -383,7 +362,7 @@ public class PaypalService {
         if (parentIpn == null) {
             result = null;
         } else {
-            List<Transaction> parentTransactions = this.transactionService.query()
+            List<Transaction> parentTransactions = this.datastore.createQuery(Transaction.class)
                 .field("linkedId").equal(parentIpn.id)
                 .field("linkedObjectClass").equal(PaypalIPN.class.getSimpleName())
                 .asList();

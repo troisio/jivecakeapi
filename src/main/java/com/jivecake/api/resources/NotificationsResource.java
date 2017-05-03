@@ -61,7 +61,7 @@ public class NotificationsResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
     public Response sendEvent(
-        @QueryParam("user_id") Set<String> user_ids,
+        @QueryParam("user_id") Set<String> userIds,
         @Context JsonNode claims,
         ServerSentEvent event
     ) {
@@ -94,7 +94,7 @@ public class NotificationsResource {
                 eventBuilder.id(event.id);
             }
 
-            this.notificationService.sendEvent(user_ids, eventBuilder.build());
+            this.notificationService.sendEvent(userIds, eventBuilder.build());
 
             builder = Response.ok();
         } else {
