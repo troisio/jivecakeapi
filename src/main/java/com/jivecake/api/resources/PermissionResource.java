@@ -29,6 +29,7 @@ import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.Permission;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.EntityService;
+import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PermissionService;
 
@@ -38,6 +39,7 @@ public class PermissionResource {
     private final PermissionService permissionService;
     private final OrganizationService organizationService;
     private final EntityService entityService;
+    private final NotificationService notificationService;
     private final Datastore datastore;
 
     @Inject
@@ -45,24 +47,28 @@ public class PermissionResource {
         PermissionService permissionService,
         OrganizationService organizationService,
         EntityService entityService,
+        NotificationService notificationService,
         Datastore datastore
     ) {
         this.permissionService = permissionService;
         this.organizationService = organizationService;
         this.entityService = entityService;
+        this.notificationService = notificationService;
         this.datastore = datastore;
     }
 
     @DELETE
     @Authorized
     @QueryRestrict(hasAny=true, target={"user_id", "objectId"})
-    public Response write(
+    public Response delete(
         @QueryParam("user_id") List<String> userIds,
         @QueryParam("objectId") List<ObjectId> objectIds,
         @QueryParam("objectClass") String objectClass,
         @Context JsonNode claims
     ) {
         ResponseBuilder builder;
+
+        String requesterId = claims.get("sub").asText();
 
         boolean hasUserPermission = userIds.size() == 1 && claims.get("sub").asText().equals(userIds.get(0));
         boolean isOrganizationQuery = this.organizationService.getPermissionObjectClass().equals(objectClass) &&
@@ -71,7 +77,7 @@ public class PermissionResource {
 
         if (isOrganizationQuery) {
             hasOrganizationPermission = this.permissionService.hasAllHierarchicalPermission(
-                claims.get("sub").asText(),
+                requesterId,
                 PermissionService.WRITE,
                 objectIds
             );
@@ -81,6 +87,19 @@ public class PermissionResource {
 
         if (hasUserPermission || hasOrganizationPermission) {
             Query<Permission> query = this.datastore.createQuery(Permission.class);
+
+            List<ObjectId> requesterAllPermissions = this.datastore.createQuery(Permission.class)
+                .field("user_id").equal(requesterId)
+                .field("objectClass").equal(this.organizationService.getPermissionObjectClass())
+                .field("include").equal(PermissionService.ALL)
+                .asList()
+                .stream()
+                .map(permission -> permission.id)
+                .collect(Collectors.toList());
+
+            if (!requesterAllPermissions.isEmpty()) {
+                query.field("id").notIn(requesterAllPermissions);
+            }
 
             if (!userIds.isEmpty()) {
                 query.field("user_id").in(userIds);
@@ -94,14 +113,16 @@ public class PermissionResource {
                 query.field("objectId").in(objectIds);
             }
 
-            this.datastore.delete(query);
-            builder = Response.ok();
+            List<Permission> permissions = query.asList();
 
-            if (hasOrganizationPermission) {
-                List<Organization> organizations = this.datastore.get(Organization.class, objectIds)
-                    .asList();
-                this.entityService.cascadeLastActivity(organizations, new Date());
-            }
+            this.datastore.delete(query);
+            this.notificationService.notifyPermissionDelete(permissions);
+
+            List<Organization> organizations = this.datastore.get(Organization.class, objectIds)
+                .asList();
+            this.entityService.cascadeLastActivity(organizations, new Date());
+
+            builder = Response.ok();
         } else {
             builder = Response.status(Status.UNAUTHORIZED);
         }

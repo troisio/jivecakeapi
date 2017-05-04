@@ -12,8 +12,9 @@ import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
-import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
+import org.mongodb.morphia.query.FindOptions;
+import org.mongodb.morphia.query.Query;
 
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
@@ -43,8 +44,12 @@ public class ToolsResource {
     @Path("db")
     @Authorized
     public Response db() {
+        FindOptions options = new FindOptions();
+        options.limit(5);
+        Query<Transaction> query = this.datastore.createQuery(Transaction.class);
+
         Long start = System.currentTimeMillis();
-        this.datastore.get(Transaction.class, new ObjectId());
+        query.asList(options);
         Long end = System.currentTimeMillis();
         return Response.ok(end - start).type(MediaType.APPLICATION_JSON).build();
     }
