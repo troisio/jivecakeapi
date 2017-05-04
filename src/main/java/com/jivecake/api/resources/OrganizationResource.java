@@ -3,6 +3,7 @@ package com.jivecake.api.resources;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
@@ -40,6 +41,7 @@ import com.jivecake.api.model.Permission;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
+import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.StripeService;
@@ -53,6 +55,7 @@ public class OrganizationResource {
     private final EventService eventService;
     private final PermissionService permissionService;
     private final StripeService stripeService;
+    private final NotificationService notificationService;
     private final EntityService entityService;
     private final Datastore datastore;
     private final long maximumOrganizationsPerUser = 50;
@@ -64,6 +67,7 @@ public class OrganizationResource {
         EventService eventService,
         PermissionService permissionService,
         StripeService stripeService,
+        NotificationService notificationService,
         EntityService entityService,
         Datastore datastore
     ) {
@@ -71,6 +75,7 @@ public class OrganizationResource {
         this.eventService = eventService;
         this.permissionService = permissionService;
         this.stripeService = stripeService;
+        this.notificationService = notificationService;
         this.entityService = entityService;
         this.datastore = datastore;
     }
@@ -80,7 +85,11 @@ public class OrganizationResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
-    public Response update(@PathObject("id") Organization organization, @Context JsonNode claims, List<Permission> permissions) {
+    public Response update(
+        @PathObject("id") Organization organization,
+        @Context JsonNode claims,
+        List<Permission> permissions
+    ) {
         Date currentTime = new Date();
 
         for (Permission permission : permissions) {
@@ -88,16 +97,20 @@ public class OrganizationResource {
             permission.objectId = organization.id;
             permission.timeCreated = currentTime;
             permission.objectClass = this.organizationService.getPermissionObjectClass();
+
+            if (permission.permissions == null) {
+                permission.permissions = new HashSet<>();
+            }
         }
 
         this.permissionService.write(permissions);
+        this.notificationService.notifyPermissionWrite(permissions);
+        this.entityService.cascadeLastActivity(Arrays.asList(organization), currentTime);
 
         List<Permission> entity = this.datastore.createQuery(Permission.class)
             .field("objectId").equal(organization.id)
             .field("objectClass").equal(this.organizationService.getPermissionObjectClass())
             .asList();
-
-        this.entityService.cascadeLastActivity(Arrays.asList(organization), currentTime);
 
         return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
     }
@@ -119,7 +132,9 @@ public class OrganizationResource {
             .count();
 
         if (profileCount > 50) {
-            builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"limit\"}").type(MediaType.APPLICATION_JSON);
+            builder = Response.status(Status.BAD_REQUEST)
+                .entity("{\"error\": \"limit\"}")
+                .type(MediaType.APPLICATION_JSON);
         } else {
             Date currentTime = new Date();
 
@@ -244,6 +259,7 @@ public class OrganizationResource {
                     Permission permission = new Permission();
                     permission.user_id = userId;
                     permission.include = PermissionService.ALL;
+                    permission.permissions = new HashSet<>();
                     permission.objectClass = this.organizationService.getPermissionObjectClass();
                     permission.objectId = (ObjectId)key.getId();
                     permission.timeCreated = currentTime;
@@ -458,7 +474,6 @@ public class OrganizationResource {
                 .field("objectId").equal(searchedOrganization.id)
                 .field("objectClass").equal(this.organizationService.getPermissionObjectClass());
             this.datastore.delete(query);
-            this.entityService.cascadeLastActivity(Arrays.asList(searchedOrganization), new Date());
 
             builder = Response.ok();
 

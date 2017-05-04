@@ -1,5 +1,8 @@
 package com.jivecake.api.service;
 
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -28,11 +31,45 @@ public class NotificationService {
         this.datastore = datastore;
     }
 
-    public void sendEvent(Set<String> user_ids, OutboundEvent chunk) {
+    public void sendEvent(Set<String> userIds, OutboundEvent chunk) {
         this.clientConnectionService.broadcasters
             .stream()
-            .filter(broadcaster -> user_ids.contains(broadcaster.user_id))
+            .filter(broadcaster -> userIds.contains(broadcaster.user_id))
             .forEach((broadcaster) -> broadcaster.broadcaster.broadcast(chunk));
+    }
+
+    public void notifyPermissionWrite(Collection<Permission> permissions) {
+        permissions.stream()
+            .collect(
+                Collectors.groupingBy(
+                    permission -> permission.user_id
+                )
+            ).forEach((userId, entity) -> {
+                OutboundEvent chunk = new OutboundEvent.Builder()
+                    .mediaType(MediaType.APPLICATION_JSON_TYPE)
+                    .name("permission.write")
+                    .data(entity)
+                    .build();
+
+                this.sendEvent(new HashSet<>(Arrays.asList(userId)), chunk);
+            });
+    }
+
+    public void notifyPermissionDelete(Collection<Permission> permissions) {
+        permissions.stream()
+            .collect(
+                Collectors.groupingBy(
+                    permission -> permission.user_id
+                )
+            ).forEach((userId, entity) -> {
+                OutboundEvent chunk = new OutboundEvent.Builder()
+                    .mediaType(MediaType.APPLICATION_JSON_TYPE)
+                    .name("permission.delete")
+                    .data(entity)
+                    .build();
+
+                this.sendEvent(new HashSet<>(Arrays.asList(userId)), chunk);
+            });
     }
 
     public void notifyItemTransaction(Transaction transaction) {
@@ -51,7 +88,7 @@ public class NotificationService {
 
         OutboundEvent notification = new OutboundEvent.Builder()
             .mediaType(MediaType.APPLICATION_JSON_TYPE)
-            .name("transaction.created")
+            .name("transaction.create")
             .data(Transaction.class, transaction)
             .build();
 
