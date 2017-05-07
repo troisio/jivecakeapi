@@ -113,5 +113,8 @@ public class PaypalIPN {
     public String username;
     public String password;
 
+    /*Refund fields*/
+    public String echeck_time_processed;
+
     public Date timeCreated;
 }
