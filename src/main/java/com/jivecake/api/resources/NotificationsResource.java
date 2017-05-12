@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Set;
 
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
@@ -34,7 +35,8 @@ import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.PermissionService;
 
 @CORS
-@Path("/notification")
+@Path("notification")
+@Singleton
 public class NotificationsResource {
     private final Auth0Service auth0Service;
     private final ClientConnectionService clientConnectionService;
@@ -118,7 +120,7 @@ public class NotificationsResource {
                 builder = Response.status(Status.UNAUTHORIZED);
             } else {
                 String user_id = (String)claims.get("sub");
-                EventOutput output = this.clientConnectionService.createEventOutput(user_id);
+                EventOutput output = this.clientConnectionService.getEventOutput(user_id);
                 builder = Response.ok(output);
             }
         }

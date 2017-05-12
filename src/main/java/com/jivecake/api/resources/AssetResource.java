@@ -1,6 +1,7 @@
 package com.jivecake.api.resources;
 
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
 import javax.ws.rs.QueryParam;
@@ -19,9 +20,11 @@ import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.EntityType;
+import com.jivecake.api.service.ApplicationService;
 
 @CORS
 @Path("asset")
+@Singleton
 public class AssetResource {
     private final Datastore datastore;
 
@@ -65,10 +68,7 @@ public class AssetResource {
             }
 
             FindOptions options = new FindOptions();
-
-            if (limit != null && limit > -1) {
-                options.limit(limit);
-            }
+            options.limit(ApplicationService.LIMIT_DEFAULT);
 
             if (skip != null && skip > -1) {
                 options.skip(skip);

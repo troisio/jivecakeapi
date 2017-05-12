@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
@@ -39,6 +40,7 @@ import io.dropwizard.jersey.PATCH;
 
 @CORS
 @Path("/auth0")
+@Singleton
 public class Auth0Resource {
     private final OAuthConfiguration oAuthConfiguration;
     private final ObjectMapper mapper = new ObjectMapper();

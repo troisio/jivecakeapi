@@ -4,16 +4,15 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
@@ -41,20 +40,23 @@ import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
+import com.jivecake.api.filter.QueryRestrict;
 import com.jivecake.api.model.Event;
-import com.jivecake.api.model.PaypalIPN;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
+import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.TransactionService;
 
-@Path("/transaction")
+@Path("transaction")
 @CORS
+@Singleton
 public class TransactionResource {
     private final TransactionService transactionService;
+    private final NotificationService notificationService;
     private final EventService eventService;
     private final PermissionService permissionService;
     private final EntityService entityService;
@@ -66,12 +68,14 @@ public class TransactionResource {
     public TransactionResource(
         EventService eventService,
         TransactionService transactionService,
+        NotificationService notificationService,
         PermissionService permissionService,
         EntityService entityService,
         Auth0Service auth0Service,
         Datastore datastore
     ) {
         this.transactionService = transactionService;
+        this.notificationService = notificationService;
         this.eventService = eventService;
         this.permissionService = permissionService;
         this.auth0Service = auth0Service;
@@ -88,13 +92,16 @@ public class TransactionResource {
         @QueryParam("user_id") Set<String> userIds,
         @QueryParam("id") List<ObjectId> ids,
         @QueryParam("parentTransactionId") List<ObjectId> parentTransactionIds,
+        @QueryParam("lastTransferTimeGreaterThan") Long lastTransferTimeGreaterThan,
+        @QueryParam("lastTransferTimeLessThan") Long lastTransferTimeLessThan,
         @QueryParam("timeCreatedLessThan") Long timeCreatedLessThan,
         @QueryParam("timeCreatedGreaterThan") Long timeCreatedGreaterThan,
         @QueryParam("given_name") String given_name,
         @QueryParam("family_name") String family_name,
         @QueryParam("email") String email,
         @QueryParam("leaf") Boolean leaf,
-        @QueryParam("status") List<Integer> statuses,
+        @QueryParam("status") Set<Integer> statuses,
+        @QueryParam("paymentStatus") Set<Integer> paymentStatuses,
         @QueryParam("text") String text,
         @QueryParam("limit") Integer limit,
         @QueryParam("offset") Integer offset,
@@ -124,20 +131,16 @@ public class TransactionResource {
             query.field("status").in(statuses);
         }
 
+        if (!paymentStatuses.isEmpty()) {
+            query.field("paymentStatus").in(paymentStatuses);
+        }
+
         if (!parentTransactionIds.isEmpty()) {
             query.field("parentTransactionId").in(parentTransactionIds);
         }
 
         if (!userIds.isEmpty()) {
             query.field("user_id").in(userIds);
-        }
-
-        if (timeCreatedGreaterThan != null) {
-            query.field("timeCreated").greaterThan(new Date(timeCreatedGreaterThan));
-        }
-
-        if (timeCreatedLessThan != null) {
-            query.field("timeCreated").lessThan(new Date(timeCreatedLessThan));
         }
 
         if (email != null) {
@@ -152,16 +155,28 @@ public class TransactionResource {
             query.field("family_name").startsWithIgnoreCase(family_name);
         }
 
-        if (Objects.equals(leaf, true)) {
-            List<Transaction> transactions = query.asList();
-            List<List<Transaction>> forest = this.transactionService.getTransactionForest(transactions);
+        if (leaf != null) {
+            query.field("leaf").equal(leaf);
+        }
 
-            List<ObjectId> leafIds = forest.stream()
-                .filter(lineage -> lineage.size() == 1)
-                .map(lineage -> lineage.get(0).id)
-                .collect(Collectors.toList());
+        if (lastTransferTimeGreaterThan != null) {
+            query.field("lastTransferTime").greaterThan(new Date(lastTransferTimeGreaterThan));
+        }
 
-            query.field("id").in(leafIds);
+        if (lastTransferTimeLessThan != null) {
+            query.field("lastTransferTime").lessThan(new Date(lastTransferTimeLessThan));
+        }
+
+        if (timeCreatedGreaterThan != null) {
+            query.field("timeCreated").greaterThan(new Date(timeCreatedGreaterThan));
+        }
+
+        if (timeCreatedLessThan != null) {
+            query.field("timeCreated").lessThan(new Date(timeCreatedLessThan));
+        }
+
+        if (order != null) {
+            query.order(order);
         }
 
         CompletableFuture<List<Transaction>> textSearchFuture;
@@ -180,10 +195,6 @@ public class TransactionResource {
                     .collect(Collectors.toList());
 
                 query.field("id").in(textTransactionIds);
-            }
-
-            if (order != null) {
-                query.order(order);
             }
 
             FindOptions options = new FindOptions();
@@ -221,125 +232,148 @@ public class TransactionResource {
 
     @POST
     @Authorized
-    @Path("/{id}/transfer/{user_id}")
+    @Path("{id}/transfer/{user_id}")
+    @HasPermission(id="id", clazz=Transaction.class, permission=PermissionService.WRITE)
     public void transfer(
         @PathObject("id") Transaction transaction,
         @PathParam("user_id") String user_id,
         @Context JsonNode claims,
         @Suspended AsyncResponse promise
     ) {
-        if (transaction == null) {
-            promise.resume(Response.status(Status.NOT_FOUND).build());
-        } else if (transaction.status != this.transactionService.getPaymentCompleteStatus()) {
-            promise.resume(Response.status(Status.BAD_REQUEST).build());
-        } else {
+        boolean statusIsValid = transaction.paymentStatus == TransactionService.PAYMENT_EQUAL &&
+            transaction.status == TransactionService.SETTLED;
+
+        if (statusIsValid) {
+            Date currentTime = new Date();
             Event event = this.datastore.get(Event.class, transaction.eventId);
 
             String requester = claims.get("sub").asText();
 
             boolean hasTransferTimeViolation = false;
 
-            Transaction parentTransaction = this.datastore.get(Transaction.class, transaction.parentTransactionId);
-
-            if (parentTransaction != null && parentTransaction.status == this.transactionService.getTransferredStatus()) {
-                hasTransferTimeViolation = event.minimumTimeBetweenTransactionTransfer > new Date().getTime() - parentTransaction.timeCreated.getTime();
+            if (transaction.lastTransferTime != null) {
+                long timeBetweenTransfer = transaction.lastTransferTime.getTime() - currentTime.getTime();
+                hasTransferTimeViolation = event.minimumTimeBetweenTransactionTransfer < timeBetweenTransfer;
             }
 
-            if (requester.equals(user_id)) {
-                promise.resume(Response.status(Status.BAD_REQUEST).build());
+            if (!transaction.leaf) {
+                promise.resume(
+                    Response.status(Status.BAD_REQUEST)
+                        .entity("{\"error\": \"leaf\"}")
+                        .type(MediaType.APPLICATION_JSON)
+                        .build()
+                );
+            } else if (transaction.user_id == null) {
+                promise.resume(
+                    Response.status(Status.BAD_REQUEST)
+                        .entity("{\"error\": \"transactionuserid\"}")
+                        .type(MediaType.APPLICATION_JSON)
+                        .build()
+                );
+            } else if (requester.equals(user_id)) {
+                promise.resume(
+                    Response.status(Status.BAD_REQUEST)
+                        .entity("{\"error\": \"sameuser\"}")
+                        .type(MediaType.APPLICATION_JSON)
+                        .build()
+                );
             } else if (event.status == this.eventService.getInactiveEventStatus()) {
-                promise.resume(Response.status(Status.BAD_REQUEST).entity("{\"error\": \"eventInactive\"}").build());
+                promise.resume(
+                    Response.status(Status.BAD_REQUEST)
+                        .entity("{\"error\": \"eventinactive\"}")
+                        .type(MediaType.APPLICATION_JSON)
+                        .build()
+                );
             } else if (hasTransferTimeViolation) {
                 String body = String.format("{\"error\": \"minimumTimeBetweenPassTransfer\", data: %d}", event.minimumTimeBetweenTransactionTransfer);
-                promise.resume(Response.status(Status.BAD_REQUEST).entity(body).build());
+                promise.resume(
+                    Response.status(Status.BAD_REQUEST)
+                        .entity(body)
+                        .type(MediaType.APPLICATION_JSON)
+                        .build()
+                );
             } else {
-                boolean hasPermission = requester.equals(transaction.user_id) ||
-                    this.permissionService.has(
-                        requester,
-                        Arrays.asList(transaction),
-                        PermissionService.WRITE
-                    );
+                this.auth0Service.queryUsers(String.format("user_id: \"%s\"", user_id), new InvocationCallback<Response>() {
+                    @Override
+                    public void completed(Response response) {
+                        JsonNode[] users;
+                        Object entity = response.getEntity();
+                        String body = entity instanceof String ? (String)entity : response.readEntity(String.class);
 
-                if (hasPermission) {
-                    this.auth0Service.queryUsers(String.format("user_id: \"%s\"", user_id), new InvocationCallback<Response>() {
-                        @Override
-                        public void completed(Response response) {
-                            JsonNode[] users;
+                        IOException exception = null;
 
-                            Object entity = response.getEntity();
-                            String body = entity instanceof String ? (String)entity : response.readEntity(String.class);
-
-                            try {
-                                users = TransactionResource.this.mapper.readValue(body, JsonNode[].class);
-                            } catch (IOException e) {
-                                users = null;
-                                promise.resume(response);
-                            }
-
-                            if (users != null) {
-                                if (users.length == 0) {
-                                    promise.resume(Response.status(Status.NOT_FOUND).build());
-                                } else {
-                                    Date currentDate = new Date();
-
-                                    Transaction transfer = new Transaction();
-                                    transfer.id = new ObjectId();
-                                    transfer.parentTransactionId = transaction.id;
-                                    transfer.itemId = transaction.itemId;
-                                    transfer.eventId = transaction.eventId;
-                                    transfer.organizationId = transaction.organizationId;
-                                    transfer.user_id = transaction.user_id;
-                                    transfer.status = TransactionResource.this.transactionService.getTransferredStatus();
-                                    transfer.timeCreated = currentDate;
-
-                                    Transaction completed = new Transaction();
-                                    completed.itemId = transaction.itemId;
-                                    completed.eventId = transaction.eventId;
-                                    completed.organizationId = transaction.organizationId;
-                                    completed.parentTransactionId = transfer.id;
-                                    completed.user_id = users[0].get("user_id").asText();
-                                    completed.status = TransactionResource.this.transactionService.getPaymentCompleteStatus();
-                                    completed.timeCreated = currentDate;
-
-                                    Collection<Transaction> transactions = Arrays.asList(transfer, completed);
-                                    TransactionResource.this.datastore.save(transactions);
-
-                                    TransactionResource.this.entityService.cascadeLastActivity(transactions, currentDate);
-
-                                    Transaction transferAfter = TransactionResource.this.datastore.get(Transaction.class, transfer.id);
-                                    Transaction completedAfter = TransactionResource.this.datastore.get(Transaction.class, completed.id);
-
-                                    promise.resume(
-                                        Response.ok(Arrays.asList(transferAfter, completedAfter)).type(MediaType.APPLICATION_JSON).build()
-                                    );
-                                }
-                            }
+                        try {
+                            users = TransactionResource.this.mapper.readValue(body, JsonNode[].class);
+                        } catch (IOException e) {
+                            exception = e;
+                            users = null;
                         }
 
-                        @Override
-                        public void failed(Throwable throwable) {
-                            promise.resume(throwable);
+                        if (exception == null) {
+                            if (users.length == 0) {
+                                promise.resume(Response.status(Status.NOT_FOUND)
+                                     .entity("{\"error\": \"user\"}")
+                                     .type(MediaType.APPLICATION_JSON)
+                                    .build());
+                            } else {
+                                transaction.email = null;
+                                transaction.given_name = null;
+                                transaction.family_name = null;
+                                transaction.middleName = null;
+
+                                transaction.user_id = user_id;
+                                transaction.leaf = true;
+                                transaction.lastTransferTime = currentTime;
+
+                                Key<Transaction> key = TransactionResource.this.datastore.save(transaction);
+                                TransactionResource.this.datastore.get(Transaction.class, key.getId());
+
+                                TransactionResource.this.entityService.cascadeLastActivity(Arrays.asList(transaction), currentTime);
+
+                                promise.resume(
+                                    Response.ok(transaction)
+                                        .type(MediaType.APPLICATION_JSON)
+                                        .build()
+                                );
+                            }
+                        } else {
+                            promise.resume(
+                                Response.status(Status.SERVICE_UNAVAILABLE)
+                                    .entity(exception)
+                                    .build()
+                            );
                         }
-                    });
-                } else {
-                    promise.resume(Response.status(Status.UNAUTHORIZED).build());
-                }
+                    }
+
+                    @Override
+                    public void failed(Throwable throwable) {
+                        promise.resume(throwable);
+                    }
+                });
             }
+        } else {
+            promise.resume(Response.status(Status.BAD_REQUEST).build());
         }
     }
 
     @GET
-    @Path("/search")
+    @Path("search")
+    @QueryRestrict(hasAny=true, target={"eventId", "itemId"})
     public Response publicSearch(
         @QueryParam("id") List<ObjectId> ids,
         @QueryParam("eventId") List<ObjectId> eventIds,
         @QueryParam("itemId") List<ObjectId> itemIds,
         @QueryParam("status") List<Integer> statuses,
-        @QueryParam("leaf") Boolean leaf
+        @QueryParam("paymentStatus") Set<Integer> paymentStatuses,
+        @QueryParam("leaf") Boolean leaf,
+        @QueryParam("limit") Integer limit,
+        @QueryParam("skip") Integer skip
     ) {
         Query<Transaction> query = this.datastore.createQuery(Transaction.class)
             .project("id", true)
             .project("itemId", true)
+            .project("eventId", true)
+            .project("organizationId", true)
             .project("status", true)
             .project("parentTransactionId", true);
 
@@ -359,39 +393,39 @@ public class TransactionResource {
             query.field("status").in(statuses);
         }
 
-        List<Transaction> transactions = query.asList();
-
-        if (leaf != null && leaf) {
-            List<List<Transaction>> forest = this.transactionService.getTransactionForest(transactions);
-
-            transactions = forest.stream()
-                .filter(lineage -> lineage.size() == 1)
-                .map(lineage -> lineage.get(0))
-                .collect(Collectors.toList());
+        if (!paymentStatuses.isEmpty()) {
+            query.field("paymentStatus").in(paymentStatuses);
         }
 
-        Paging<Transaction> entity = new Paging<>(transactions, query.count());
+        if (leaf != null) {
+            query.field("leaf").equal(leaf);
+        }
+
+        FindOptions options = new FindOptions();
+
+        if (limit != null) {
+            options.limit(limit);
+        }
+
+        if (skip != null) {
+            options.skip(skip);
+        }
+
+        Paging<Transaction> entity = new Paging<>(query.asList(options), query.count());
         return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
     }
 
     @GET
-    @Path("/user")
+    @Path("user")
     @Authorized
     public void searchUsers(
         @QueryParam("id") List<ObjectId> ids,
         @Context JsonNode claims,
         @Suspended AsyncResponse promise
     ) {
-        List<Transaction> transactions;
-
-        if (ids.isEmpty()) {
-            transactions = new ArrayList<>();
-        } else {
-            transactions = this.datastore.createQuery(Transaction.class)
-                .field("id").in(ids)
-                .asList();
-        }
-
+        List<Transaction> transactions = this.datastore.createQuery(Transaction.class)
+            .field("id").in(ids)
+            .asList();
         Set<String> user_ids = transactions.stream()
             .filter(transaction -> transaction.user_id != null)
             .map(transaction -> transaction.user_id)
@@ -435,39 +469,15 @@ public class TransactionResource {
     }
 
     @GET
-    @Path("/{id}")
+    @Path("{id}")
     @Authorized
+    @HasPermission(id="id", clazz=Transaction.class, permission=PermissionService.READ)
     public Response read(@PathObject("id") Transaction transaction, @Context JsonNode claims) {
-        ResponseBuilder builder;
-        String userId = claims.get("sub").asText();
-
-        if (transaction == null) {
-            builder = Response.status(Status.NOT_FOUND);
-        } else {
-            boolean hasPermission;
-
-            if (userId.equals(transaction.user_id)) {
-                hasPermission = true;
-            } else {
-                hasPermission = this.permissionService.has(
-                    userId,
-                    Arrays.asList(transaction.id),
-                    PermissionService.READ
-                );
-            }
-
-            if (hasPermission) {
-                builder = Response.ok(transaction).type(MediaType.APPLICATION_JSON);
-            } else {
-                builder = Response.status(Status.UNAUTHORIZED);
-            }
-        }
-
-        return builder.build();
+        return Response.ok(transaction).type(MediaType.APPLICATION_JSON).build();
     }
 
     @GET
-    @Path("/excel")
+    @Path("excel")
     public void downloadExcel(
         @QueryParam("organizationId") List<ObjectId> organizationIds,
         @QueryParam("eventId") List<ObjectId> eventIds,
@@ -570,43 +580,41 @@ public class TransactionResource {
     }
 
     @POST
-    @Path("/{id}/revoke")
+    @Path("{id}/revoke")
     @Authorized
     @HasPermission(clazz=Transaction.class, permission=PermissionService.WRITE, id="id")
     public Response revoke(@PathObject("id") Transaction transaction, @Context JsonNode claims) {
         ResponseBuilder builder;
 
-        boolean targetIsCompleted = transaction.status == this.transactionService.getPaymentCompleteStatus();
+        boolean targetIsCompleted = transaction.status == TransactionService.SETTLED;
         boolean hasChildTransaction = this.datastore.createQuery(Transaction.class)
             .field("parentTransactionId").equal(transaction.id)
             .count() > 0;
 
         if (hasChildTransaction) {
             builder = Response.status(Status.BAD_REQUEST)
-                    .entity("{\"error\": \"childtransaction\"}")
-                    .type(MediaType.APPLICATION_JSON);
+                .entity("{\"error\": \"childtransaction\"}")
+                .type(MediaType.APPLICATION_JSON);
         } else {
             if (targetIsCompleted) {
                 Date currentTime = new Date();
 
-                Transaction revokedTransaction = new Transaction();
-                revokedTransaction.given_name = transaction.given_name;
-                revokedTransaction.middleName = transaction.middleName;
-                revokedTransaction.family_name = transaction.family_name;
-                revokedTransaction.itemId = transaction.itemId;
-                revokedTransaction.eventId = transaction.eventId;
-                revokedTransaction.organizationId = transaction.organizationId;
-                revokedTransaction.status = this.transactionService.getRevokedStatus();
-                revokedTransaction.user_id = transaction.user_id;
+                Transaction revokedTransaction = new Transaction(transaction);
+                revokedTransaction.id = null;
                 revokedTransaction.parentTransactionId = transaction.id;
+                revokedTransaction.status = TransactionService.USER_REVOKED;
+                revokedTransaction.leaf = true;
                 revokedTransaction.timeCreated = currentTime;
 
-                Key<Transaction> key = this.datastore.save(revokedTransaction);
-                this.entityService.cascadeLastActivity(Arrays.asList(revokedTransaction), currentTime);
+                transaction.leaf = false;
 
-                Transaction entity = this.datastore.get(Transaction.class, key.getId());
+                Iterable<Key<Transaction>> keys = this.datastore.save(Arrays.asList(revokedTransaction, transaction));
+                List<Transaction> transactions = this.datastore.getByKeys(keys);
 
-                builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+                this.entityService.cascadeLastActivity(transactions, currentTime);
+                this.notificationService.notify(new ArrayList<Object>(transactions), "transaction.revoke");
+
+                builder = Response.ok(transactions.get(0)).type(MediaType.APPLICATION_JSON);
             } else {
                 builder = Response.status(Status.BAD_REQUEST)
                     .entity("{\"error\": \"complete\"}")
@@ -618,13 +626,13 @@ public class TransactionResource {
     }
 
     @DELETE
-    @Path("/{id}")
+    @Path("{id}")
     @Authorized
     @HasPermission(clazz=Transaction.class, id="id", permission=PermissionService.WRITE)
     public Response delete(@PathObject("id") Transaction transaction, @Context JsonNode claims) {
         ResponseBuilder builder;
 
-        boolean isVendorTransaction = PaypalIPN.class.getSimpleName().equals(transaction.linkedObjectClass);
+        boolean isVendorTransaction = this.transactionService.isVendorTransaction(transaction);
         boolean hasChildTransaction = this.datastore.createQuery(Transaction.class)
             .field("parentTransactionId").equal(transaction.id)
             .count() > 0;
@@ -633,8 +641,22 @@ public class TransactionResource {
             builder = Response.status(Status.BAD_REQUEST);
         } else {
             this.datastore.delete(Transaction.class, transaction.id);
-            this.entityService.cascadeLastActivity(Arrays.asList(transaction), new Date());
-            builder = Response.ok();
+
+            Transaction parentTransaction = this.datastore.get(Transaction.class, transaction.parentTransactionId);
+
+            List<Object> transactions = new ArrayList<>();
+            transactions.add(transaction);
+
+            if (parentTransaction != null) {
+                parentTransaction.leaf = true;
+                this.datastore.save(parentTransaction);
+
+                transactions.add(parentTransaction);
+            }
+
+            this.entityService.cascadeLastActivity(transactions, new Date());
+            this.notificationService.notify(transactions, "transaction.delete");
+            builder = Response.ok(transaction).type(MediaType.APPLICATION_JSON);
         }
 
         return builder.build();

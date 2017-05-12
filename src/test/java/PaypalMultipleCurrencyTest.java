@@ -2,7 +2,6 @@
 
 import static org.junit.Assert.assertEquals;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
@@ -12,7 +11,6 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mongodb.morphia.Datastore;
-import org.mongodb.morphia.Key;
 import org.mongodb.morphia.Morphia;
 
 import com.jivecake.api.model.CartPaymentDetails;
@@ -99,20 +97,15 @@ public class PaypalMultipleCurrencyTest {
             )
         );
 
-        this.paypalService.processTransactions(multiCurrencyPendingIpn);
-        Iterable<Key<Transaction>> keys = this.paypalService.processTransactions(multiCurrencyCompleteIpn);
+        List<Transaction> pendingTransactions = this.paypalService.processTransactions(multiCurrencyPendingIpn);
+        this.datastore.save(pendingTransactions);
 
-        List<ObjectId> overwrittenTransactionsIds = new ArrayList<>();
-        keys.forEach(key -> overwrittenTransactionsIds.add((ObjectId)key.getId()));
-
-        List<Transaction> transactions = this.datastore.find(Transaction.class)
-            .field("id").in(overwrittenTransactionsIds)
-            .asList();
-
+        List<Transaction> transactions = this.paypalService.processTransactions(multiCurrencyCompleteIpn);
         assertEquals(2, transactions.size());
 
         for (Transaction transaction: transactions) {
-            assertEquals(this.transactionService.getPaymentCompleteStatus(), transaction.status);
+            assertEquals(TransactionService.SETTLED, transaction.status);
+            assertEquals(TransactionService.PAYMENT_EQUAL, transaction.paymentStatus);
         }
     }
 }

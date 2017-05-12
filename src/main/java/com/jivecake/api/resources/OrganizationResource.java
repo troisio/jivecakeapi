@@ -2,6 +2,7 @@ package com.jivecake.api.resources;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
@@ -10,6 +11,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
@@ -49,7 +51,8 @@ import com.stripe.exception.StripeException;
 import com.stripe.model.Subscription;
 
 @CORS
-@Path("/organization")
+@Path("organization")
+@Singleton
 public class OrganizationResource {
     private final OrganizationService organizationService;
     private final EventService eventService;
@@ -81,7 +84,7 @@ public class OrganizationResource {
     }
 
     @POST
-    @Path("/{id}/permission")
+    @Path("{id}/permission")
     @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
@@ -143,6 +146,7 @@ public class OrganizationResource {
 
             Key<PaymentProfile> key = this.datastore.save(profile);
             this.entityService.cascadeLastActivity(Arrays.asList(profile), currentTime);
+            this.notificationService.notify(Arrays.asList(profile), "paymentprofile.create");
 
             PaymentProfile entity = this.datastore.get(PaymentProfile.class, key.getId());
             builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
@@ -156,57 +160,72 @@ public class OrganizationResource {
     @Path("/{id}/event")
     @Authorized
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
-    public Response createEvent(@PathObject("id") Organization organization, @Context JsonNode claims, Event event) {
+    public Response createEvent(
+        @PathObject("id") Organization organization,
+        @Context JsonNode claims,
+        Event event
+     ) {
         ResponseBuilder builder;
 
-        long activeEventsCount = this.datastore.createQuery(Event.class)
-            .field("status").equal(this.eventService.getActiveEventStatus())
-            .field("organizationId").equal(organization.id)
-            .count();
+        boolean isValid = this.eventService.isValidEvent(event);
 
-        boolean hasFeatureViolation;
+        if (isValid) {
+            long activeEventsCount = this.datastore.createQuery(Event.class)
+                .field("status").equal(this.eventService.getActiveEventStatus())
+                .field("organizationId").equal(organization.id)
+                .count();
 
-        StripeException stripeException = null;
+            boolean hasFeatureViolation;
 
-        if (event.status == this.eventService.getActiveEventStatus()) {
-            activeEventsCount++;
-            List<Subscription> subscriptions = null;
+            StripeException stripeException = null;
 
-            try {
-                subscriptions = stripeService.getCurrentSubscriptions(organization.id);
-            } catch (StripeException e) {
-                stripeException = e;
+            if (event.status == this.eventService.getActiveEventStatus()) {
+                activeEventsCount++;
+                List<Subscription> subscriptions = null;
+
+                try {
+                    subscriptions = stripeService.getCurrentSubscriptions(organization.id);
+                } catch (StripeException e) {
+                    stripeException = e;
+                }
+
+                hasFeatureViolation = subscriptions != null && activeEventsCount > subscriptions.size();
+            } else {
+                hasFeatureViolation = false;
             }
 
-            hasFeatureViolation = subscriptions != null && activeEventsCount > subscriptions.size();
+            long eventCount = this.datastore.createQuery(Event.class)
+                .field("organizationId").equal(organization.id)
+                .count();
+
+            if (stripeException != null) {
+                builder = Response.status(Status.SERVICE_UNAVAILABLE)
+                    .entity(stripeException);
+            } else if (eventCount > 100) {
+                builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"limit\"}").type(MediaType.APPLICATION_JSON);
+            } else if (hasFeatureViolation) {
+                builder = Response.status(Status.BAD_REQUEST)
+                    .entity("{\"error\": \"subscription\"}")
+                    .type(MediaType.APPLICATION_JSON);
+            } else {
+                Date currentTime = new Date();
+
+                event.id = null;
+                event.organizationId = organization.id;
+                event.timeCreated = currentTime;
+                event.lastActivity = currentTime;
+
+                Key<Event> key = this.datastore.save(event);
+
+                Event searchedEvent = this.datastore.get(Event.class, key.getId());
+
+                this.notificationService.notify(Arrays.asList(searchedEvent), "event.create");
+                this.entityService.cascadeLastActivity(Arrays.asList(searchedEvent), currentTime);
+
+                builder = Response.ok(searchedEvent).type(MediaType.APPLICATION_JSON);
+            }
         } else {
-            hasFeatureViolation = false;
-        }
-
-        long eventCount = this.datastore.createQuery(Event.class)
-            .field("organizationId").equal(organization.id)
-            .count();
-
-        if (stripeException != null) {
-            builder = Response.status(Status.SERVICE_UNAVAILABLE)
-                .entity(stripeException);
-        } else if (eventCount > 100) {
-            builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"limit\"}").type(MediaType.APPLICATION_JSON);
-        } else if (hasFeatureViolation) {
-            builder = Response.status(Status.BAD_REQUEST)
-                .entity("{\"error\": \"subscription\"}")
-                .type(MediaType.APPLICATION_JSON);
-        } else {
-            Date currentTime = new Date();
-
-            event.id = null;
-            event.organizationId = organization.id;
-            event.timeCreated = currentTime;
-
-            Key<Event> key = this.datastore.save(event);
-            this.entityService.cascadeLastActivity(Arrays.asList(event), currentTime);
-            Event searchedEvent = this.datastore.get(Event.class, key.getId());
-            builder = Response.ok(searchedEvent).type(MediaType.APPLICATION_JSON);
+            builder = Response.status(Status.BAD_REQUEST);
         }
 
         return builder.build();
@@ -242,9 +261,13 @@ public class OrganizationResource {
                     .count();
 
                 if (userOrganizationPermissions > this.maximumOrganizationsPerUser) {
-                    builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"limit\"}").type(MediaType.APPLICATION_JSON);
+                    builder = Response.status(Status.BAD_REQUEST)
+                        .entity("{\"error\": \"limit\"}")
+                        .type(MediaType.APPLICATION_JSON);
                 } else if (parentIdOrganizationViolation) {
-                    builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"parentId\"}").type(MediaType.APPLICATION_JSON);
+                    builder = Response.status(Status.BAD_REQUEST)
+                        .entity("{\"error\": \"parentId\"}")
+                        .type(MediaType.APPLICATION_JSON);
                 } else {
                     Date currentTime = new Date();
 
@@ -265,6 +288,12 @@ public class OrganizationResource {
                     permission.timeCreated = currentTime;
 
                     this.permissionService.write(Arrays.asList(permission));
+
+                    List<Object> entities = new ArrayList<>();
+                    entities.add(organization);
+                    entities.add(permission);
+
+                    this.notificationService.notify(entities, "organization.create");
 
                     Organization entity = this.datastore.get(Organization.class, key.getId());
                     builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
@@ -334,12 +363,8 @@ public class OrganizationResource {
             options.skip(offset);
         }
 
-        List<Organization> organizations = query.asList();
-
-        Paging<Organization> entity = new Paging<>(organizations, query.count());
-        ResponseBuilder builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-
-        return builder.build();
+        Paging<Organization> entity = new Paging<>(query.asList(options), query.count());
+        return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
     }
 
     @GET
@@ -407,32 +432,34 @@ public class OrganizationResource {
     @Authorized
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
     public Response update(
-        @PathObject("id") Organization queriedOrganization,
+        @PathObject("id") Organization searchedOrganization,
         Organization organization,
         @Context JsonNode claims
     ) {
         ResponseBuilder builder;
 
         Query<Organization> query = this.datastore.createQuery(Organization.class)
-            .field("id").notEqual(queriedOrganization.id)
+            .field("id").notEqual(searchedOrganization.id)
             .field("email").equalIgnoreCase(organization.email);
 
         long sameEmailCount = query.count();
 
         if (sameEmailCount == 0) {
-            boolean parentIdChangeViolation = !Objects.equals(queriedOrganization.parentId, organization.parentId);
+            boolean parentIdChangeViolation = !Objects.equals(searchedOrganization.parentId, organization.parentId);
 
             if (parentIdChangeViolation) {
                 builder = Response.status(Status.BAD_REQUEST);
             } else {
-                organization.children = queriedOrganization.children;
-                organization.id = queriedOrganization.id;
-                organization.timeCreated = queriedOrganization.timeCreated;
+                organization.children = searchedOrganization.children;
+                organization.id = searchedOrganization.id;
+                organization.timeCreated = searchedOrganization.timeCreated;
                 organization.timeUpdated = new Date();
 
                 Key<Organization> key = this.datastore.save(organization);
-
                 Organization entity = this.datastore.get(Organization.class, key.getId());
+
+                this.notificationService.notify(Arrays.asList(entity), "organization.update");
+
                 builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
             }
         } else {
@@ -454,7 +481,10 @@ public class OrganizationResource {
     @Path("/{id}")
     @Authorized
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
-    public Response delete(@PathObject("id") Organization searchedOrganization, @Context JsonNode claims) {
+    public Response delete(
+        @PathObject("id") Organization searchedOrganization,
+        @Context JsonNode claims
+    ) {
         ResponseBuilder builder;
 
         long count = this.datastore.createQuery(Event.class)
@@ -473,9 +503,17 @@ public class OrganizationResource {
             Query<Permission> query = this.datastore.createQuery(Permission.class)
                 .field("objectId").equal(searchedOrganization.id)
                 .field("objectClass").equal(this.organizationService.getPermissionObjectClass());
+
+            List<Permission> permisisons = query.asList();
+
+            Collection<Object> entities = new ArrayList<>();
+            entities.add(searchedOrganization);
+            entities.addAll(permisisons);
+
+            this.notificationService.notify(entities, "organization.delete");
             this.datastore.delete(query);
 
-            builder = Response.ok();
+            builder = Response.ok(searchedOrganization).type(MediaType.APPLICATION_JSON);
 
             this.reindexExecutor.submit(new Runnable() {
                 @Override

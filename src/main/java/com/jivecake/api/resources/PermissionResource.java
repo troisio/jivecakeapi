@@ -6,6 +6,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
@@ -33,8 +34,9 @@ import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PermissionService;
 
-@Path("/permission")
+@Path("permission")
 @CORS
+@Singleton
 public class PermissionResource {
     private final PermissionService permissionService;
     private final OrganizationService organizationService;
@@ -190,20 +192,22 @@ public class PermissionResource {
             .filter(permission -> !permission.user_id.equals(user_id))
             .collect(Collectors.toList());
 
-        boolean hasUserPermission = permissionsNotBelongingToRequester.isEmpty();
+        boolean hasPermission = permissionsNotBelongingToRequester.isEmpty();
 
-        List<ObjectId> organizationIds = entities.stream()
-            .filter(permission -> permission.objectClass.equals(this.organizationService.getPermissionObjectClass()))
-            .map(permission -> permission.objectId)
-            .collect(Collectors.toList());
+        if (!hasPermission) {
+            List<ObjectId> organizationIds = entities.stream()
+                .filter(permission -> permission.objectClass.equals(this.organizationService.getPermissionObjectClass()))
+                .map(permission -> permission.objectId)
+                .collect(Collectors.toList());
 
-        boolean hasOrganizationPermission = this.permissionService.hasAllHierarchicalPermission(
-            user_id,
-            PermissionService.READ,
-            organizationIds
-        );
+            hasPermission = this.permissionService.hasAllHierarchicalPermission(
+                user_id,
+                PermissionService.READ,
+                organizationIds
+            );
+        }
 
-        if (hasUserPermission || hasOrganizationPermission) {
+        if (hasPermission) {
             Paging<Permission> entity = new Paging<>(entities, query.count());
             builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         } else {

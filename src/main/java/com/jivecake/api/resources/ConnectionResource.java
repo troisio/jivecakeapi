@@ -7,6 +7,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
 import javax.ws.rs.QueryParam;
@@ -28,6 +29,7 @@ import com.jivecake.api.service.PermissionService;
 
 @CORS
 @Path("/connection")
+@Singleton
 public class ConnectionResource {
     private final ClientConnectionService clientConnectionService;
     private final ApplicationService applicationService;
@@ -63,7 +65,7 @@ public class ConnectionResource {
         );
 
         if (hasPermission) {
-            Stream<EventBroadcaster> stream = this.clientConnectionService.broadcasters.stream();
+            Stream<EventBroadcaster> stream = this.clientConnectionService.broadcasters.values().stream();
 
             if (!user_ids.isEmpty()) {
                 stream = stream.filter(broadcaster -> user_ids.contains(broadcaster.user_id));

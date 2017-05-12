@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
@@ -36,9 +37,11 @@ import com.jivecake.api.model.Transaction;
 import com.jivecake.api.request.AggregatedItemGroup;
 import com.jivecake.api.request.ItemData;
 import com.jivecake.api.request.Paging;
+import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.ItemService;
+import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.StripeService;
 import com.jivecake.api.service.TransactionService;
@@ -47,6 +50,7 @@ import com.stripe.model.Subscription;
 
 @Path("/event")
 @CORS
+@Singleton
 public class EventResource {
     private final EventService eventService;
     private final ItemService itemService;
@@ -54,6 +58,7 @@ public class EventResource {
     private final TransactionService transactionService;
     private final StripeService stripeService;
     private final EntityService entityService;
+    private final NotificationService notificationService;
     private final Datastore datastore;
 
     @Inject
@@ -64,6 +69,7 @@ public class EventResource {
         TransactionService transactionService,
         StripeService stripeService,
         EntityService entityService,
+        NotificationService notificationService,
         Datastore datastore
     ) {
         this.itemService = itemService;
@@ -72,6 +78,7 @@ public class EventResource {
         this.transactionService = transactionService;
         this.stripeService = stripeService;
         this.entityService = entityService;
+        this.notificationService = notificationService;
         this.datastore = datastore;
     }
 
@@ -121,25 +128,23 @@ public class EventResource {
 
     @GET
     @Path("/search")
-    public Response search(
+    public Response publicSearch(
         @QueryParam("id") List<ObjectId> ids,
-        @QueryParam("timeStartBefore") Long timeStartBefore,
-        @QueryParam("timeStartAfter") Long timeStartAfter,
-        @QueryParam("timeEndBefore") Long timeEndBefore,
-        @QueryParam("timeEndAfter") Long timeEndAfter,
-        @QueryParam("timeCreatedAfter") Long timeCreatedAfter,
-        @QueryParam("timeCreatedBefore") Long timeCreatedBefore,
+        @QueryParam("timeStartGreaterThan") Long timeStartGreaterThan,
+        @QueryParam("timeStartLessThan") Long timeStartLessThan,
+        @QueryParam("timeEndLessThan") Long timeEndLessThan,
+        @QueryParam("timeEndGreaterThan") Long timeEndGreaterThan,
+        @QueryParam("timeCreatedLessThan") Long timeCreatedLessThan,
+        @QueryParam("timeCreatedGreaterThan") Long timeCreatedGreaterThan,
         @QueryParam("order") String order,
         @QueryParam("text") String text
     ) {
-        FindOptions options = new FindOptions();
-        options.limit(1000);
-
         Query<Event> query = this.datastore.createQuery(Event.class)
             .field("status").equal(this.eventService.getActiveEventStatus());
 
         if (text != null && !text.isEmpty()) {
             List<ObjectId> organizationIds = this.datastore.createQuery(Organization.class)
+                .project("id", true)
                 .field("name").containsIgnoreCase(text)
                 .asList()
                 .stream()
@@ -158,37 +163,39 @@ public class EventResource {
             query.field("id").in(ids);
         }
 
-        if (timeStartBefore != null) {
-            query.field("timeStart").lessThan(new Date(timeStartBefore));
+        if (timeStartLessThan != null) {
+            query.field("timeStart").lessThan(new Date(timeStartLessThan));
         }
 
-        if (timeStartAfter != null) {
-            query.field("timeStart").greaterThan(new Date(timeStartAfter));
+        if (timeStartGreaterThan != null) {
+            query.field("timeStart").greaterThan(new Date(timeStartGreaterThan));
         }
 
-        if (timeEndBefore != null) {
-            query.field("timeEnd").lessThan(new Date(timeEndBefore));
+        if (timeEndLessThan != null) {
+            query.field("timeEnd").lessThan(new Date(timeEndLessThan));
         }
 
-        if (timeEndAfter != null) {
-            query.field("timeEnd").greaterThan(new Date(timeEndAfter));
+        if (timeEndGreaterThan != null) {
+            query.field("timeEnd").greaterThan(new Date(timeEndGreaterThan));
         }
 
-        if (timeCreatedAfter != null) {
-            query.field("timeCreated").greaterThan(new Date(timeCreatedAfter));
+        if (timeCreatedGreaterThan != null) {
+            query.field("timeCreated").greaterThan(new Date(timeCreatedGreaterThan));
         }
 
-        if (timeCreatedBefore != null) {
-            query.field("timeCreated").lessThan(new Date(timeCreatedBefore));
+        if (timeCreatedLessThan != null) {
+            query.field("timeCreated").lessThan(new Date(timeCreatedLessThan));
         }
 
         if (order != null) {
             query.order(order);
         }
 
+        FindOptions options = new FindOptions();
+        options.limit(ApplicationService.LIMIT_DEFAULT);
+
         Paging<Event> entity = new Paging<>(query.asList(options), query.count());
-        ResponseBuilder builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-        return builder.build();
+        return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
     }
 
     @POST
@@ -203,60 +210,68 @@ public class EventResource {
     ) {
         ResponseBuilder builder;
 
-        long activeEventsCount = this.datastore.createQuery(Event.class)
-            .field("id").notEqual(original.id)
-            .field("status").equal(this.eventService.getActiveEventStatus())
-            .field("organizationId").equal(original.organizationId)
-            .count();
+        boolean isValid = this.eventService.isValidEvent(event);
 
-        boolean hasSubscriptionViolation;
-        StripeException stripeException = null;
-        List<Subscription> currentSubscriptions = null;
+        if (isValid) {
+            long activeEventsCount = this.datastore.createQuery(Event.class)
+                .field("id").notEqual(original.id)
+                .field("status").equal(this.eventService.getActiveEventStatus())
+                .field("organizationId").equal(original.organizationId)
+                .count();
 
-        if (event.status == this.eventService.getActiveEventStatus()) {
-            activeEventsCount++;
+            boolean hasSubscriptionViolation;
+            StripeException stripeException = null;
+            List<Subscription> currentSubscriptions = null;
 
-            try {
-                currentSubscriptions = this.stripeService.getCurrentSubscriptions(original.organizationId);
-            } catch (StripeException e) {
-                stripeException = e;
+            if (event.status == this.eventService.getActiveEventStatus()) {
+                activeEventsCount++;
+
+                try {
+                    currentSubscriptions = this.stripeService.getCurrentSubscriptions(original.organizationId);
+                } catch (StripeException e) {
+                    stripeException = e;
+                }
+
+                hasSubscriptionViolation = currentSubscriptions != null &&
+                    activeEventsCount > currentSubscriptions.size() &&
+                    event.status == this.eventService.getActiveEventStatus();
+            } else {
+                hasSubscriptionViolation = false;
             }
 
-            hasSubscriptionViolation = currentSubscriptions != null &&
-                activeEventsCount > currentSubscriptions.size() &&
-                event.status == this.eventService.getActiveEventStatus();
-        } else {
-            hasSubscriptionViolation = false;
-        }
+            boolean hasPaymentProfileViolation = (event.paymentProfileId == null && event.currency != null) ||
+                                                 (event.paymentProfileId != null && event.currency == null);
 
-        boolean hasPaymentProfileViolation = (event.paymentProfileId == null && event.currency != null) ||
-                                             (event.paymentProfileId != null && event.currency == null);
-
-        if (stripeException != null) {
-            builder = Response.status(Status.SERVICE_UNAVAILABLE)
-                .entity(stripeException);
-        }  else if (hasPaymentProfileViolation) {
-            builder = Response.status(Status.BAD_REQUEST)
-                .entity("{\"error\": \"paymentProfile\"}")
-                .type(MediaType.APPLICATION_JSON);
-        } else if (hasSubscriptionViolation) {
-            builder = Response.status(Status.BAD_REQUEST)
-                    .entity(currentSubscriptions)
+            if (stripeException != null) {
+                builder = Response.status(Status.SERVICE_UNAVAILABLE)
+                    .entity(stripeException);
+            }  else if (hasPaymentProfileViolation) {
+                builder = Response.status(Status.BAD_REQUEST)
+                    .entity("{\"error\": \"paymentProfile\"}")
                     .type(MediaType.APPLICATION_JSON);
+            } else if (hasSubscriptionViolation) {
+                builder = Response.status(Status.BAD_REQUEST)
+                        .entity(currentSubscriptions)
+                        .type(MediaType.APPLICATION_JSON);
+            } else {
+                Date currentTime = new Date();
+
+                event.organizationId = original.organizationId;
+                event.id = original.id;
+                event.timeCreated = original.timeCreated;
+                event.timeUpdated = currentTime;
+                event.lastActivity = currentTime;
+
+                Key<Event> key = this.datastore.save(event);
+
+                Event searchedEvent = this.datastore.get(Event.class, key.getId());
+                this.notificationService.notify(Arrays.asList(searchedEvent), "event.update");
+                this.entityService.cascadeLastActivity(Arrays.asList(event), currentTime);
+
+                builder = Response.ok(searchedEvent).type(MediaType.APPLICATION_JSON);
+            }
         } else {
-            Date currentTime = new Date();
-
-            event.organizationId = original.organizationId;
-            event.id = original.id;
-            event.timeCreated = original.timeCreated;
-            event.timeUpdated = currentTime;
-            event.lastActivity = currentTime;
-
-            Key<Event> key = this.datastore.save(event);
-            this.entityService.cascadeLastActivity(Arrays.asList(event), currentTime);
-
-            Event searchedEvent = this.datastore.get(Event.class, key.getId());
-            builder = Response.ok(searchedEvent).type(MediaType.APPLICATION_JSON);
+            builder = Response.status(Status.BAD_REQUEST);
         }
 
         return builder.build();
@@ -279,10 +294,13 @@ public class EventResource {
             item.organizationId = event.organizationId;
             item.timeCreated = currentTime;
             item.timeUpdated = null;
+            item.lastActivity = currentTime;
 
             Key<Item> key = this.datastore.save(item);
-            this.entityService.cascadeLastActivity(Arrays.asList(item), currentTime);
             Item searchedItem = this.datastore.get(Item.class, key.getId());
+
+            this.notificationService.notify(Arrays.asList(searchedItem), "item.create");
+            this.entityService.cascadeLastActivity(Arrays.asList(item), currentTime);
 
             builder = Response.ok(searchedItem).type(MediaType.APPLICATION_JSON);
         } else {
@@ -305,9 +323,13 @@ public class EventResource {
 
         if (itemCount == 0) {
             this.datastore.delete(Event.class, event.id);
-            builder = Response.ok();
+
+            this.notificationService.notify(Arrays.asList(event), "event.delete");
+            builder = Response.ok(event).type(MediaType.APPLICATION_JSON);
         } else {
-            builder = Response.status(Status.BAD_REQUEST).entity(itemCount).type(MediaType.APPLICATION_JSON);
+            builder = Response.status(Status.BAD_REQUEST)
+                .entity("{\"error\": \"itemcount\"}")
+                .type(MediaType.APPLICATION_JSON);
         }
 
         return builder.build();

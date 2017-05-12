@@ -10,8 +10,6 @@ import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.SerializerProvider;
 
 public class ObjectIdCollectionSerializer extends JsonSerializer<Collection<ObjectId>> {
-    private final ObjectIdSerializer serializer = new ObjectIdSerializer();
-
     @Override
     public void serialize(Collection<ObjectId> value, JsonGenerator generator, SerializerProvider serializers) throws IOException {
         if (value == null) {
@@ -20,7 +18,7 @@ public class ObjectIdCollectionSerializer extends JsonSerializer<Collection<Obje
             generator.writeStartArray();
 
             for (ObjectId subject : value) {
-                this.serializer.serialize(subject, generator, serializers);
+                generator.writeString(subject == null ? null : subject.toString());
             }
 
             generator.writeEndArray();

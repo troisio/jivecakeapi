@@ -8,6 +8,7 @@ import org.mongodb.morphia.annotations.Entity;
 import org.mongodb.morphia.annotations.Field;
 import org.mongodb.morphia.annotations.Id;
 import org.mongodb.morphia.annotations.Index;
+import org.mongodb.morphia.annotations.IndexOptions;
 import org.mongodb.morphia.annotations.Indexes;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -15,7 +16,13 @@ import com.jivecake.api.serializer.ObjectIdSerializer;
 
 @Entity
 @Indexes({
-    @Index(fields = @Field("user_id"))
+    @Index(fields = @Field("user_id")),
+    @Index(fields = {
+        @Field("user_id"),
+        @Field("objectId"),
+        @Field("objectClass")
+    },
+    options=@IndexOptions(unique=true))
 })
 public class Permission {
     @Id

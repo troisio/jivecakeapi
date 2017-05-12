@@ -42,7 +42,6 @@ public class QueryRestrictFilter implements ContainerRequestFilter {
                 context.abortWith(
                     Response.status(Response.Status.BAD_REQUEST).build()
                 );
-
                 break;
             }
         }

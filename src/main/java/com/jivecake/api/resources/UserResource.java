@@ -15,6 +15,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
@@ -55,6 +56,7 @@ import com.jivecake.api.service.OrganizationService;
 
 @CORS
 @Path("/user")
+@Singleton
 public class UserResource {
     private final Datastore datastore;
     private final OrganizationService organizationService;

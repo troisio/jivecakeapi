@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Set;
 
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
@@ -31,37 +32,41 @@ import com.jivecake.api.model.Event;
 import com.jivecake.api.model.PaymentProfile;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.EntityService;
+import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.PermissionService;
 
-@Path("/payment/profile")
+@Path("payment/profile")
 @CORS
+@Singleton
 public class PaymentProfileResource {
     private final PermissionService permissionService;
     private final EntityService entityService;
+    private final NotificationService notificationService;
     private final Datastore datastore;
 
     @Inject
     public PaymentProfileResource(
         PermissionService permissionService,
         EntityService entityService,
+        NotificationService notificationService,
         Datastore datastore
     ) {
         this.permissionService = permissionService;
         this.entityService = entityService;
+        this.notificationService = notificationService;
         this.datastore = datastore;
     }
 
     @GET
     @Authorized
-    @Path("/{id}")
+    @Path("{id}")
     @HasPermission(clazz=PaymentProfile.class, id="id", permission=PermissionService.READ)
     public Response readPaymentProfile(@PathObject(value="id") PaymentProfile profile, @Context JsonNode claims) {
         return Response.ok(profile).type(MediaType.APPLICATION_JSON).build();
     }
 
     @GET
-    @Path("/search")
-    @QueryRestrict(hasAny=true, target={"id"})
+    @Path("search")
     public Response search(@QueryParam("id") List<ObjectId> ids) {
         Query<PaymentProfile> query = this.datastore.createQuery(PaymentProfile.class)
             .field("id").in(ids);
@@ -127,7 +132,7 @@ public class PaymentProfileResource {
 
     @DELETE
     @Authorized
-    @Path("/{id}")
+    @Path("{id}")
     @HasPermission(clazz=PaymentProfile.class, id="id", permission=PermissionService.WRITE)
     public Response delete(@PathObject("id") PaymentProfile profile, @Context JsonNode claims) {
         ResponseBuilder builder;
@@ -140,6 +145,7 @@ public class PaymentProfileResource {
         if (eventsUsingProfile.isEmpty()) {
             this.datastore.delete(PaymentProfile.class, profile.id);
             this.entityService.cascadeLastActivity(Arrays.asList(profile), new Date());
+            this.notificationService.notify(Arrays.asList(profile), "paymentprofile.delete");
             builder = Response.ok();
         } else {
             builder = Response.status(Status.BAD_REQUEST)

@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -72,12 +73,8 @@ import com.mongodb.MongoClient;
 import com.mongodb.ServerAddress;
 
 import io.dropwizard.Application;
-import io.dropwizard.assets.AssetsBundle;
-import io.dropwizard.configuration.EnvironmentVariableSubstitutor;
-import io.dropwizard.configuration.SubstitutingSourceProvider;
 import io.dropwizard.jersey.DropwizardResourceConfig;
 import io.dropwizard.jersey.setup.JerseyEnvironment;
-import io.dropwizard.setup.Bootstrap;
 import io.dropwizard.setup.Environment;
 
 public class APIApplication extends Application<APIConfiguration> {
@@ -133,23 +130,6 @@ public class APIApplication extends Application<APIConfiguration> {
     }
 
     @Override
-    public String getName() {
-        return "jivecakeapi";
-    }
-
-    @Override
-    public void initialize(Bootstrap<APIConfiguration> bootstrap) {
-        bootstrap.setConfigurationSourceProvider(
-            new SubstitutingSourceProvider(
-                bootstrap.getConfigurationSourceProvider(),
-                new EnvironmentVariableSubstitutor(false)
-            )
-        );
-
-        bootstrap.addBundle(new AssetsBundle());
-    }
-
-    @Override
     public void run(APIConfiguration configuration, Environment environment) {
         MongoClient mongoClient = new MongoClient(configuration.databases
             .stream()
@@ -167,13 +147,18 @@ public class APIApplication extends Application<APIConfiguration> {
         com.jivecake.api.model.Application application = new com.jivecake.api.model.Application();
         application.id = new ObjectId("55865027c1fcce003aa0aa43");
 
-        Organization organization = new Organization();
-        organization.id = new ObjectId("55865027c1fcce003aa0aa40");
-        organization.children = new ArrayList<>();
-        organization.name = "JiveCake";
-        organization.email = "luis@trois.io";
-        organization.timeCreated = new Date();
-        datastore.save(organization);
+        ObjectId rootId = new ObjectId("55865027c1fcce003aa0aa40");
+        Organization rootOrganization = datastore.get(Organization.class, rootId);
+
+        if (rootOrganization == null) {
+            rootOrganization = new Organization();
+            rootOrganization.id = rootId;
+            rootOrganization.children = new ArrayList<>();
+            rootOrganization.name = "JiveCake";
+            rootOrganization.email = "luis@trois.io";
+            rootOrganization.timeCreated = new Date();
+            datastore.save(rootOrganization);
+        }
 
         List<JWTVerifier> verifiers = new ArrayList<>(Arrays.asList(
             new JWTVerifier(
@@ -198,7 +183,7 @@ public class APIApplication extends Application<APIConfiguration> {
         this.establishRootUsers(
             permissionService,
             application,
-            organization,
+            rootOrganization,
             configuration.rootOAuthIds
         );
 
@@ -254,6 +239,7 @@ public class APIApplication extends Application<APIConfiguration> {
         for (String user_id: user_ids) {
             Permission organizationPermission = new Permission();
             organizationPermission.include = PermissionService.ALL;
+            organizationPermission.permissions = new HashSet<>();
             organizationPermission.objectClass = Organization.class.getSimpleName();
             organizationPermission.objectId = organization.id;
             organizationPermission.timeCreated = time;
@@ -261,6 +247,7 @@ public class APIApplication extends Application<APIConfiguration> {
 
             Permission applicationPermission = new Permission();
             applicationPermission.include = PermissionService.ALL;
+            applicationPermission.permissions = new HashSet<>();
             applicationPermission.objectClass = Application.class.getSimpleName();
             applicationPermission.objectId = application.id;
             applicationPermission.timeCreated = time;

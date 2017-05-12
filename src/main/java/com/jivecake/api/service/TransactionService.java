@@ -33,13 +33,26 @@ import com.jivecake.api.model.PaypalIPN;
 import com.jivecake.api.model.Transaction;
 
 public class TransactionService {
+    public static final int PAYMENT_EQUAL= 0;
+    public static final int PAYMENT_LESS_THAN = 1;
+    public static final int PAYMENT_GREATER_THAN = 2;
+    public static final int PAYMENT_UNKNOWN = 3;
+
+    public static final int SETTLED = 0;
+    public static final int PENDING = 1;
+    public static final int USER_REVOKED = 2;
+    public static final int REFUNDED = 3;
+    public static final int UNKNOWN = 3;
+
     private final Datastore datastore;
-    public final List<Integer> statuses = Arrays.asList(0, 1, 2, 3, 4, 5, 6, 7, 8);
     private final List<String> currencies = Arrays.asList("EUR", "USD");
-    private final Predicate<Transaction> usedForCountFilter = (transaction) ->
-        transaction.status == this.getPaymentCompleteStatus() ||
-        transaction.status == this.getPaymentPendingStatus() ||
-        transaction.status == this.getPendingWithValidPayment();
+    public final Predicate<Transaction> usedForCountFilter = (transaction) -> (
+            transaction.paymentStatus == TransactionService.PAYMENT_EQUAL ||
+            transaction.paymentStatus == TransactionService.PAYMENT_GREATER_THAN
+        ) && (
+            transaction.status == TransactionService.SETTLED ||
+            transaction.status == TransactionService.PENDING
+        );
 
     @Inject
     public TransactionService(Datastore datastore) {
@@ -264,43 +277,7 @@ public class TransactionService {
         }
     }
 
-    public Predicate<Transaction> getCountingFilter() {
-        return this.usedForCountFilter;
-    }
-
-    public int getPaymentCompleteStatus() {
-        return 0;
-    }
-
-    public int getPaymentPendingStatus() {
-        return 1;
-    }
-
-    public int getInvalidPaymentStatus() {
-        return 2;
-    }
-
-    public int getMalformedDataStatus() {
-        return 3;
-    }
-
-    public int getRefundedStatus() {
-        return 4;
-    }
-
-    public int getRevokedStatus() {
-        return 5;
-    }
-
-    public int getPendingWithValidPayment() {
-        return 6;
-    }
-
-    public int getPendingWithInvalidPayment() {
-        return 7;
-    }
-
-    public int getTransferredStatus() {
-        return 8;
+    public boolean isVendorTransaction(Transaction transaction) {
+        return PaypalIPN.class.getSimpleName().equals(transaction.linkedObjectClass);
     }
 }

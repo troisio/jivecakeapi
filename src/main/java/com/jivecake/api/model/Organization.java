@@ -30,7 +30,6 @@ public class Organization {
 
     @JsonSerialize(using=ObjectIdCollectionSerializer.class)
     public List<ObjectId> children;
-    public String currency;
     public String email;
     public String name;
     public Date timeCreated;

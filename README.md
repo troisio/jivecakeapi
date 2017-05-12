@@ -4,6 +4,7 @@
 
 ```sh
 gradle clean shadowJar
+```
 
 #### Settings
 
@@ -21,8 +22,10 @@ This is mostly relevant for manual testing otherwise when you login to your clie
 
 The `apiToken` field in your settings yaml will need both the `user:update` and `user:read` scope from `auth0`
 
+```sh
 cd docker
 docker build -t jivecakeapi
+```
 
 #### Run
 

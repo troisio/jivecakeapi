@@ -8,6 +8,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
@@ -47,8 +48,9 @@ import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.TransactionService;
 
-@Path("/item")
+@Path("item")
 @CORS
+@Singleton
 public class ItemResource {
     private final Auth0Service auth0Service;
     private final ItemService itemService;
@@ -134,17 +136,19 @@ public class ItemResource {
                 Transaction userTransaction = new Transaction();
                 userTransaction.user_id = claims.get("sub").asText();
                 userTransaction.quantity = transaction.quantity;
-                userTransaction.status = this.transactionService.getPaymentCompleteStatus();
+                userTransaction.status = TransactionService.SETTLED;
+                userTransaction.paymentStatus = TransactionService.PAYMENT_EQUAL;
                 userTransaction.itemId = item.id;
                 userTransaction.eventId = event.id;
                 userTransaction.organizationId = organization.id;
                 userTransaction.currency = event.currency;
                 userTransaction.amount = 0;
+                userTransaction.leaf = true;
                 userTransaction.timeCreated = currentTime;
 
                 this.datastore.save(userTransaction);
 
-                this.notificationService.notifyItemTransaction(userTransaction);
+                this.notificationService.notifyItemTransactionCreate(Arrays.asList(userTransaction));
                 this.entityService.cascadeLastActivity(Arrays.asList(userTransaction), currentTime);
 
                 builder = Response.ok(userTransaction).type(MediaType.APPLICATION_JSON);
@@ -218,7 +222,10 @@ public class ItemResource {
             query.field("timeEnd").lessThan(new Date(timeEndLessThan));
         }
 
-        Paging<Item> entity = new Paging<>(query.asList(), query.count());
+        FindOptions options = new FindOptions();
+        options.limit(100);
+
+        Paging<Item> entity = new Paging<>(query.asList(options), query.count());
         ResponseBuilder builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         return builder.build();
     }
@@ -274,7 +281,7 @@ public class ItemResource {
             query.order(order);
         }
 
-        List<Item> items = query.asList();
+        List<Item> items = query.asList(options);
 
         boolean hasPermission = this.permissionService.has(
             claims.get("sub").asText(),
@@ -296,123 +303,130 @@ public class ItemResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
     @Path("/{id}/transaction")
+    @HasPermission(id="id", clazz=Item.class, permission=PermissionService.WRITE)
     public void createTransaction(
         @PathObject("id") Item item,
         @Context JsonNode claims,
         Transaction transaction,
         @Suspended AsyncResponse promise
     ) {
-        if (item == null) {
-            promise.resume(Response.status(Status.NOT_FOUND).build());
-        } else {
+        if (this.transactionService.isValidTransaction(transaction)) {
             Event event = this.datastore.get(Event.class, item.eventId);
-            Organization organization = this.datastore.get(Organization.class, event.organizationId);
+            boolean totalAvailibleViolation;
 
-            boolean hasPermission = this.permissionService.has(
-                claims.get("sub").asText(),
-                Arrays.asList(organization),
-                PermissionService.WRITE
-            );
+            if (item.totalAvailible == null) {
+                totalAvailibleViolation = false;
+            } else {
+                long count = this.transactionService.getTransactionsForItemTotal(item.id)
+                    .stream()
+                    .map(subject -> subject.quantity)
+                    .reduce(0L, Long::sum);
 
-            if (!this.transactionService.isValidTransaction(transaction)) {
-                promise.resume(Response.status(Status.BAD_REQUEST).build());
-            } else if (hasPermission) {
-                boolean totalAvailibleViolation;
+                totalAvailibleViolation = count > item.totalAvailible;
+            }
 
-                if (item.totalAvailible == null) {
-                    totalAvailibleViolation = false;
-                } else {
-                    long count = this.transactionService.getTransactionsForItemTotal(item.id)
-                        .stream()
-                        .map(subject -> subject.quantity)
-                        .reduce(0L, Long::sum);
+            boolean eventActiveViolation = event.status == this.eventService.getInactiveEventStatus();
+            boolean hasParentTransactionPermissionViolation = false;
 
-                    totalAvailibleViolation = count > item.totalAvailible;
-                }
+            if (transaction.parentTransactionId != null) {
+                Transaction parentTransaction = this.datastore.get(Transaction.class, transaction.parentTransactionId);
 
-                boolean eventActiveViolation = event.status == this.eventService.getInactiveEventStatus();
-                boolean hasParentTransactionPermissionViolation = false;
-
-                if (transaction.parentTransactionId != null) {
-                    Transaction parentTransaction = this.datastore.get(Transaction.class, transaction.parentTransactionId);
-
-                    if (parentTransaction == null) {
-                        hasParentTransactionPermissionViolation = !this.permissionService.has(
-                            claims.get("sub").asText(),
-                            Arrays.asList(parentTransaction),
-                            PermissionService.WRITE
-                        );
-                    } else {
-                        hasParentTransactionPermissionViolation = true;
-                    }
-                }
-
-                boolean hasStatusViolation = !this.transactionService.statuses.contains(transaction.status);
-
-                if (hasStatusViolation) {
-                    promise.resume(Response.status(Status.BAD_REQUEST).build());
-                } else if (hasParentTransactionPermissionViolation) {
-                    promise.resume(Response.status(Status.UNAUTHORIZED).build());
-                } else if (eventActiveViolation) {
-                    promise.resume(Response.status(Status.BAD_REQUEST).entity("{\"error\": \"inactive\"}").type(MediaType.APPLICATION_JSON).build());
-                } else if (totalAvailibleViolation) {
-                    promise.resume(
-                        Response.status(Status.BAD_REQUEST).entity("{\"error\": \"totalAvailible\"}").type(MediaType.APPLICATION_JSON).build()
+                if (parentTransaction == null) {
+                    hasParentTransactionPermissionViolation = !this.permissionService.has(
+                        claims.get("sub").asText(),
+                        Arrays.asList(parentTransaction),
+                        PermissionService.WRITE
                     );
                 } else {
-                    CompletableFuture<Boolean> hasValidUserIdPromise = new CompletableFuture<>();
+                    hasParentTransactionPermissionViolation = true;
+                }
+            }
 
-                    if (transaction.user_id == null) {
-                        hasValidUserIdPromise.complete(true);
-                    } else {
-                        this.auth0Service.getUser(transaction.user_id).submit(new InvocationCallback<Response>(){
-                            @Override
-                            public void completed(Response response) {
-                                hasValidUserIdPromise.complete(response.getStatus() == 200);
-                            }
+            boolean hasPaymentStatusViolation = transaction.status != TransactionService.PAYMENT_EQUAL;
+            boolean hasStatusViolation = !Arrays.asList(
+                TransactionService.PENDING,
+                TransactionService.REFUNDED,
+                TransactionService.SETTLED,
+                TransactionService.USER_REVOKED
+            ).contains(transaction.status);
 
-                            @Override
-                            public void failed(Throwable throwable) {
-                                hasValidUserIdPromise.completeExceptionally(throwable);
-                            }
-                        });
-                    }
+            if (transaction.currency == null) {
+                promise.resume(
+                    Response.status(Status.BAD_REQUEST)
+                        .entity("\"{error\": \"currency\"}")
+                        .type(MediaType.APPLICATION_JSON)
+                        .build()
+                );
+            } else if (hasPaymentStatusViolation || hasStatusViolation) {
+                promise.resume(Response.status(Status.BAD_REQUEST).build());
+            } else if (hasParentTransactionPermissionViolation) {
+                promise.resume(Response.status(Status.UNAUTHORIZED).build());
+            } else if (eventActiveViolation) {
+                promise.resume(
+                    Response.status(Status.BAD_REQUEST)
+                        .entity("{\"error\": \"inactive\"}")
+                        .type(MediaType.APPLICATION_JSON)
+                        .build()
+                );
+            } else if (totalAvailibleViolation) {
+                promise.resume(
+                    Response.status(Status.BAD_REQUEST)
+                        .entity("{\"error\": \"totalAvailible\"}")
+                        .type(MediaType.APPLICATION_JSON).build()
+                );
+            } else {
+                CompletableFuture<Boolean> hasValidUserIdPromise = new CompletableFuture<>();
 
-                    hasValidUserIdPromise.thenAcceptAsync(hasValidUserId -> {
-                        if (hasValidUserId) {
-                            Date currentTime = new Date();
-
-                            transaction.status = ItemResource.this.transactionService.getPaymentCompleteStatus();
-                            transaction.linkedId = null;
-                            transaction.linkedObjectClass = null;
-                            transaction.itemId = item.id;
-                            transaction.eventId = item.eventId;
-                            transaction.organizationId = organization.id;
-                            transaction.currency = event.currency;
-                            transaction.timeCreated = currentTime;
-
-                            Key<Transaction> key = ItemResource.this.datastore.save(transaction);
-                            this.entityService.cascadeLastActivity(Arrays.asList(transaction), currentTime);
-
-                            ItemResource.this.notificationService.notifyItemTransaction(transaction);
-
-                            Transaction entity = ItemResource.this.datastore.get(Transaction.class, key.getId());
-                            promise.resume(
-                                Response.ok(entity).type(MediaType.APPLICATION_JSON).build()
-                            );
-                        } else {
-                            promise.resume(Response.status(Status.BAD_REQUEST)
-                                .entity("{\"error\": \"user\"}")
-                                .type(MediaType.APPLICATION_JSON).build());
+                if (transaction.user_id == null) {
+                    hasValidUserIdPromise.complete(true);
+                } else {
+                    this.auth0Service.getUser(transaction.user_id).submit(new InvocationCallback<Response>(){
+                        @Override
+                        public void completed(Response response) {
+                            hasValidUserIdPromise.complete(response.getStatus() == 200);
                         }
-                    }).exceptionally(e -> {
-                        promise.resume(e);
-                        return null;
+
+                        @Override
+                        public void failed(Throwable throwable) {
+                            hasValidUserIdPromise.completeExceptionally(throwable);
+                        }
                     });
                 }
-            } else {
-                promise.resume(Response.status(Status.UNAUTHORIZED).build());
+
+                hasValidUserIdPromise.thenAcceptAsync(hasValidUserId -> {
+                    if (hasValidUserId) {
+                        Date currentTime = new Date();
+
+                        transaction.leaf = true;
+                        transaction.linkedId = null;
+                        transaction.linkedObjectClass = null;
+                        transaction.itemId = item.id;
+                        transaction.eventId = item.eventId;
+                        transaction.organizationId = item.organizationId;
+                        transaction.lastTransferTime = null;
+                        transaction.timeCreated = currentTime;
+
+                        Key<Transaction> key = ItemResource.this.datastore.save(transaction);
+                        this.entityService.cascadeLastActivity(Arrays.asList(transaction), currentTime);
+
+                        ItemResource.this.notificationService.notifyItemTransactionCreate(Arrays.asList(transaction));
+
+                        Transaction entity = ItemResource.this.datastore.get(Transaction.class, key.getId());
+                        promise.resume(
+                            Response.ok(entity).type(MediaType.APPLICATION_JSON).build()
+                        );
+                    } else {
+                        promise.resume(Response.status(Status.BAD_REQUEST)
+                            .entity("{\"error\": \"user\"}")
+                            .type(MediaType.APPLICATION_JSON).build());
+                    }
+                }).exceptionally(e -> {
+                    promise.resume(e);
+                    return null;
+                });
             }
+        } else {
+            promise.resume(Response.status(Status.BAD_REQUEST).build());
         }
     }
 
@@ -437,10 +451,14 @@ public class ItemResource {
 
         if (transactionCount == 0) {
             this.datastore.delete(Item.class, item.id);
-            builder = Response.ok();
+
+            this.notificationService.notify(Arrays.asList(item), "item.delete");
+            builder = Response.ok(item);
             this.entityService.cascadeLastActivity(Arrays.asList(item), new Date());
         } else {
-            builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"transaction\"}").type(MediaType.APPLICATION_JSON);
+            builder = Response.status(Status.BAD_REQUEST)
+                .entity("{\"error\": \"transaction\"}")
+                .type(MediaType.APPLICATION_JSON);
         }
 
         return builder.build();
@@ -460,9 +478,9 @@ public class ItemResource {
             Date currentDate = new Date();
 
             item.id = searchedItem.id;
-            item.timeCreated = searchedItem.timeCreated;
             item.eventId = searchedItem.eventId;
             item.organizationId = searchedItem.organizationId;
+            item.timeCreated = searchedItem.timeCreated;
             item.lastActivity = currentDate;
             item.timeUpdated = currentDate;
 
@@ -483,10 +501,12 @@ public class ItemResource {
             }
 
             Key<Item> key = this.datastore.save(item);
+            Item searchItem = this.datastore.get(Item.class, key.getId());
+
+            this.notificationService.notify(Arrays.asList(searchedItem), "item.update");
             this.entityService.cascadeLastActivity(Arrays.asList(item), new Date());
 
-            Item entity = this.datastore.get(Item.class, key.getId());
-            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+            builder = Response.ok(searchItem).type(MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.BAD_REQUEST);
         }

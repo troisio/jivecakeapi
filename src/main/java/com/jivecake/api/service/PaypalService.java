@@ -20,11 +20,9 @@ import javax.ws.rs.core.Response;
 
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
-import org.mongodb.morphia.Key;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.PaymentDetail;
 import com.jivecake.api.model.PaypalIPN;
@@ -186,20 +184,16 @@ public class PaypalService {
         return result;
     }
 
-    public Key<PaypalIPN> save(PaypalIPN ipn) {
-        Key<PaypalIPN> result = this.datastore.save(ipn);
-        return result;
-    }
-
-    public Iterable<Key<Transaction>> processTransactions(PaypalIPN ipn) {
-        Iterable<Key<Transaction>> result;
-
+    public List<Transaction> processTransactions(PaypalIPN ipn) {
         PaypalIPN previousPendingIpn = this.datastore.createQuery(PaypalIPN.class)
             .field("txn_id").equal(ipn.txn_id)
             .field("payment_status").equal("Pending")
             .get();
 
-        boolean isCompletionOfPreviousPendingTransaction = "Completed".equals(ipn.payment_status) && previousPendingIpn != null;
+        boolean isCompletionOfPreviousPendingTransaction = "Completed".equals(ipn.payment_status) &&
+            previousPendingIpn != null;
+
+        List<Transaction> result;
 
         if (isCompletionOfPreviousPendingTransaction) {
             List<Transaction> previousPendingTransactions = this.datastore.find(Transaction.class)
@@ -208,14 +202,10 @@ public class PaypalService {
                 .asList();
 
             for (Transaction pendingTransaction: previousPendingTransactions) {
-                if (pendingTransaction.status == this.transactionService.getPendingWithInvalidPayment()) {
-                    pendingTransaction.status = this.transactionService.getInvalidPaymentStatus();
-                } else if (pendingTransaction.status == this.transactionService.getPendingWithValidPayment()) {
-                    pendingTransaction.status = this.transactionService.getPaymentCompleteStatus();
-                }
+                pendingTransaction.status = TransactionService.SETTLED;
             }
 
-            result = this.datastore.save(previousPendingTransactions);
+            result = previousPendingTransactions;
         } else {
             Date currentDate = new Date();
             ObjectId custom;
@@ -239,6 +229,7 @@ public class PaypalService {
                 transaction.linkedId = ipn.id;
                 transaction.linkedObjectClass = PaypalIPN.class.getSimpleName();
                 transaction.quantity = payment.quantity == null ? 0 : new Long(payment.quantity);
+                transaction.leaf = true;
 
                 try {
                     transaction.amount = Double.parseDouble(ipn.mc_gross);
@@ -253,12 +244,11 @@ public class PaypalService {
                     id = null;
                 }
 
-                Item item = this.datastore.find(Item.class)
-                    .field("id").equal(id)
-                    .get();
+                Item item = this.datastore.get(Item.class, id);
 
                 if (item == null) {
-                    transaction.status = this.transactionService.getMalformedDataStatus();
+                    transaction.paymentStatus = TransactionService.PAYMENT_UNKNOWN;
+                    transaction.status = TransactionService.SETTLED;
                 } else {
                     Double amount;
 
@@ -276,21 +266,22 @@ public class PaypalService {
                     }
 
                     double amountPaid = Double.parseDouble(payment.mc_gross);
-                    double difference = Math.abs(amountPaid - amount * transaction.quantity);
-                    boolean validPayment = difference < 0.01;
+                    double difference = amountPaid - amount * transaction.quantity;
 
-                    if (validPayment) {
-                        if ("Pending".equals(ipn.payment_status)) {
-                            transaction.status = this.transactionService.getPendingWithValidPayment();
-                        } else if ("Completed".equals(ipn.payment_status)) {
-                            transaction.status = this.transactionService.getPaymentCompleteStatus();
-                        }
+                    if (difference < 0.01 && difference > -0.01) {
+                        transaction.paymentStatus = TransactionService.PAYMENT_EQUAL;
+                    } else if (difference >= 0.01) {
+                        transaction.paymentStatus = TransactionService.PAYMENT_LESS_THAN;
                     } else {
-                        if ("Pending".equals(ipn.payment_status)) {
-                            transaction.status = this.transactionService.getPendingWithInvalidPayment();
-                        } else if ("Completed".equals(ipn.payment_status)) {
-                            transaction.status = this.transactionService.getInvalidPaymentStatus();
-                        }
+                        transaction.paymentStatus = TransactionService.PAYMENT_GREATER_THAN;
+                    }
+
+                    if ("Pending".equals(ipn.payment_status)) {
+                        transaction.status = TransactionService.PENDING;
+                    } else if ("Completed".equals(ipn.payment_status)) {
+                        transaction.status = TransactionService.SETTLED;
+                    } else {
+                        transaction.status = TransactionService.UNKNOWN;
                     }
 
                     transaction.amount = amountPaid;
@@ -314,33 +305,35 @@ public class PaypalService {
                         .field("linkedObjectClass").equal(PaypalIPN.class.getSimpleName())
                         .get();
 
+                    parentTransaction.leaf = false;
+
                     if (parentTransaction != null) {
                         transaction.parentTransactionId = parentTransaction.id;
                     }
+
+                    transactions.add(parentTransaction);
                 }
 
-                Event event = this.datastore.find(Event.class)
-                    .field("id").equal(item.eventId)
-                    .get();
-
                 transaction.itemId = item.id;
-                transaction.eventId = event.id;
-                transaction.organizationId = event.organizationId;
+                transaction.eventId = item.eventId;
+                transaction.organizationId = item.organizationId;
 
                 transactions.add(transaction);
             }
 
-            if (details == null) {
-                result = new ArrayList<>();
+            boolean transactionsWereSigned = details != null;
+
+            if (transactionsWereSigned) {
+                result = transactions;
             } else {
-                result = this.datastore.save(transactions);
+                result = new ArrayList<>();
             }
         }
 
         return result;
     }
 
-    public Iterable<Key<Transaction>> processRefund(PaypalIPN ipn) {
+    public List<Transaction> processRefund(PaypalIPN ipn) {
         ObjectId custom;
 
         try {
@@ -357,19 +350,20 @@ public class PaypalService {
             .field("txn_id").equal(ipn.parent_txn_id)
             .get();
 
-        Iterable<Key<Transaction>> result;
+        List<Transaction> result = new ArrayList<>();
 
-        if (parentIpn == null) {
-            result = null;
-        } else {
+        if (parentIpn != null) {
             List<Transaction> parentTransactions = this.datastore.createQuery(Transaction.class)
                 .field("linkedId").equal(parentIpn.id)
                 .field("linkedObjectClass").equal(PaypalIPN.class.getSimpleName())
                 .asList();
 
+            for (Transaction transaction: parentTransactions) {
+                transaction.leaf = false;
+            }
+
             List<Transaction> refundTransactions = parentTransactions.stream().map(parentTransaction -> {
                 Transaction transaction = new Transaction();
-                transaction.status = this.transactionService.getRefundedStatus();
                 transaction.quantity = parentTransaction.quantity;
                 transaction.currency = ipn.mc_currency;
                 transaction.linkedId = ipn.id;
@@ -378,6 +372,12 @@ public class PaypalService {
                 transaction.itemId = parentTransaction.itemId;
                 transaction.eventId = parentTransaction.eventId;
                 transaction.organizationId = parentTransaction.organizationId;
+                transaction.email = ipn.payer_email;
+                transaction.given_name = ipn.first_name;
+                transaction.family_name = ipn.last_name;
+                transaction.status = TransactionService.REFUNDED;
+                transaction.paymentStatus = TransactionService.PAYMENT_UNKNOWN;
+                transaction.leaf = true;
                 transaction.timeCreated = new Date();
 
                 try {
@@ -390,11 +390,7 @@ public class PaypalService {
                 } catch (IllegalArgumentException e) {
                 }
 
-                if (details == null) {
-                    transaction.email = ipn.payer_email;
-                    transaction.given_name = ipn.first_name;
-                    transaction.family_name = ipn.last_name;
-                } else {
+                if (details != null) {
                     transaction.user_id = details.user_id;
                 }
 
@@ -403,8 +399,13 @@ public class PaypalService {
             .collect(Collectors.toList());
 
             boolean canUniquelyDetermineRefundTransaction = refundTransactions.size() == 1;
+            double refundedAmount = 0;
 
-            Double refundedAmount = new Double(ipn.mc_gross);
+            try {
+                refundedAmount = Double.parseDouble(ipn.mc_gross);
+            } catch (NumberFormatException e) {
+                throw e;
+            }
 
             double parentTransactionsTotal = parentTransactions.stream()
                 .map(transaction -> transaction.quantity * transaction.amount)
@@ -413,16 +414,8 @@ public class PaypalService {
             boolean refundedAmountEqualsTotalPaid = Math.abs(parentTransactionsTotal - refundedAmount) < 0.01;
 
             if (canUniquelyDetermineRefundTransaction || refundedAmountEqualsTotalPaid) {
-                result = this.datastore.save(refundTransactions);
-
-                if (refundedAmountEqualsTotalPaid) {
-                    /*
-                     Go through each transaction and assign `amount` the negative value of its
-                     parent's transaction.amount
-                    */
-                }
-            } else {
-                result = new ArrayList<>();
+                result.addAll(parentTransactions);
+                result.addAll(refundTransactions);
             }
         }
 
