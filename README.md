@@ -1,4 +1,4 @@
-#### JiveCake API Project
+### JiveCake API Project
 
 #### Install
 
@@ -29,12 +29,12 @@ docker build -t jivecakeapi
 
 #### Run
 
-```
+```sh
 cd docker
 docker-compose up
 ```
 
-### Testing
+#### Testing
 
 ```sh
 cd your_project_directory

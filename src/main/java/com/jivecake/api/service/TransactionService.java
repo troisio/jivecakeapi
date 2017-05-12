@@ -42,7 +42,7 @@ public class TransactionService {
     public static final int PENDING = 1;
     public static final int USER_REVOKED = 2;
     public static final int REFUNDED = 3;
-    public static final int UNKNOWN = 3;
+    public static final int UNKNOWN = 4;
 
     private final Datastore datastore;
     private final List<String> currencies = Arrays.asList("EUR", "USD");
