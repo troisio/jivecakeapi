@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
@@ -22,6 +23,7 @@ import com.jivecake.api.model.Transaction;
 
 @CORS
 @Path("tool")
+@Singleton
 public class ToolsResource {
     private final Datastore datastore;
 

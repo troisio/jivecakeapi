@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
@@ -37,6 +38,7 @@ import com.stripe.model.Subscription;
 
 @CORS
 @Path("stripe")
+@Singleton
 public class StripeResource {
     private final StripeService stripeService;
     private final PermissionService permissionService;

@@ -1,25 +1,13 @@
 package com.jivecake.api.service;
 
-import java.util.HashMap;
-import java.util.Map;
-
-import org.bson.types.ObjectId;
-
-import com.jivecake.api.request.AggregatedItemGroup;
+import com.jivecake.api.model.Event;
 
 public class EventService {
-    private final Map<String, AggregatedItemGroup> cache = new HashMap<>();
-
-    public AggregatedItemGroup read(ObjectId eventId) {
-        return this.cache.get(this.getAggregatedCacheKey(eventId));
-    }
-
-    public String getAggregatedCacheKey(ObjectId eventId) {
-        return "AggregatedItemGroup|" + eventId.toString();
-    }
-
-    public void invalidateAggregatedEventCache(ObjectId eventId) {
-        this.cache.remove(this.getAggregatedCacheKey(eventId));
+    public boolean isValidEvent(Event event) {
+        return event.name != null &&
+               event.name.length() > 0 &&
+               event.name.length() < 500 &&
+               (event.status == this.getInactiveEventStatus() || event.status == this.getActiveEventStatus());
     }
 
     public int getInactiveEventStatus() {

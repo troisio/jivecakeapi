@@ -72,7 +72,9 @@ public class PaypalRefundTest {
         TransactionService itemTransactionService = new TransactionService(this.datastore);
         PaypalService paypalService = new PaypalService(datastore, null, itemTransactionService);
 
-        paypalService.processRefund(refundIpn);
+        this.datastore.save(
+            paypalService.processRefund(refundIpn)
+        );
 
         List<List<Transaction>> forest = itemTransactionService.getTransactionForest(Arrays.asList(transaction));
 
@@ -80,7 +82,7 @@ public class PaypalRefundTest {
             Transaction refundTransaction = lineage.get(lineage.size() - 1);
 
             assertEquals(lineage.size(), 2);
-            assertEquals(itemTransactionService.getRefundedStatus(), refundTransaction.status);
+            assertEquals(TransactionService.REFUNDED, refundTransaction.status);
         });
     }
 }

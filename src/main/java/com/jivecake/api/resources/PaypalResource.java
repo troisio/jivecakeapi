@@ -8,6 +8,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
@@ -50,8 +51,9 @@ import com.jivecake.api.service.PaypalService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.TransactionService;
 
-@Path("/paypal")
+@Path("paypal")
 @CORS
+@Singleton
 public class PaypalResource {
     private final Datastore datastore;
     private final PermissionService permissionService;
@@ -83,7 +85,7 @@ public class PaypalResource {
     }
 
     @POST
-    @Path("/detail")
+    @Path("detail")
     public Response getPaymentDetails(@Context JsonNode claims) {
         PaymentDetail detail = new CartPaymentDetails();
         detail.custom = new ObjectId();
@@ -93,8 +95,8 @@ public class PaypalResource {
             detail.user_id = claims.get("sub").asText();
         }
 
-        this.datastore.save(detail);
-        PaymentDetail entity = this.datastore.get(PaymentDetail.class, detail.id);
+        Key<PaymentDetail> key = this.datastore.save(detail);
+        PaymentDetail entity = this.datastore.get(PaymentDetail.class, key.getId());
         return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
     }
 
@@ -110,11 +112,13 @@ public class PaypalResource {
                 if (verified) {
                     List<PaypalIPN> ipns;
 
-                    if (form.getFirst("txn_id") == null) {
+                    String txn_id = form.getFirst("txn_id");
+
+                    if (txn_id == null) {
                         ipns = new ArrayList<>();
                     } else {
                         ipns = PaypalResource.this.datastore.createQuery(PaypalIPN.class)
-                            .field("txn_id").equal(form.getFirst("txn_id"))
+                            .field("txn_id").equal(txn_id)
                             .field("payment_status").equal(form.getFirst("payment_status"))
                             .asList();
                     }
@@ -128,22 +132,17 @@ public class PaypalResource {
                         PaypalIPN ipn = PaypalResource.this.paypalService.create(form);
                         ipn.timeCreated = currentTime;
 
-                        Key<PaypalIPN> paypalIPNKey = PaypalResource.this.paypalService.save(ipn);
+                        Key<PaypalIPN> paypalIPNKey = PaypalResource.this.datastore.save(ipn);
 
                         if ("cart".equals(ipn.txn_type)) {
-                            Iterable<Key<Transaction>> transactionKeys = PaypalResource.this.paypalService.processTransactions(ipn);
+                            List<Transaction> transactions = PaypalResource.this.paypalService.processTransactions(ipn);
+                            Iterable<Key<Transaction>> keys = PaypalResource.this.datastore.save(transactions);
+                            List<Transaction> newTransactions = PaypalResource.this.datastore.getByKeys(keys);
 
-                            int count = 0;
+                            PaypalResource.this.entityService.cascadeLastActivity(newTransactions, currentTime);
+                            PaypalResource.this.notificationService.notifyItemTransactionCreate(newTransactions);
 
-                            List<Transaction> transactions = PaypalResource.this.datastore.getByKeys(transactionKeys);
-                            PaypalResource.this.entityService.cascadeLastActivity(transactions, currentTime);
-
-                            for (Transaction transaction: transactions) {
-                                PaypalResource.this.notificationService.notifyItemTransaction(transaction);
-                                count++;
-                            }
-
-                            if (count == 0) {
+                            if (transactions.isEmpty()) {
                                 PaypalResource.this.logger.warn(String.format("paypal Cart IPN %s did not produce processed transactions", paypalIPNKey.getId()));
                             }
                         } else if ("Refunded".equals(ipn.payment_status)) {
@@ -173,7 +172,7 @@ public class PaypalResource {
     }
 
     @GET
-    @Path("/ipn")
+    @Path("ipn")
     @Authorized
     public Response search(
         @QueryParam("id") ObjectId id,
@@ -239,21 +238,18 @@ public class PaypalResource {
                 query.field("timeCreated").greaterThan(new Date(timeCreatedGreaterThan));
             }
 
-            FindOptions options = new FindOptions();
-
-            if (limit != null) {
-                options.limit(limit);
+            if (order != null) {
+                query.order(order);
             }
+
+            FindOptions options = new FindOptions();
+            options.limit(ApplicationService.LIMIT_DEFAULT);
 
             if (offset != null) {
                 options.skip(offset);
             }
 
-            if (order != null) {
-                query.order(order);
-            }
-
-            Paging<PaypalIPN> entity = new Paging<>(query.asList(), query.count());
+            Paging<PaypalIPN> entity = new Paging<>(query.asList(options), query.count());
             builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);
@@ -265,9 +261,14 @@ public class PaypalResource {
     @Log
     @Authorized
     @POST
-    @Path("/ipn/{status}")
+    @Path("ipn/{status}")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
-    public void transaction(@PathParam("status") String status, MultivaluedMap<String, String> form, @Suspended AsyncResponse response, @Context JsonNode claims) {
+    public void transaction(
+        @PathParam("status") String status,
+        MultivaluedMap<String, String> form,
+        @Suspended AsyncResponse response,
+        @Context JsonNode claims
+    ) {
         Application application = this.applicationService.read();
         boolean hasPermission = this.permissionService.has(
             claims.get("sub").asText(),
@@ -296,7 +297,7 @@ public class PaypalResource {
 
     @Log
     @POST
-    @Path("/ipn/sandbox")
+    @Path("ipn/sandbox")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     public void ipnSandbox(MultivaluedMap<String, String> form, @Suspended AsyncResponse response) {
         this.paypalService.isValidIPN(form, this.paypalService.getSandboxURL(), this.onIPN(form, response));
@@ -304,7 +305,7 @@ public class PaypalResource {
 
     @Log
     @POST
-    @Path("/ipn")
+    @Path("ipn")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     public void ipn(MultivaluedMap<String, String> form, @Suspended AsyncResponse response) {
         this.paypalService.isValidIPN(form, this.paypalService.getIPNUrl(), this.onIPN(form, response));

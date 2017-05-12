@@ -121,6 +121,24 @@ public class PermissionService {
         return this.datastore.save(permissions);
     }
 
+    public Query<Permission> getQueryWithPermission(int permission) {
+        Query<Permission> query = this.datastore.createQuery(Permission.class);
+        query.and(
+            query.or(
+                 query.criteria("include").equal(PermissionService.ALL),
+                 query.and(
+                     query.criteria("include").equal(PermissionService.INCLUDE),
+                     query.criteria("permissions").equal(permission)
+                 ),
+                 query.and(
+                     query.criteria("include").equal(PermissionService.EXCLUDE),
+                     query.criteria("permissions").notEqual(permission)
+                 )
+             )
+         );
+        return query;
+    }
+
     public boolean hasAllHierarchicalPermission(String sub, int permission, Collection<ObjectId> organizationIds) {
         Query<Permission> query = this.datastore.createQuery(Permission.class);
 

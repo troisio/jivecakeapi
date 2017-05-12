@@ -56,14 +56,41 @@ public class Transaction {
     public ObjectId linkedId;
     public String linkedObjectClass;
     public int status;
+    public int paymentStatus;
     public long quantity;
-
+    public double amount;
     public String given_name;
     public String middleName;
     public String family_name;
-    public double amount;
     public String currency;
     public String email;
-
+    public boolean leaf;
+    public Date lastTransferTime;
     public Date timeCreated;
+
+    public Transaction() {
+    }
+
+    public Transaction(Transaction transaction) {
+        this.id = transaction.id;
+        this.parentTransactionId = transaction.parentTransactionId;
+        this.organizationId = transaction.organizationId;
+        this.eventId = transaction.eventId;
+        this.itemId = transaction.eventId;
+        this.user_id = transaction.user_id;
+        this.linkedId = transaction.linkedId;
+        this.linkedObjectClass = transaction.linkedObjectClass;
+        this.status = transaction.status;
+        this.paymentStatus = transaction.paymentStatus;
+        this.quantity = transaction.quantity;
+        this.amount = transaction.amount;
+        this.given_name = transaction.given_name;
+        this.middleName = transaction.middleName;
+        this.family_name = transaction.family_name;
+        this.currency = transaction.currency;
+        this.email = transaction.email;
+        this.leaf = transaction.leaf;
+        this.lastTransferTime = transaction.lastTransferTime;
+        this.timeCreated = transaction.timeCreated;
+    }
 }

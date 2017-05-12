@@ -1,9 +1,8 @@
 package com.jivecake.api.service;
 
-import java.util.ArrayList;
 import java.util.Date;
-import java.util.List;
-import java.util.stream.Collectors;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.glassfish.jersey.media.sse.EventOutput;
 import org.glassfish.jersey.media.sse.SseBroadcaster;
@@ -11,26 +10,15 @@ import org.glassfish.jersey.media.sse.SseBroadcaster;
 import com.jivecake.api.model.EventBroadcaster;
 
 public class ClientConnectionService {
-    public final List<EventBroadcaster> broadcasters = new ArrayList<>();
+    public final Map<String, EventBroadcaster> broadcasters = new HashMap<>();
 
-    public EventOutput createEventOutput(String user_id) {
-        List<EventBroadcaster> broadcasters = this.broadcasters.stream()
-            .filter(broadcaster -> broadcaster.user_id.equals(user_id))
-            .collect(Collectors.toList());
-
-        SseBroadcaster broadcaster;
-
-        if (broadcasters.isEmpty()) {
-            broadcaster = new SseBroadcaster();
-            EventBroadcaster eventBroadcaster = new EventBroadcaster(broadcaster, user_id, new Date());
-            this.broadcasters.add(eventBroadcaster);
-        } else {
-            broadcaster = broadcasters.get(0).broadcaster;
-        }
-
+    public EventOutput getEventOutput(String key) {
         EventOutput output = new EventOutput();
+        SseBroadcaster broadcaster = new SseBroadcaster();
         broadcaster.add(output);
+        EventBroadcaster eventBroadcaster = new EventBroadcaster(broadcaster, output, key, new Date());
 
-        return output;
+        this.broadcasters.putIfAbsent(key, eventBroadcaster);
+        return this.broadcasters.get(key).output;
     }
 }

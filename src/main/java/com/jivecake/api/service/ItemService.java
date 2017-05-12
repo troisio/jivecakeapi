@@ -73,11 +73,10 @@ public class ItemService {
             Double amount;
 
             if (item.countAmounts != null) {
-                long count = result.transactions.stream().filter(
-                    transaction -> transaction.status == transactionService.getPaymentCompleteStatus() ||
-                    transaction.status == transactionService.getPaymentPendingStatus()
-                ).map(transaction -> transaction.quantity)
-                 .reduce(0L, Long::sum);
+                long count = result.transactions.stream()
+                    .filter(transactionService.usedForCountFilter)
+                    .map(transaction -> transaction.quantity)
+                     .reduce(0L, Long::sum);
 
                 amount = item.getDerivedAmountFromCounts(count);
             } else if (item.timeAmounts != null) {

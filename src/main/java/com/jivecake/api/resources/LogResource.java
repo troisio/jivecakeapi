@@ -5,6 +5,7 @@ import java.util.Date;
 import java.util.List;
 
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
 import javax.ws.rs.QueryParam;
@@ -27,8 +28,9 @@ import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.PermissionService;
 
-@Path("/log")
+@Path("log")
 @CORS
+@Singleton
 public class LogResource {
     private final ApplicationService applicationService;
     private final PermissionService permissionService;
@@ -46,12 +48,14 @@ public class LogResource {
     }
 
     @GET
-    @Path("/http")
+    @Path("http")
     @Authorized
     public Response query(
         @QueryParam("limit") Integer limit,
         @QueryParam("offset") Integer offset,
         @QueryParam("order") String order,
+        @QueryParam("path") String path,
+        @QueryParam("ip") String ip,
         @QueryParam("user_id") List<String> userIds,
         @QueryParam("timeCreatedLessThan") Long timeCreatedLessThan,
         @QueryParam("timeCreatedGreaterThan") Long timeCreatedGreaterThan,
@@ -82,15 +86,20 @@ public class LogResource {
                 query.field("timeCreated").lessThan(new Date(timeCreatedLessThan));
             }
 
+            if (path != null) {
+                query.field("path").equal(path);
+            }
+
+            if (ip != null) {
+                query.field("ip").equal(ip);
+            }
+
             if (order != null) {
                 query.order(order);
             }
 
             FindOptions options = new FindOptions();
-
-            if (limit != null && limit > -1) {
-                options.limit(limit);
-            }
+            options.limit(ApplicationService.LIMIT_DEFAULT);
 
             if (offset != null && offset > -1) {
                 options.skip(offset);
