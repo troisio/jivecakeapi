@@ -305,13 +305,11 @@ public class PaypalService {
                         .field("linkedObjectClass").equal(PaypalIPN.class.getSimpleName())
                         .get();
 
-                    parentTransaction.leaf = false;
-
                     if (parentTransaction != null) {
                         transaction.parentTransactionId = parentTransaction.id;
+                        parentTransaction.leaf = false;
+                        transactions.add(parentTransaction);
                     }
-
-                    transactions.add(parentTransaction);
                 }
 
                 transaction.itemId = item.id;
