@@ -250,6 +250,10 @@ public class PaypalService {
                     transaction.paymentStatus = TransactionService.PAYMENT_UNKNOWN;
                     transaction.status = TransactionService.SETTLED;
                 } else {
+                    transaction.itemId = item.id;
+                    transaction.eventId = item.eventId;
+                    transaction.organizationId = item.organizationId;
+
                     Double amount;
 
                     if (item.countAmounts != null) {
@@ -311,10 +315,6 @@ public class PaypalService {
                         transactions.add(parentTransaction);
                     }
                 }
-
-                transaction.itemId = item.id;
-                transaction.eventId = item.eventId;
-                transaction.organizationId = item.organizationId;
 
                 transactions.add(transaction);
             }

@@ -2,7 +2,9 @@ package com.jivecake.api.resources;
 
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -232,27 +234,22 @@ public class EventResource {
                     stripeException = e;
                 }
 
-                hasSubscriptionViolation = currentSubscriptions != null &&
-                    activeEventsCount > currentSubscriptions.size() &&
-                    event.status == this.eventService.getActiveEventStatus();
+                hasSubscriptionViolation = currentSubscriptions != null && activeEventsCount > currentSubscriptions.size();
             } else {
                 hasSubscriptionViolation = false;
             }
 
-            boolean hasPaymentProfileViolation = (event.paymentProfileId == null && event.currency != null) ||
-                                                 (event.paymentProfileId != null && event.currency == null);
-
             if (stripeException != null) {
                 builder = Response.status(Status.SERVICE_UNAVAILABLE)
                     .entity(stripeException);
-            }  else if (hasPaymentProfileViolation) {
-                builder = Response.status(Status.BAD_REQUEST)
-                    .entity("{\"error\": \"paymentProfile\"}")
-                    .type(MediaType.APPLICATION_JSON);
             } else if (hasSubscriptionViolation) {
+                Map<String, Object> entity = new HashMap<>();
+                entity.put("error", "subscription");
+                entity.put("data", currentSubscriptions);
+
                 builder = Response.status(Status.BAD_REQUEST)
-                        .entity(currentSubscriptions)
-                        .type(MediaType.APPLICATION_JSON);
+                    .entity(entity)
+                    .type(MediaType.APPLICATION_JSON);
             } else {
                 Date currentTime = new Date();
 

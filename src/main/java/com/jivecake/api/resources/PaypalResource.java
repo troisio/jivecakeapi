@@ -140,13 +140,18 @@ public class PaypalResource {
                             List<Transaction> newTransactions = PaypalResource.this.datastore.getByKeys(keys);
 
                             PaypalResource.this.entityService.cascadeLastActivity(newTransactions, currentTime);
-                            PaypalResource.this.notificationService.notifyItemTransactionCreate(newTransactions);
+                            PaypalResource.this.notificationService.notifyTransactionCreate(newTransactions);
 
                             if (transactions.isEmpty()) {
                                 PaypalResource.this.logger.warn(String.format("paypal Cart IPN %s did not produce processed transactions", paypalIPNKey.getId()));
                             }
                         } else if ("Refunded".equals(ipn.payment_status)) {
-                            PaypalResource.this.paypalService.processRefund(ipn);
+                            List<Transaction> transactions = PaypalResource.this.paypalService.processRefund(ipn);
+                            Iterable<Key<Transaction>> keys = PaypalResource.this.datastore.save(transactions);
+                            List<Transaction> newTransactions = PaypalResource.this.datastore.getByKeys(keys);
+
+                            PaypalResource.this.entityService.cascadeLastActivity(newTransactions, currentTime);
+                            PaypalResource.this.notificationService.notifyTransactionCreate(newTransactions);
                         } else {
                             PaypalResource.this.logger.warn(String.format("paypal IPN %s did not match any processed scopes", paypalIPNKey.getId()));
                         }

@@ -148,7 +148,7 @@ public class ItemResource {
 
                 this.datastore.save(userTransaction);
 
-                this.notificationService.notifyItemTransactionCreate(Arrays.asList(userTransaction));
+                this.notificationService.notifyTransactionCreate(Arrays.asList(userTransaction));
                 this.entityService.cascadeLastActivity(Arrays.asList(userTransaction), currentTime);
 
                 builder = Response.ok(userTransaction).type(MediaType.APPLICATION_JSON);
@@ -342,24 +342,7 @@ public class ItemResource {
                 }
             }
 
-            boolean hasPaymentStatusViolation = transaction.status != TransactionService.PAYMENT_EQUAL;
-            boolean hasStatusViolation = !Arrays.asList(
-                TransactionService.PENDING,
-                TransactionService.REFUNDED,
-                TransactionService.SETTLED,
-                TransactionService.USER_REVOKED
-            ).contains(transaction.status);
-
-            if (transaction.currency == null) {
-                promise.resume(
-                    Response.status(Status.BAD_REQUEST)
-                        .entity("\"{error\": \"currency\"}")
-                        .type(MediaType.APPLICATION_JSON)
-                        .build()
-                );
-            } else if (hasPaymentStatusViolation || hasStatusViolation) {
-                promise.resume(Response.status(Status.BAD_REQUEST).build());
-            } else if (hasParentTransactionPermissionViolation) {
+            if (hasParentTransactionPermissionViolation) {
                 promise.resume(Response.status(Status.UNAUTHORIZED).build());
             } else if (eventActiveViolation) {
                 promise.resume(
@@ -409,7 +392,7 @@ public class ItemResource {
                         Key<Transaction> key = ItemResource.this.datastore.save(transaction);
                         this.entityService.cascadeLastActivity(Arrays.asList(transaction), currentTime);
 
-                        ItemResource.this.notificationService.notifyItemTransactionCreate(Arrays.asList(transaction));
+                        ItemResource.this.notificationService.notifyTransactionCreate(Arrays.asList(transaction));
 
                         Transaction entity = ItemResource.this.datastore.get(Transaction.class, key.getId());
                         promise.resume(

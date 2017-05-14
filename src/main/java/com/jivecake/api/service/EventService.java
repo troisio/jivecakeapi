@@ -7,7 +7,11 @@ public class EventService {
         return event.name != null &&
                event.name.length() > 0 &&
                event.name.length() < 500 &&
-               (event.status == this.getInactiveEventStatus() || event.status == this.getActiveEventStatus());
+               (event.status == this.getInactiveEventStatus() || event.status == this.getActiveEventStatus()) &&
+               (
+                   (event.paymentProfileId == null && event.currency == null) ||
+                   (event.paymentProfileId != null && event.currency != null)
+               );
     }
 
     public int getInactiveEventStatus() {
