@@ -118,7 +118,20 @@ public class TransactionService {
     }
 
     public boolean isValidTransaction(Transaction transaction) {
-        return transaction.quantity > 0 && this.currencies.contains(transaction.currency);
+        return transaction.quantity > 0 &&
+               this.currencies.contains(transaction.currency) &&
+               (
+                   transaction.status == TransactionService.PENDING ||
+                   transaction.status == TransactionService.REFUNDED ||
+                   transaction.status == TransactionService.SETTLED ||
+                   transaction.status == TransactionService.USER_REVOKED
+               ) &&
+               (
+                   transaction.paymentStatus == TransactionService.PAYMENT_EQUAL ||
+                   transaction.paymentStatus == TransactionService.PAYMENT_LESS_THAN ||
+                   transaction.paymentStatus == TransactionService.PAYMENT_GREATER_THAN ||
+                   transaction.paymentStatus == TransactionService.PAYMENT_UNKNOWN
+               );
     }
 
     public List<List<Transaction>> getTransactionForest(List<Transaction> transactions) {

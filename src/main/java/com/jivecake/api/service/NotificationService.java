@@ -142,12 +142,12 @@ public class NotificationService {
     /*
      * Given a list of transactions, notify the following users:
      * - A user such that, user.id == transaction.user_id
-     * - Organizations users who have READ permission on respective transactions
+     * - Organizations users who have READ permission on transaction.organizationId
      *
      * It is entirely possible that these two collections of users may overlap
      * so we must ensure that we do not send repeat messages to the same user
      * */
-    public void notifyItemTransactionCreate(Collection<Transaction> transactions) {
+    public void notifyTransactionCreate(Collection<Transaction> transactions) {
         Map<ObjectId, List<Transaction>> organizationToTransactions = transactions.stream()
             .filter(transaction -> transaction.user_id != null)
             .collect(
