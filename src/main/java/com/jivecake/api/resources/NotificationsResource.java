@@ -6,7 +6,6 @@ import java.util.Set;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
-import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
@@ -108,7 +107,9 @@ public class NotificationsResource {
 
     @GET
     @Produces(SseFeature.SERVER_SENT_EVENTS)
-    public Response getServerSentEvents(@QueryParam("Authorization") String token, @Context HttpServletRequest request) {
+    public Response getServerSentEvents(
+        @QueryParam("Authorization") String token
+    ) {
         ResponseBuilder builder;
 
         if (token == null || !token.startsWith("Bearer ")) {

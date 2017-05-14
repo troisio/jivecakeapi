@@ -484,12 +484,12 @@ public class ItemResource {
             }
 
             Key<Item> key = this.datastore.save(item);
-            Item searchItem = this.datastore.get(Item.class, key.getId());
+            Item updatedItem = this.datastore.get(Item.class, key.getId());
 
-            this.notificationService.notify(Arrays.asList(searchedItem), "item.update");
-            this.entityService.cascadeLastActivity(Arrays.asList(item), new Date());
+            this.notificationService.notify(Arrays.asList(updatedItem), "item.update");
+            this.entityService.cascadeLastActivity(Arrays.asList(updatedItem), new Date());
 
-            builder = Response.ok(searchItem).type(MediaType.APPLICATION_JSON);
+            builder = Response.ok(updatedItem).type(MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.BAD_REQUEST);
         }
