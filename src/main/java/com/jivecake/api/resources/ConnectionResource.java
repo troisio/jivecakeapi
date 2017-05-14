@@ -28,7 +28,7 @@ import com.jivecake.api.service.ClientConnectionService;
 import com.jivecake.api.service.PermissionService;
 
 @CORS
-@Path("/connection")
+@Path("connection")
 @Singleton
 public class ConnectionResource {
     private final ClientConnectionService clientConnectionService;
@@ -47,7 +47,7 @@ public class ConnectionResource {
     }
 
     @GET
-    @Path("/sse")
+    @Path("sse")
     @Authorized
     public Response getServerSentBroadcasters(
         @QueryParam("user_id") Set<String> user_ids,

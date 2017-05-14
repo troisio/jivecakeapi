@@ -13,12 +13,13 @@ public class ClientConnectionService {
     public final Map<String, EventBroadcaster> broadcasters = new HashMap<>();
 
     public EventOutput getEventOutput(String key) {
-        EventOutput output = new EventOutput();
-        SseBroadcaster broadcaster = new SseBroadcaster();
-        broadcaster.add(output);
-        EventBroadcaster eventBroadcaster = new EventBroadcaster(broadcaster, output, key, new Date());
-
+        SseBroadcaster newBroadcaster = new SseBroadcaster();
+        EventBroadcaster eventBroadcaster = new EventBroadcaster(newBroadcaster, key, new Date());
         this.broadcasters.putIfAbsent(key, eventBroadcaster);
-        return this.broadcasters.get(key).output;
+
+        SseBroadcaster broadcaster = this.broadcasters.get(key).broadcaster;
+        EventOutput output = new EventOutput();
+        broadcaster.add(output);
+        return output;
     }
 }

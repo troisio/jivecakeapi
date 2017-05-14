@@ -35,6 +35,10 @@ public class ItemService {
         return (item.amount >= 0) &&
             (item.maximumPerUser == null || item.maximumPerUser >= 0) &&
             (item.totalAvailible == null || item.totalAvailible >= 0) &&
+            (
+                item.status == this.getActiveItemStatus() ||
+                item.status == this.getInactiveItemStatus()
+            ) &&
             !hasTimeAndCountViolation &&
             !hasNegativeAmountViolation;
     }
@@ -98,5 +102,9 @@ public class ItemService {
 
     public int getActiveItemStatus() {
         return  0;
+    }
+
+    public int getInactiveItemStatus() {
+        return  1;
     }
 }

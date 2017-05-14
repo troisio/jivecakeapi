@@ -51,7 +51,7 @@ public class NotificationService {
 
     /*
      * The logic below is naive and not correct.
-     * This method will execute correctly only when (after population) organizationIds.size == 1
+     * This method will execute correctly only when (after population) organizationIds.size() == 1
      * Otherwise we may be sending the entire entities collection to users who may not
      * have permission to view them
      *
