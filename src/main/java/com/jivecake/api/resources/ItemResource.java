@@ -148,7 +148,7 @@ public class ItemResource {
 
                 this.datastore.save(userTransaction);
 
-                this.notificationService.notifyTransactionCreate(Arrays.asList(userTransaction));
+                this.notificationService.notify(Arrays.asList(userTransaction), "transaction.create");
                 this.entityService.cascadeLastActivity(Arrays.asList(userTransaction), currentTime);
 
                 builder = Response.ok(userTransaction).type(MediaType.APPLICATION_JSON);
@@ -310,7 +310,11 @@ public class ItemResource {
         Transaction transaction,
         @Suspended AsyncResponse promise
     ) {
-        if (this.transactionService.isValidTransaction(transaction)) {
+        transaction.status = TransactionService.PAYMENT_EQUAL;
+        transaction.paymentStatus = TransactionService.SETTLED;
+        boolean isValid = this.transactionService.isValidTransaction(transaction) && transaction.amount >= 0;
+
+        if (isValid) {
             Event event = this.datastore.get(Event.class, item.eventId);
             boolean totalAvailibleViolation;
 
@@ -390,11 +394,10 @@ public class ItemResource {
                         transaction.timeCreated = currentTime;
 
                         Key<Transaction> key = ItemResource.this.datastore.save(transaction);
-                        this.entityService.cascadeLastActivity(Arrays.asList(transaction), currentTime);
-
-                        ItemResource.this.notificationService.notifyTransactionCreate(Arrays.asList(transaction));
-
                         Transaction entity = ItemResource.this.datastore.get(Transaction.class, key.getId());
+                        this.entityService.cascadeLastActivity(Arrays.asList(entity), currentTime);
+                        ItemResource.this.notificationService.notify(Arrays.asList(entity), "transaction.create");
+
                         promise.resume(
                             Response.ok(entity).type(MediaType.APPLICATION_JSON).build()
                         );
