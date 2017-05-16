@@ -140,7 +140,7 @@ public class PaypalResource {
                             List<Transaction> newTransactions = PaypalResource.this.datastore.getByKeys(keys);
 
                             PaypalResource.this.entityService.cascadeLastActivity(newTransactions, currentTime);
-                            PaypalResource.this.notificationService.notifyTransactionCreate(newTransactions);
+                            PaypalResource.this.notificationService.notify(new ArrayList<>(newTransactions), "transaction.create");
 
                             if (transactions.isEmpty()) {
                                 PaypalResource.this.logger.warn(String.format("paypal Cart IPN %s did not produce processed transactions", paypalIPNKey.getId()));
@@ -151,7 +151,7 @@ public class PaypalResource {
                             List<Transaction> newTransactions = PaypalResource.this.datastore.getByKeys(keys);
 
                             PaypalResource.this.entityService.cascadeLastActivity(newTransactions, currentTime);
-                            PaypalResource.this.notificationService.notifyTransactionCreate(newTransactions);
+                            PaypalResource.this.notificationService.notify(new ArrayList<>(newTransactions), "transaction.create");
                         } else {
                             PaypalResource.this.logger.warn(String.format("paypal IPN %s did not match any processed scopes", paypalIPNKey.getId()));
                         }

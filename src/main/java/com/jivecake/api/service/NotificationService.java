@@ -2,12 +2,9 @@ package com.jivecake.api.service;
 
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -137,69 +134,5 @@ public class NotificationService {
 
                 this.sendEvent(new HashSet<>(Arrays.asList(userId)), chunk);
             });
-    }
-
-    /*
-     * Given a list of transactions, notify the following users:
-     * - A user such that, user.id == transaction.user_id
-     * - Organizations users who have READ permission on transaction.organizationId
-     *
-     * It is entirely possible that these two collections of users may overlap
-     * so we must ensure that we do not send repeat messages to the same user
-     * */
-    public void notifyTransactionCreate(Collection<Transaction> transactions) {
-        Map<ObjectId, List<Transaction>> organizationToTransactions = transactions.stream()
-            .filter(transaction -> transaction.user_id != null)
-            .collect(
-                Collectors.groupingBy(transaction -> transaction.organizationId)
-            );
-
-        Map<String, Set<ObjectId>> userToTransactionId = new HashMap<>();
-
-        this.permissionService.getQueryWithPermission(PermissionService.READ)
-            .field("objectClass").equal(this.organizationService.getPermissionObjectClass())
-            .field("objectId").in(organizationToTransactions.keySet())
-            .asList()
-            .forEach(permission -> {
-                List<Transaction> transcations = organizationToTransactions.get(permission.objectId);
-
-                for (Transaction transaction: transcations) {
-                    if (!userToTransactionId.containsKey(permission.user_id)) {
-                        userToTransactionId.put(permission.user_id, new HashSet<>());
-                    }
-
-                    userToTransactionId.get(permission.user_id).add(transaction.id);
-                }
-            });
-
-        for (Transaction transaction: transactions) {
-            if (transaction.user_id != null) {
-                if (!userToTransactionId.containsKey(transaction.user_id)) {
-                    userToTransactionId.put(transaction.user_id, new HashSet<>());
-                }
-
-                userToTransactionId.get(transaction.user_id).add(transaction.id);
-            }
-        }
-
-        Map<ObjectId, Transaction> idToTransaction = transactions.stream()
-            .collect(Collectors.toMap(transaction -> transaction.id, Function.identity()));
-
-        userToTransactionId.forEach((userId, transactionIds) -> {
-            List<Transaction> entity = transactionIds.stream()
-                .map(id -> idToTransaction.get(id))
-                .collect(Collectors.toList());
-
-            OutboundEvent chunk = new OutboundEvent.Builder()
-                .mediaType(MediaType.APPLICATION_JSON_TYPE)
-                .name("transaction.create")
-                .data(entity)
-                .build();
-
-            Set<String> userIds = new HashSet<>();
-            userIds.add(userId);
-
-            this.sendEvent(userIds, chunk);
-        });
     }
 }
