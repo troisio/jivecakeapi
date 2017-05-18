@@ -8,6 +8,7 @@ services:
       - mongo
     volumes:
       - ..:/root/jivecakeapi
-      - ./settings:/root/settings.yml
+      - ./luis.yml:/root/settings.yml
+      - ./gcp-credentials.json:/root/gcp-credentials.json
   mongo:
     image: mongo:3.4.1

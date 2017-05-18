@@ -11,7 +11,6 @@ import java.util.stream.Collectors;
 import javax.inject.Singleton;
 
 import org.bson.types.ObjectId;
-import org.bytedeco.javacpp.opencv_objdetect.CascadeClassifier;
 import org.glassfish.hk2.api.InjectionResolver;
 import org.glassfish.hk2.api.TypeLiteral;
 import org.glassfish.hk2.utilities.binding.AbstractBinder;
@@ -59,9 +58,7 @@ import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.ClientConnectionService;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
-import com.jivecake.api.service.FacialRecognitionService;
 import com.jivecake.api.service.HttpService;
-import com.jivecake.api.service.ImgurService;
 import com.jivecake.api.service.ItemService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.OrganizationService;
@@ -113,9 +110,7 @@ public class APIApplication extends Application<APIConfiguration> {
         ClientConnectionService.class,
         EntityService.class,
         EventService.class,
-        FacialRecognitionService.class,
         HttpService.class,
-        ImgurService.class,
         ItemService.class,
         NotificationService.class,
         OrganizationService.class,
@@ -196,8 +191,6 @@ public class APIApplication extends Application<APIConfiguration> {
                 this.bind(verifiers).to(new TypeLiteral<List<JWTVerifier>>() {});
                 this.bind(new HashDateCount()).to(HashDateCount.class);
 
-                this.bind(configuration.imgur).to(ImgurConfiguration.class);
-                this.bind(new CascadeClassifier(configuration.facialRecognition.frontFaceClassifierPath)).to(CascadeClassifier.class);
                 this.bind(new ApplicationService(application)).to(ApplicationService.class);
                 this.bind(datastore).to(Datastore.class);
                 this.bind(configuration.oauth).to(OAuthConfiguration.class);

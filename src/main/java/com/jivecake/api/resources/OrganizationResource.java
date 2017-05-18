@@ -119,7 +119,7 @@ public class OrganizationResource {
     }
 
     @POST
-    @Path("/{id}/payment/profile/paypal")
+    @Path("{id}/payment/profile/paypal")
     @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)

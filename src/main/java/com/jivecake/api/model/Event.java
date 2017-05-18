@@ -31,7 +31,6 @@ public class Event {
     public String currency;
     public String description;
     public String name;
-    public long minimumTimeBetweenTransactionTransfer;
     public int status;
     public Date timeStart;
     public Date timeEnd;

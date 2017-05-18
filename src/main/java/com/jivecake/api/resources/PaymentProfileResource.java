@@ -2,7 +2,9 @@ package com.jivecake.api.resources;
 
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import javax.inject.Inject;
@@ -137,19 +139,22 @@ public class PaymentProfileResource {
     public Response delete(@PathObject("id") PaymentProfile profile, @Context JsonNode claims) {
         ResponseBuilder builder;
 
-        List<Event> eventsUsingProfile = this.datastore.createQuery(Event.class)
-            .field("paymentProfileId")
-            .equal(profile.id)
-            .asList();
+        long count = this.datastore.createQuery(Event.class)
+            .field("paymentProfileId").equal(profile.id)
+            .count();
 
-        if (eventsUsingProfile.isEmpty()) {
+        if (count == 0) {
             this.datastore.delete(PaymentProfile.class, profile.id);
             this.entityService.cascadeLastActivity(Arrays.asList(profile), new Date());
             this.notificationService.notify(Arrays.asList(profile), "paymentprofile.delete");
             builder = Response.ok();
         } else {
+            Map<String, Object> entity = new HashMap<>();
+            entity.put("error", "event");
+            entity.put("data", count);
+
             builder = Response.status(Status.BAD_REQUEST)
-                .entity(eventsUsingProfile)
+                .entity(entity)
                 .type(MediaType.APPLICATION_JSON);
         }
 

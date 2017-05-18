@@ -5,11 +5,12 @@ ENV SOURCE_DIRECTORY /root/jivecakeapi
 ENV SETTINGS_FILE /root/settings.yml
 ENV JAVA_HOME /usr/java/jdk1.8.0_111
 ENV GRADLE_HOME /opt/gradle-3.2.1
+ENV GOOGLE_APPLICATION_CREDENTIALS /root/gcp-credentials.json
 
 ADD init.sh /init.sh
 
 RUN yum -y update && \
-    yum install -y gtk+-devel gtk2-devel man-pages man nano wget curl git-all unzip && \
+    yum install -y man-pages man nano wget curl git-all unzip && \
 
   wget --no-cookies --no-check-certificate \
       --header "Cookie: gpw_e24=http%3A%2F%2Fwww.oracle.com%2F; oraclelicense=accept-securebackup-cookie" \
@@ -26,7 +27,9 @@ RUN yum -y update && \
   cd $SOURCE_DIRECTORY && \
   gradle shadowJar && \
   rm -rf $SOURCE_DIRECTORY && \
+  
   chmod +x /init.sh && \
+
   yum clean all
 
 CMD /init.sh
