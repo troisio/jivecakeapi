@@ -65,7 +65,6 @@ public class Transaction {
     public String currency;
     public String email;
     public boolean leaf;
-    public Date lastTransferTime;
     public Date timeCreated;
 
     public Transaction() {
@@ -90,7 +89,6 @@ public class Transaction {
         this.currency = transaction.currency;
         this.email = transaction.email;
         this.leaf = transaction.leaf;
-        this.lastTransferTime = transaction.lastTransferTime;
         this.timeCreated = transaction.timeCreated;
     }
 }

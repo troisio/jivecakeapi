@@ -8,7 +8,5 @@ public class APIConfiguration extends Configuration {
     public List<String> databases;
     public OAuthConfiguration oauth;
     public List<String> rootOAuthIds;
-    public ImgurConfiguration imgur;
-    public FaceRecognitionConfiguration facialRecognition;
     public StripeConfiguration stripe;
 }

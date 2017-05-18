@@ -40,6 +40,7 @@ import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.request.Paging;
+import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
@@ -223,11 +224,10 @@ public class ItemResource {
         }
 
         FindOptions options = new FindOptions();
-        options.limit(100);
+        options.limit(ApplicationService.LIMIT_DEFAULT);
 
         Paging<Item> entity = new Paging<>(query.asList(options), query.count());
-        ResponseBuilder builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-        return builder.build();
+        return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
     }
 
     @GET
@@ -390,7 +390,6 @@ public class ItemResource {
                         transaction.itemId = item.id;
                         transaction.eventId = item.eventId;
                         transaction.organizationId = item.organizationId;
-                        transaction.lastTransferTime = null;
                         transaction.timeCreated = currentTime;
 
                         Key<Transaction> key = ItemResource.this.datastore.save(transaction);

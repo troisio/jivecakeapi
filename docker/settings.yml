@@ -9,15 +9,6 @@ oauth:
   domain: "default"
   apiToken: default"
 
-imgur:
-  url: https://imgur-apiv3.p.mashape.com
-  clientId: "default"
-  clientSecret: "default"
-  mashapeKey: "default"
-
-facialRecognition:
-  frontFaceClassifierPath: src/main/resources/haarcascade_frontalface_default.xml
-
 databases:
   - mongo:27017
 

@@ -17,7 +17,6 @@ import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
 import javax.ws.rs.QueryParam;
 import javax.ws.rs.client.InvocationCallback;
 import javax.ws.rs.container.AsyncResponse;
@@ -41,12 +40,10 @@ import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.filter.QueryRestrict;
-import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.EntityService;
-import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.TransactionService;
@@ -57,7 +54,6 @@ import com.jivecake.api.service.TransactionService;
 public class TransactionResource {
     private final TransactionService transactionService;
     private final NotificationService notificationService;
-    private final EventService eventService;
     private final PermissionService permissionService;
     private final EntityService entityService;
     private final Auth0Service auth0Service;
@@ -66,7 +62,6 @@ public class TransactionResource {
 
     @Inject
     public TransactionResource(
-        EventService eventService,
         TransactionService transactionService,
         NotificationService notificationService,
         PermissionService permissionService,
@@ -76,7 +71,6 @@ public class TransactionResource {
     ) {
         this.transactionService = transactionService;
         this.notificationService = notificationService;
-        this.eventService = eventService;
         this.permissionService = permissionService;
         this.auth0Service = auth0Service;
         this.entityService = entityService;
@@ -92,8 +86,6 @@ public class TransactionResource {
         @QueryParam("user_id") Set<String> userIds,
         @QueryParam("id") List<ObjectId> ids,
         @QueryParam("parentTransactionId") List<ObjectId> parentTransactionIds,
-        @QueryParam("lastTransferTimeGreaterThan") Long lastTransferTimeGreaterThan,
-        @QueryParam("lastTransferTimeLessThan") Long lastTransferTimeLessThan,
         @QueryParam("timeCreatedLessThan") Long timeCreatedLessThan,
         @QueryParam("timeCreatedGreaterThan") Long timeCreatedGreaterThan,
         @QueryParam("given_name") String given_name,
@@ -159,14 +151,6 @@ public class TransactionResource {
             query.field("leaf").equal(leaf);
         }
 
-        if (lastTransferTimeGreaterThan != null) {
-            query.field("lastTransferTime").greaterThan(new Date(lastTransferTimeGreaterThan));
-        }
-
-        if (lastTransferTimeLessThan != null) {
-            query.field("lastTransferTime").lessThan(new Date(lastTransferTimeLessThan));
-        }
-
         if (timeCreatedGreaterThan != null) {
             query.field("timeCreated").greaterThan(new Date(timeCreatedGreaterThan));
         }
@@ -228,132 +212,6 @@ public class TransactionResource {
             futureResponse.resume(exception);
             return null;
         });
-    }
-
-    @POST
-    @Authorized
-    @Path("{id}/transfer/{user_id}")
-    @HasPermission(id="id", clazz=Transaction.class, permission=PermissionService.WRITE)
-    public void transfer(
-        @PathObject("id") Transaction transaction,
-        @PathParam("user_id") String user_id,
-        @Context JsonNode claims,
-        @Suspended AsyncResponse promise
-    ) {
-        boolean statusIsValid = transaction.paymentStatus == TransactionService.PAYMENT_EQUAL &&
-            transaction.status == TransactionService.SETTLED;
-
-        if (statusIsValid) {
-            Date currentTime = new Date();
-            Event event = this.datastore.get(Event.class, transaction.eventId);
-
-            String requester = claims.get("sub").asText();
-
-            boolean hasTransferTimeViolation = false;
-
-            if (transaction.lastTransferTime != null) {
-                long timeBetweenTransfer = transaction.lastTransferTime.getTime() - currentTime.getTime();
-                hasTransferTimeViolation = event.minimumTimeBetweenTransactionTransfer < timeBetweenTransfer;
-            }
-
-            if (!transaction.leaf) {
-                promise.resume(
-                    Response.status(Status.BAD_REQUEST)
-                        .entity("{\"error\": \"leaf\"}")
-                        .type(MediaType.APPLICATION_JSON)
-                        .build()
-                );
-            } else if (transaction.user_id == null) {
-                promise.resume(
-                    Response.status(Status.BAD_REQUEST)
-                        .entity("{\"error\": \"transactionuserid\"}")
-                        .type(MediaType.APPLICATION_JSON)
-                        .build()
-                );
-            } else if (requester.equals(user_id)) {
-                promise.resume(
-                    Response.status(Status.BAD_REQUEST)
-                        .entity("{\"error\": \"sameuser\"}")
-                        .type(MediaType.APPLICATION_JSON)
-                        .build()
-                );
-            } else if (event.status == this.eventService.getInactiveEventStatus()) {
-                promise.resume(
-                    Response.status(Status.BAD_REQUEST)
-                        .entity("{\"error\": \"eventinactive\"}")
-                        .type(MediaType.APPLICATION_JSON)
-                        .build()
-                );
-            } else if (hasTransferTimeViolation) {
-                String body = String.format("{\"error\": \"minimumTimeBetweenPassTransfer\", data: %d}", event.minimumTimeBetweenTransactionTransfer);
-                promise.resume(
-                    Response.status(Status.BAD_REQUEST)
-                        .entity(body)
-                        .type(MediaType.APPLICATION_JSON)
-                        .build()
-                );
-            } else {
-                this.auth0Service.queryUsers(String.format("user_id: \"%s\"", user_id), new InvocationCallback<Response>() {
-                    @Override
-                    public void completed(Response response) {
-                        JsonNode[] users;
-                        Object entity = response.getEntity();
-                        String body = entity instanceof String ? (String)entity : response.readEntity(String.class);
-
-                        IOException exception = null;
-
-                        try {
-                            users = TransactionResource.this.mapper.readValue(body, JsonNode[].class);
-                        } catch (IOException e) {
-                            exception = e;
-                            users = null;
-                        }
-
-                        if (exception == null) {
-                            if (users.length == 0) {
-                                promise.resume(Response.status(Status.NOT_FOUND)
-                                     .entity("{\"error\": \"user\"}")
-                                     .type(MediaType.APPLICATION_JSON)
-                                    .build());
-                            } else {
-                                transaction.email = null;
-                                transaction.given_name = null;
-                                transaction.family_name = null;
-                                transaction.middleName = null;
-
-                                transaction.user_id = user_id;
-                                transaction.leaf = true;
-                                transaction.lastTransferTime = currentTime;
-
-                                Key<Transaction> key = TransactionResource.this.datastore.save(transaction);
-                                TransactionResource.this.datastore.get(Transaction.class, key.getId());
-
-                                TransactionResource.this.entityService.cascadeLastActivity(Arrays.asList(transaction), currentTime);
-
-                                promise.resume(
-                                    Response.ok(transaction)
-                                        .type(MediaType.APPLICATION_JSON)
-                                        .build()
-                                );
-                            }
-                        } else {
-                            promise.resume(
-                                Response.status(Status.SERVICE_UNAVAILABLE)
-                                    .entity(exception)
-                                    .build()
-                            );
-                        }
-                    }
-
-                    @Override
-                    public void failed(Throwable throwable) {
-                        promise.resume(throwable);
-                    }
-                });
-            }
-        } else {
-            promise.resume(Response.status(Status.BAD_REQUEST).build());
-        }
     }
 
     @GET
