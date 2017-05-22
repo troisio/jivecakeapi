@@ -438,7 +438,7 @@ public class ItemResource {
             this.datastore.delete(Item.class, item.id);
 
             this.notificationService.notify(Arrays.asList(item), "item.delete");
-            builder = Response.ok(item);
+            builder = Response.ok(item).type(MediaType.APPLICATION_JSON);
             this.entityService.cascadeLastActivity(Arrays.asList(item), new Date());
         } else {
             builder = Response.status(Status.BAD_REQUEST)

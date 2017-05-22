@@ -107,7 +107,7 @@ public class NotificationsResource {
 
     @GET
     @Produces(SseFeature.SERVER_SENT_EVENTS)
-    public Response getServerSentEvents(
+    public Response subscribe(
         @QueryParam("Authorization") String token
     ) {
         ResponseBuilder builder;
