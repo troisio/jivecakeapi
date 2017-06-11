@@ -12,7 +12,7 @@ import javax.ws.rs.core.MultivaluedMap;
 public class CORSFilter implements ContainerResponseFilter {
     private static final List<String> allowedOrigins = Arrays.asList(
         "http://127.0.0.1",
-        "https://jivecake",
+        "https://jivecake.com",
         "http://jivecake.com"
     );
 
