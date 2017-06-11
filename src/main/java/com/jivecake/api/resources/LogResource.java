@@ -19,7 +19,7 @@ import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.model.Application;
@@ -59,14 +59,14 @@ public class LogResource {
         @QueryParam("user_id") List<String> userIds,
         @QueryParam("timeCreatedLessThan") Long timeCreatedLessThan,
         @QueryParam("timeCreatedGreaterThan") Long timeCreatedGreaterThan,
-        @Context JsonNode claims
+        @Context DecodedJWT jwt
     ) {
         Application application = this.applicationService.read();
 
         ResponseBuilder builder;
 
         boolean hasPermission = this.permissionService.has(
-            claims.get("sub").asText(),
+            jwt.getSubject(),
             Arrays.asList(application),
             PermissionService.READ
         );

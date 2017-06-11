@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -33,6 +32,7 @@ import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jivecake.api.filter.Authorized;
@@ -98,7 +98,7 @@ public class TransactionResource {
         @QueryParam("limit") Integer limit,
         @QueryParam("offset") Integer offset,
         @QueryParam("order") String order,
-        @Context JsonNode claims,
+        @Context DecodedJWT jwt,
         @Suspended AsyncResponse futureResponse
     ) {
         Query<Transaction> query = this.datastore.createQuery(Transaction.class);
@@ -193,10 +193,10 @@ public class TransactionResource {
 
             List<Transaction> transactions = query.asList(options);
 
-            String user_id = claims.get("sub").asText();
+            String userId = jwt.getSubject();
 
-            boolean hasUserIdPermission = userIds.size() == 1 && userIds.contains(user_id);
-            boolean hasPermission = this.permissionService.has(user_id, transactions, PermissionService.READ);
+            boolean hasUserIdPermission = userIds.size() == 1 && userIds.contains(userId);
+            boolean hasPermission = this.permissionService.has(userId, transactions, PermissionService.READ);
 
             ResponseBuilder builder;
 
@@ -278,7 +278,7 @@ public class TransactionResource {
     @Authorized
     public void searchUsers(
         @QueryParam("id") List<ObjectId> ids,
-        @Context JsonNode claims,
+        @Context DecodedJWT jwt,
         @Suspended AsyncResponse promise
     ) {
         List<Transaction> transactions = this.datastore.createQuery(Transaction.class)
@@ -289,14 +289,12 @@ public class TransactionResource {
             .map(transaction -> transaction.user_id)
             .collect(Collectors.toSet());
 
-        String requesterId = claims.get("sub").asText();
-
         long transactionsNotBelongingToRequester = transactions.stream()
-            .filter(transaction -> !requesterId.equals(transaction.user_id))
+            .filter(transaction -> !jwt.getSubject().equals(transaction.user_id))
             .count();
 
         boolean hasPermission = this.permissionService.has(
-            requesterId,
+            jwt.getSubject(),
             transactions,
             PermissionService.READ
         );
@@ -330,7 +328,7 @@ public class TransactionResource {
     @Path("{id}")
     @Authorized
     @HasPermission(id="id", clazz=Transaction.class, permission=PermissionService.READ)
-    public Response read(@PathObject("id") Transaction transaction, @Context JsonNode claims) {
+    public Response read(@PathObject("id") Transaction transaction) {
         return Response.ok(transaction).type(MediaType.APPLICATION_JSON).build();
     }
 
@@ -348,7 +346,7 @@ public class TransactionResource {
             promise.resume(Response.status(Status.BAD_REQUEST).build());
         } else {
             String token = authorization.substring("Bearer ".length());
-            Map<String, Object> claims = this.auth0Service.getClaimsFromToken(token);
+            DecodedJWT jwt = this.auth0Service.getClaimsFromToken(token);
 
             Query<Transaction> query = this.datastore.createQuery(Transaction.class);
 
@@ -370,7 +368,7 @@ public class TransactionResource {
 
             List<Transaction> transactions = query.asList();
 
-            boolean hasPermission = this.permissionService.has((String)claims.get("sub"), transactions, PermissionService.READ);
+            boolean hasPermission = this.permissionService.has(jwt.getSubject(), transactions, PermissionService.READ);
 
             if (hasPermission) {
                 File file;
@@ -441,7 +439,7 @@ public class TransactionResource {
     @Path("{id}/revoke")
     @Authorized
     @HasPermission(clazz=Transaction.class, permission=PermissionService.WRITE, id="id")
-    public Response revoke(@PathObject("id") Transaction transaction, @Context JsonNode claims) {
+    public Response revoke(@PathObject("id") Transaction transaction) {
         ResponseBuilder builder;
 
         boolean targetIsCompleted = transaction.status == TransactionService.SETTLED;
@@ -487,7 +485,7 @@ public class TransactionResource {
     @Path("{id}")
     @Authorized
     @HasPermission(clazz=Transaction.class, id="id", permission=PermissionService.WRITE)
-    public Response delete(@PathObject("id") Transaction transaction, @Context JsonNode claims) {
+    public Response delete(@PathObject("id") Transaction transaction) {
         ResponseBuilder builder;
 
         boolean isVendorTransaction = this.transactionService.isVendorTransaction(transaction);

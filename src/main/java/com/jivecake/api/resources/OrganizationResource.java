@@ -30,7 +30,7 @@ import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.HasPermission;
@@ -90,7 +90,6 @@ public class OrganizationResource {
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
     public Response update(
         @PathObject("id") Organization organization,
-        @Context JsonNode claims,
         List<Permission> permissions
     ) {
         Date currentTime = new Date();
@@ -125,7 +124,6 @@ public class OrganizationResource {
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
     public Response createPaypalPaymentProfile(
         @PathObject("id") Organization organization,
-        @Context JsonNode claims,
         PaypalPaymentProfile profile
     ) {
         ResponseBuilder builder;
@@ -162,7 +160,6 @@ public class OrganizationResource {
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
     public Response createEvent(
         @PathObject("id") Organization organization,
-        @Context JsonNode claims,
         Event event
      ) {
         ResponseBuilder builder;
@@ -235,7 +232,7 @@ public class OrganizationResource {
     @Authorized
     @Consumes(MediaType.APPLICATION_JSON)
     public Response create(
-        @Context JsonNode claims,
+        @Context DecodedJWT jwt,
         Organization organization
     ) {
         ResponseBuilder builder;
@@ -248,14 +245,13 @@ public class OrganizationResource {
             if (organization.parentId == null) {
                 builder = Response.status(Status.BAD_REQUEST);
             } else {
-                String userId = claims.get("sub").asText();
 
                 Organization rootOrganization = this.organizationService.getRootOrganization();
 
                 boolean parentIdOrganizationViolation = !rootOrganization.id.equals(organization.parentId);
 
                 long userOrganizationPermissions = this.datastore.createQuery(Permission.class)
-                    .field("user_id").equal(userId)
+                    .field("user_id").equal(jwt.getSubject())
                     .field("objectClass").equal(Organization.class.getSimpleName())
                     .field("include").equal(PermissionService.ALL)
                     .count();
@@ -280,7 +276,7 @@ public class OrganizationResource {
                     Key<Organization> key = this.datastore.save(organization);
 
                     Permission permission = new Permission();
-                    permission.user_id = userId;
+                    permission.user_id = jwt.getSubject();
                     permission.include = PermissionService.ALL;
                     permission.permissions = new HashSet<>();
                     permission.objectClass = this.organizationService.getPermissionObjectClass();
@@ -376,7 +372,7 @@ public class OrganizationResource {
         @QueryParam("order") String order,
         @QueryParam("limit") Integer limit,
         @QueryParam("offset") Integer offset,
-        @Context JsonNode claims
+        @Context DecodedJWT jwt
     ) {
         Query<Organization> query = this.datastore.createQuery(Organization.class);
 
@@ -409,7 +405,7 @@ public class OrganizationResource {
         List<Organization> organizations = query.asList(options);
 
         boolean hasPermission = this.permissionService.has(
-            claims.get("sub").asText(),
+            jwt.getSubject(),
             organizations,
             PermissionService.READ
         );
@@ -433,8 +429,7 @@ public class OrganizationResource {
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
     public Response update(
         @PathObject("id") Organization searchedOrganization,
-        Organization organization,
-        @Context JsonNode claims
+        Organization organization
     ) {
         ResponseBuilder builder;
 
@@ -473,7 +468,7 @@ public class OrganizationResource {
     @Path("/{id}")
     @Authorized
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.READ)
-    public Response read(@PathObject("id") Organization organization, @Context JsonNode claims) {
+    public Response read(@PathObject("id") Organization organization) {
         return Response.ok(organization).type(MediaType.APPLICATION_JSON).build();
     }
 
@@ -481,10 +476,7 @@ public class OrganizationResource {
     @Path("/{id}")
     @Authorized
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
-    public Response delete(
-        @PathObject("id") Organization searchedOrganization,
-        @Context JsonNode claims
-    ) {
+    public Response delete(@PathObject("id") Organization searchedOrganization) {
         ResponseBuilder builder;
 
         long count = this.datastore.createQuery(Event.class)

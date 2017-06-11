@@ -7,7 +7,7 @@ oauth:
   nativeClientId: "default"
   nativeClientSecret: "default"
   domain: "default"
-  apiToken: default"
+  apiToken: "default"
 
 databases:
   - mongo:27017

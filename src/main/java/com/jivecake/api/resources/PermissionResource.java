@@ -22,7 +22,7 @@ import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.QueryRestrict;
@@ -66,20 +66,18 @@ public class PermissionResource {
         @QueryParam("user_id") List<String> userIds,
         @QueryParam("objectId") List<ObjectId> objectIds,
         @QueryParam("objectClass") String objectClass,
-        @Context JsonNode claims
+        @Context DecodedJWT jwt
     ) {
         ResponseBuilder builder;
 
-        String requesterId = claims.get("sub").asText();
-
-        boolean hasUserPermission = userIds.size() == 1 && claims.get("sub").asText().equals(userIds.get(0));
+        boolean hasUserPermission = userIds.size() == 1 && jwt.getSubject().equals(userIds.get(0));
         boolean isOrganizationQuery = this.organizationService.getPermissionObjectClass().equals(objectClass) &&
             !objectIds.isEmpty();
         boolean hasOrganizationPermission;
 
         if (isOrganizationQuery) {
             hasOrganizationPermission = this.permissionService.hasAllHierarchicalPermission(
-                requesterId,
+                jwt.getSubject(),
                 PermissionService.WRITE,
                 objectIds
             );
@@ -91,7 +89,7 @@ public class PermissionResource {
             Query<Permission> query = this.datastore.createQuery(Permission.class);
 
             List<ObjectId> requesterAllPermissions = this.datastore.createQuery(Permission.class)
-                .field("user_id").equal(requesterId)
+                .field("user_id").equal(jwt.getSubject())
                 .field("objectClass").equal(this.organizationService.getPermissionObjectClass())
                 .field("include").equal(PermissionService.ALL)
                 .asList()
@@ -141,7 +139,7 @@ public class PermissionResource {
         @QueryParam("permission") Set<Integer> permissions,
         @QueryParam("limit") Integer limit,
         @QueryParam("offset") Integer offset,
-        @Context JsonNode claims
+        @Context DecodedJWT jwt
      ) {
         ResponseBuilder builder;
 
@@ -187,9 +185,8 @@ public class PermissionResource {
 
         List<Permission> entities = query.asList(options);
 
-        String user_id = claims.get("sub").asText();
         List<Permission> permissionsNotBelongingToRequester = entities.stream()
-            .filter(permission -> !permission.user_id.equals(user_id))
+            .filter(permission -> !permission.user_id.equals(jwt.getSubject()))
             .collect(Collectors.toList());
 
         boolean hasPermission = permissionsNotBelongingToRequester.isEmpty();
@@ -201,7 +198,7 @@ public class PermissionResource {
                 .collect(Collectors.toList());
 
             hasPermission = this.permissionService.hasAllHierarchicalPermission(
-                user_id,
+                jwt.getSubject(),
                 PermissionService.READ,
                 organizationIds
             );

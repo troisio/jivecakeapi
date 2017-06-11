@@ -4,12 +4,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.net.URI;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
-import java.security.SignatureException;
 import java.util.Date;
-import java.util.List;
-import java.util.Map;
 
 import javax.inject.Inject;
 import javax.servlet.http.HttpServletRequest;
@@ -21,9 +16,9 @@ import javax.ws.rs.core.Context;
 import org.apache.commons.io.IOUtils;
 import org.mongodb.morphia.Datastore;
 
-import com.auth0.jwt.JWTVerifier;
-import com.auth0.jwt.JWTVerifyException;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.model.Request;
+import com.jivecake.api.service.Auth0Service;
 
 @Log
 public class LogFilter implements ContainerRequestFilter {
@@ -31,13 +26,13 @@ public class LogFilter implements ContainerRequestFilter {
     private HttpServletRequest request;
     @Context
     private ResourceInfo resourceInfo;
-    private final List<JWTVerifier> verifiers;
     private final Datastore datastore;
+    private final Auth0Service auth0Service;
 
     @Inject
-    public LogFilter(Datastore datastore, List<JWTVerifier> verifiers) {
+    public LogFilter(Datastore datastore, Auth0Service auth0Service) {
         this.datastore = datastore;
-        this.verifiers = verifiers;
+        this.auth0Service = auth0Service;
     }
 
     @Override
@@ -53,7 +48,6 @@ public class LogFilter implements ContainerRequestFilter {
         request.headers = requestContext.getHeaders();
         request.query = this.request.getParameterMap();
         request.date = requestContext.getDate();
-        request.user_id = null;
         request.timeCreated = new Date();
 
         if (log.body()) {
@@ -71,14 +65,8 @@ public class LogFilter implements ContainerRequestFilter {
         if (authorization != null && authorization.startsWith("Bearer .")) {
             String token = authorization.substring("Bearer ".length());
 
-            for (JWTVerifier verifier: this.verifiers) {
-                try {
-                    Map<String, Object> claims = verifier.verify(token);
-                    request.user_id = (String)claims.get("sub");
-                    break;
-                } catch (InvalidKeyException | NoSuchAlgorithmException | IllegalStateException | SignatureException | IOException | JWTVerifyException e) {
-                }
-            }
+            DecodedJWT jwt = this.auth0Service.getClaimsFromToken(token);
+            request.user_id = jwt.getSubject();
         }
 
         this.datastore.save(request);

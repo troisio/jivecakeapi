@@ -23,7 +23,7 @@ import javax.ws.rs.core.Response.Status;
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.HasPermission;
@@ -58,7 +58,7 @@ public class StripeResource {
     @Authorized
     public Response cancelSubscription(
         @PathParam("subscriptionId") String subscriptionId,
-        @Context JsonNode claims
+        @Context DecodedJWT jwt
     ) {
         ResponseBuilder builder;
 
@@ -81,7 +81,7 @@ public class StripeResource {
             Organization organization = this.datastore.get(Organization.class, new ObjectId(organizationId));
 
             boolean hasPermission = this.permissionService.has(
-                claims.get("sub").asText(),
+                jwt.getSubject(),
                 Arrays.asList(organization),
                 PermissionService.READ
             );
@@ -114,10 +114,7 @@ public class StripeResource {
     @Path("{organizationId}/subscription")
     @Authorized
     @HasPermission(clazz=Organization.class, id="organizationId", permission=PermissionService.READ)
-    public Response subscribe(
-        @PathObject("organizationId") Organization organization,
-        @Context JsonNode claims
-    ) {
+    public Response subscribe(@PathObject("organizationId") Organization organization) {
         ResponseBuilder builder;
 
         try {
@@ -138,7 +135,7 @@ public class StripeResource {
     public Response subscribe(
         @PathObject("organizationId") Organization organization,
         Map<String, Object> json,
-        @Context JsonNode claims
+        @Context DecodedJWT jwt
     ) {
         ResponseBuilder builder;
 
@@ -148,13 +145,13 @@ public class StripeResource {
         customerOptions.put("plan", this.stripeService.getMonthly10PlanId());
 
         Map<String, Object> metadata = new HashMap<>();
-        metadata.put("sub", claims.get("sub").asText());
+        metadata.put("sub", jwt.getSubject());
         customerOptions.put("metadata", metadata);
 
         Map<String, Object> subscriptionUpdate = new HashMap<>();
         Map<String, Object> subscriptionMetaData = new HashMap<>();
         subscriptionMetaData.put("organizationId", organization.id);
-        subscriptionMetaData.put("sub", claims.get("sub").asText());
+        subscriptionMetaData.put("sub", jwt.getSubject());
         subscriptionUpdate.put("metadata", subscriptionMetaData);
 
         try {

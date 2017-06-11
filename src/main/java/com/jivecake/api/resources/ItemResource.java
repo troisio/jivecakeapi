@@ -30,7 +30,7 @@ import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.HasPermission;
@@ -89,7 +89,7 @@ public class ItemResource {
     @Path("/{id}/purchase")
     public Response purchase(
         @PathObject("id") Item item,
-        @Context JsonNode claims,
+        @Context DecodedJWT jwt,
         Transaction transaction
     ) {
         ResponseBuilder builder;
@@ -102,7 +102,7 @@ public class ItemResource {
             List<Transaction> countedTransactions = this.transactionService.getTransactionsForItemTotal(item.id);
 
             List<Transaction> transactionsForUser = countedTransactions.stream()
-                .filter(subject -> claims.get("sub").asText().equals(subject.user_id))
+                .filter(subject -> jwt.getSubject().equals(subject.user_id))
                 .collect(Collectors.toList());
 
             boolean maximumPerUserViolation = item.maximumPerUser != null &&
@@ -135,7 +135,7 @@ public class ItemResource {
                 Date currentTime = new Date();
 
                 Transaction userTransaction = new Transaction();
-                userTransaction.user_id = claims.get("sub").asText();
+                userTransaction.user_id = jwt.getSubject();
                 userTransaction.quantity = transaction.quantity;
                 userTransaction.status = TransactionService.SETTLED;
                 userTransaction.paymentStatus = TransactionService.PAYMENT_EQUAL;
@@ -241,7 +241,7 @@ public class ItemResource {
         @QueryParam("limit") Integer limit,
         @QueryParam("offset") Integer offset,
         @QueryParam("order") String order,
-        @Context JsonNode claims
+        @Context DecodedJWT jwt
     ) {
         ResponseBuilder builder;
 
@@ -284,7 +284,7 @@ public class ItemResource {
         List<Item> items = query.asList(options);
 
         boolean hasPermission = this.permissionService.has(
-            claims.get("sub").asText(),
+            jwt.getSubject(),
             items,
             PermissionService.READ
         );
@@ -306,7 +306,7 @@ public class ItemResource {
     @HasPermission(id="id", clazz=Item.class, permission=PermissionService.WRITE)
     public void createTransaction(
         @PathObject("id") Item item,
-        @Context JsonNode claims,
+        @Context DecodedJWT jwt,
         Transaction transaction,
         @Suspended AsyncResponse promise
     ) {
@@ -337,7 +337,7 @@ public class ItemResource {
 
                 if (parentTransaction == null) {
                     hasParentTransactionPermissionViolation = !this.permissionService.has(
-                        claims.get("sub").asText(),
+                        jwt.getSubject(),
                         Arrays.asList(parentTransaction),
                         PermissionService.WRITE
                     );
@@ -419,7 +419,7 @@ public class ItemResource {
     @Path("/{id}")
     @Authorized
     @HasPermission(clazz=Item.class, id="id", permission=PermissionService.READ)
-    public Response read(@PathObject("id") Item item, @Context JsonNode claims) {
+    public Response read(@PathObject("id") Item item) {
         return Response.ok(item).type(MediaType.APPLICATION_JSON).build();
     }
 
@@ -427,7 +427,7 @@ public class ItemResource {
     @Path("/{id}")
     @Authorized
     @HasPermission(clazz=Item.class, id="id", permission=PermissionService.WRITE)
-    public Response delete(@PathObject("id") Item item, @Context JsonNode claims) {
+    public Response delete(@PathObject("id") Item item) {
         ResponseBuilder builder;
 
         long transactionCount = this.datastore.createQuery(Transaction.class)
@@ -454,7 +454,7 @@ public class ItemResource {
     @Path("/{id}")
     @Authorized
     @HasPermission(clazz=Item.class, id="id", permission=PermissionService.WRITE)
-    public Response update(@PathObject("id") Item searchedItem, @Context JsonNode claims, Item item) {
+    public Response update(@PathObject("id") Item searchedItem, Item item) {
         ResponseBuilder builder;
 
         boolean isValid = this.itemService.isValid(item);
