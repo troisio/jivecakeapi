@@ -15,6 +15,7 @@ import javax.ws.rs.core.Response.Status;
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.PermissionService;
 
@@ -60,8 +61,8 @@ public class HasPermissionFilter implements ContainerRequestFilter {
                 Collection<?> entities = this.datastore.find(annotation.clazz()).field("id").equal(objectId).asList();
 
                 if (!entities.isEmpty()) {
-                    Map<String, Object> claims = this.auth0Service.getClaimsFromToken(token);
-                    boolean hasPermission = this.permissionService.has((String)claims.get("sub"), entities, annotation.permission());
+                    DecodedJWT jwt = this.auth0Service.getClaimsFromToken(token);
+                    boolean hasPermission = this.permissionService.has(jwt.getSubject(), entities, annotation.permission());
 
                     if (hasPermission) {
                         response = null;

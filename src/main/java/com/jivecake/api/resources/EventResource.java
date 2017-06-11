@@ -27,7 +27,7 @@ import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.HasPermission;
@@ -86,7 +86,7 @@ public class EventResource {
 
     @GET
     @Path("/{eventId}/aggregated")
-    public Response getAggregatedItemData(@PathObject("eventId") Event event, @Context JsonNode node) {
+    public Response getAggregatedItemData(@PathObject("eventId") Event event, @Context DecodedJWT jwt) {
         ResponseBuilder builder;
 
         if (event == null) {
@@ -104,10 +104,8 @@ public class EventResource {
 
             for (ItemData datum: group.itemData) {
                 for (Transaction transaction: datum.transactions) {
-                    if (node != null) {
-                        String sub = node.get("sub").asText();
-
-                        if (!sub.equals(transaction.user_id)) {
+                    if (jwt != null) {
+                        if (!jwt.getSubject().equals(transaction.user_id)) {
                             transaction.user_id = null;
                         }
                     }
@@ -207,7 +205,6 @@ public class EventResource {
     @HasPermission(clazz=Event.class, id="id", permission=PermissionService.WRITE)
     public Response update(
         @PathObject("id") Event original,
-        @Context JsonNode claims,
         Event event
     ) {
         ResponseBuilder builder;
@@ -279,7 +276,7 @@ public class EventResource {
     @Authorized
     @Consumes(MediaType.APPLICATION_JSON)
     @HasPermission(clazz=Event.class, id="id", permission=PermissionService.WRITE)
-    public Response createItem(@PathObject("id") Event event, Item item, @Context JsonNode claims) {
+    public Response createItem(@PathObject("id") Event event, Item item) {
         ResponseBuilder builder;
 
         boolean isValid = this.itemService.isValid(item);
@@ -311,7 +308,7 @@ public class EventResource {
     @Path("/{id}")
     @Authorized
     @HasPermission(clazz=Event.class, id="id", permission=PermissionService.WRITE)
-    public Response delete(@PathObject("id") Event event, @Context JsonNode claims) {
+    public Response delete(@PathObject("id") Event event) {
         long itemCount = this.datastore.createQuery(Item.class)
             .field("eventId").equal(event.id)
             .count();
@@ -347,7 +344,7 @@ public class EventResource {
         @QueryParam("limit") Integer limit,
         @QueryParam("offset") Integer offset,
         @QueryParam("order") String order,
-        @Context JsonNode claims
+        @Context DecodedJWT jwt
     ) {
         ResponseBuilder builder;
 
@@ -402,7 +399,7 @@ public class EventResource {
         List<Event> entities = query.asList(options);
 
         boolean hasPermission = this.permissionService.has(
-            claims.get("sub").asText(),
+            jwt.getSubject(),
             entities,
             PermissionService.READ
         );

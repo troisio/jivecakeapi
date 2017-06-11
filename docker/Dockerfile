@@ -3,7 +3,7 @@ FROM centos:7
 ENV TERM xterm
 ENV SOURCE_DIRECTORY /root/jivecakeapi
 ENV SETTINGS_FILE /root/settings.yml
-ENV JAVA_HOME /usr/java/jdk1.8.0_111
+ENV JAVA_HOME /usr/java/jdk1.8.0_131
 ENV GRADLE_HOME /opt/gradle-3.2.1
 ENV GOOGLE_APPLICATION_CREDENTIALS /root/gcp-credentials.json
 
@@ -12,11 +12,9 @@ ADD init.sh /init.sh
 RUN yum -y update && \
     yum install -y man-pages man nano wget curl git-all unzip && \
 
-  wget --no-cookies --no-check-certificate \
-      --header "Cookie: gpw_e24=http%3A%2F%2Fwww.oracle.com%2F; oraclelicense=accept-securebackup-cookie" \
-      http://download.oracle.com/otn-pub/java/jdk/8u111-b14/jdk-8u111-linux-x64.rpm && \
-  yum -y install jdk-8u111-linux-x64.rpm && \
-  rm jdk-8u111-linux-x64.rpm && \
+  wget -c --header "Cookie: oraclelicense=accept-securebackup-cookie" http://download.oracle.com/otn-pub/java/jdk/8u131-b11/d54c1d3a095b4ff2b6607d096fa80163/jdk-8u131-linux-x64.rpm && \
+  yum -y install jdk-8u131-linux-x64.rpm && \
+  rm jdk-8u131-linux-x64.rpm && \
 
   wget --directory-prefix=/opt https://services.gradle.org/distributions/gradle-3.2.1-bin.zip && \
   unzip -d /opt /opt/gradle-3.2.1-bin.zip && \

@@ -33,7 +33,7 @@ import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.Log;
@@ -86,13 +86,13 @@ public class PaypalResource {
 
     @POST
     @Path("detail")
-    public Response getPaymentDetails(@Context JsonNode claims) {
+    public Response getPaymentDetails(@Context DecodedJWT jwt) {
         PaymentDetail detail = new CartPaymentDetails();
         detail.custom = new ObjectId();
         detail.timeCreated = new Date();
 
-        if (claims != null) {
-            detail.user_id = claims.get("sub").asText();
+        if (jwt != null) {
+            detail.user_id = jwt.getSubject();
         }
 
         Key<PaymentDetail> key = this.datastore.save(detail);
@@ -192,14 +192,14 @@ public class PaypalResource {
         @QueryParam("limit") Integer limit,
         @QueryParam("offset") Integer offset,
         @QueryParam("order") String order,
-        @Context JsonNode claims
+        @Context DecodedJWT jwt
     ) {
         Application application = this.applicationService.read();
 
         ResponseBuilder builder;
 
         boolean hasPermission = this.permissionService.has(
-            claims.get("sub").asText(),
+            jwt.getSubject(),
             Arrays.asList(application),
             PermissionService.READ
         );
@@ -272,11 +272,11 @@ public class PaypalResource {
         @PathParam("status") String status,
         MultivaluedMap<String, String> form,
         @Suspended AsyncResponse response,
-        @Context JsonNode claims
+        @Context DecodedJWT jwt
     ) {
         Application application = this.applicationService.read();
         boolean hasPermission = this.permissionService.has(
-            claims.get("sub").asText(),
+            jwt.getSubject(),
             Arrays.asList(application),
             PermissionService.WRITE
         );

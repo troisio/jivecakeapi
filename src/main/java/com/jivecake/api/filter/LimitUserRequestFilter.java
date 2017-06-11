@@ -2,12 +2,8 @@ package com.jivecake.api.filter;
 
 import java.io.IOException;
 import java.net.URI;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
-import java.security.SignatureException;
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
 
 import javax.inject.Inject;
 import javax.servlet.http.HttpServletRequest;
@@ -18,8 +14,8 @@ import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
-import com.auth0.jwt.JWTVerifier;
-import com.auth0.jwt.JWTVerifyException;
+import com.auth0.jwt.interfaces.DecodedJWT;
+import com.jivecake.api.service.Auth0Service;
 
 @LimitUserRequest(count = 0, per = 0)
 public class LimitUserRequestFilter implements ContainerRequestFilter {
@@ -27,12 +23,12 @@ public class LimitUserRequestFilter implements ContainerRequestFilter {
     private HttpServletRequest request;
     @Context
     private ResourceInfo resourceInfo;
-    private final List<JWTVerifier> verifiers;
     private final HashDateCount count;
+    private final Auth0Service auth0Service;
 
     @Inject
-    public LimitUserRequestFilter(List<JWTVerifier> verifiers, HashDateCount count) {
-        this.verifiers = verifiers;
+    public LimitUserRequestFilter(Auth0Service auth0Service, HashDateCount count) {
+        this.auth0Service = auth0Service;
         this.count = count;
     }
 
@@ -56,18 +52,10 @@ public class LimitUserRequestFilter implements ContainerRequestFilter {
             if (authorization != null && authorization.startsWith("Bearer ")) {
                 String token = authorization.substring("Bearer ".length());
 
-                Map<String, Object> claims = null;
+                DecodedJWT jwt = this.auth0Service.getClaimsFromToken(token);
 
-                for (JWTVerifier verifier: this.verifiers) {
-                    try {
-                        claims = verifier.verify(token);
-                        break;
-                    } catch (InvalidKeyException | NoSuchAlgorithmException | IllegalStateException | SignatureException | IOException | JWTVerifyException e) {
-                    }
-                }
-
-                if (claims != null) {
-                    String user_id = (String)claims.get("sub");
+                if (jwt != null) {
+                    String user_id = jwt.getSubject();
 
                     URI uri = context.getUriInfo().getRequestUri();
 

@@ -1,21 +1,16 @@
 package com.jivecake.api.filter;
 
-import java.io.IOException;
-import java.util.Map;
-
 import javax.inject.Inject;
 import javax.servlet.http.HttpServletRequest;
 
 import org.glassfish.hk2.api.Factory;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.service.Auth0Service;
 
-public class ClaimsFactory implements Factory<JsonNode> {
+public class ClaimsFactory implements Factory<DecodedJWT> {
     private final HttpServletRequest request;
     private final Auth0Service auth0Service;
-    private final ObjectMapper mapper = new ObjectMapper();
 
     @Inject
     public ClaimsFactory(Auth0Service auth0Service, HttpServletRequest request) {
@@ -24,27 +19,18 @@ public class ClaimsFactory implements Factory<JsonNode> {
     }
 
     @Override
-    public JsonNode provide() {
+    public DecodedJWT provide() {
        String authorization = this.request.getHeader("Authorization");
-       JsonNode node = null;
+       DecodedJWT jwt = null;
 
        if (authorization != null && authorization.startsWith("Bearer ")) {
-           String jwt = authorization.substring("Bearer ".length());
-           Map<String, Object> claims = this.auth0Service.getClaimsFromToken(jwt);
-
-           if (claims != null) {
-               try {
-                   String json = this.mapper.writeValueAsString(claims);
-                   node = this.mapper.readTree(json);
-               } catch (IOException  e) {
-               }
-           }
+           jwt = this.auth0Service.getClaimsFromToken(authorization.substring("Bearer ".length()));
        }
 
-       return node;
+       return jwt;
     }
 
     @Override
-    public void dispose(JsonNode node) {
+    public void dispose(DecodedJWT jwt) {
     }
 }

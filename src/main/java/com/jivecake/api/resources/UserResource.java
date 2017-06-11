@@ -27,7 +27,7 @@ import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.query.Query;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.google.cloud.storage.Acl;
 import com.google.cloud.storage.Acl.Role;
 import com.google.cloud.storage.Acl.User;
@@ -67,10 +67,9 @@ public class UserResource {
     public Response getOrganizations(
         @PathParam("user_id") String userId,
         @QueryParam("order") String order,
-        @Context JsonNode claims
+        @Context DecodedJWT jwt
     ) {
-        String user_id = claims.get("sub").asText();
-        boolean hasPermission = userId.equals(user_id);
+        boolean hasPermission = userId.equals(jwt.getSubject());
 
         ResponseBuilder builder;
 
@@ -119,7 +118,6 @@ public class UserResource {
     public Response uploadSelfie(
         @PathParam("user_id") String pathUserId,
         @HeaderParam("Content-Type") String contentType,
-        @Context JsonNode claims,
         InputStream stream
     ) {
         Storage storage = StorageOptions.getDefaultInstance().getService();

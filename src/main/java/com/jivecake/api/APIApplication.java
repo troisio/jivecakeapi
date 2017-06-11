@@ -1,5 +1,6 @@
 package com.jivecake.api;
 
+import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -20,9 +21,10 @@ import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Morphia;
 import org.mongodb.morphia.mapping.MapperOptions;
 
+import com.auth0.jwt.JWT;
 import com.auth0.jwt.JWTVerifier;
-import com.auth0.jwt.internal.org.apache.commons.codec.binary.Base64;
-import com.fasterxml.jackson.databind.JsonNode;
+import com.auth0.jwt.algorithms.Algorithm;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.AuthorizedFilter;
 import com.jivecake.api.filter.CORSFilter;
 import com.jivecake.api.filter.ClaimsFactory;
@@ -155,16 +157,17 @@ public class APIApplication extends Application<APIConfiguration> {
             datastore.save(rootOrganization);
         }
 
-        List<JWTVerifier> verifiers = new ArrayList<>(Arrays.asList(
-            new JWTVerifier(
-                new Base64(true).decode(configuration.oauth.webClientSecret),
-                configuration.oauth.webClientId
-            ),
-            new JWTVerifier(
-                new Base64(true).decode(configuration.oauth.nativeClientSecret),
-                configuration.oauth.nativeClientId
-            )
-        ));
+        List<JWTVerifier> verifiers = new ArrayList<>();
+
+        try {
+            verifiers.add(
+                JWT.require(Algorithm.HMAC256(configuration.oauth.webClientSecret))
+                .withIssuer(String.format("https://%s/", configuration.oauth.domain))
+                .build()
+            );
+        } catch (IllegalArgumentException | UnsupportedEncodingException e) {
+            e.printStackTrace();
+        }
 
         ApplicationService applicationService = new ApplicationService(application);
         OrganizationService organizationService = new OrganizationService(datastore);
@@ -206,7 +209,7 @@ public class APIApplication extends Application<APIConfiguration> {
                 bind(PathObjectValueFactoryProvider.class).to(ValueFactoryProvider.class).in(Singleton.class);
                 bind(PathObjectInjectionResolver.class).to(new org.glassfish.hk2.api.TypeLiteral<InjectionResolver<PathObject>>() {}).in(Singleton.class);
 
-                this.bindFactory(ClaimsFactory.class).to(JsonNode.class).in(RequestScoped.class);
+                this.bindFactory(ClaimsFactory.class).to(DecodedJWT.class).in(RequestScoped.class);
             }
         });
 

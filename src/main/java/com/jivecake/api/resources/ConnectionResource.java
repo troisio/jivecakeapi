@@ -17,7 +17,7 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.model.Application;
@@ -53,13 +53,13 @@ public class ConnectionResource {
         @QueryParam("user_id") Set<String> user_ids,
         @QueryParam("timeCreatedAfter") Long timeCreatedAfter,
         @QueryParam("timeCreatedBefore") Long timeCreatedBefore,
-        @Context JsonNode claims
+        @Context DecodedJWT jwt
     ) {
         ResponseBuilder builder;
         Application application = this.applicationService.read();
 
         boolean hasPermission = this.permissionService.has(
-            claims.get("sub").asText(),
+            jwt.getSubject(),
             Arrays.asList(application),
             PermissionService.READ
         );

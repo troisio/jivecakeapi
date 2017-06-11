@@ -1,11 +1,7 @@
 package com.jivecake.api.service;
 
 import java.io.IOException;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
-import java.security.SignatureException;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 
@@ -19,7 +15,8 @@ import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.Response;
 
 import com.auth0.jwt.JWTVerifier;
-import com.auth0.jwt.JWTVerifyException;
+import com.auth0.jwt.exceptions.JWTVerificationException;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jivecake.api.OAuthConfiguration;
@@ -35,14 +32,15 @@ public class Auth0Service {
         this.verifiers = verifiers;
     }
 
-    public Map<String, Object> getClaimsFromToken(String jwt) {
-        Map<String, Object> result = null;
+    public DecodedJWT getClaimsFromToken(String token) {
+        DecodedJWT result = null;
 
         for (JWTVerifier verifier: verifiers) {
             try {
-                result = verifier.verify(jwt);
+                result = verifier.verify(token);
                 break;
-            } catch (InvalidKeyException | NoSuchAlgorithmException | IllegalStateException | SignatureException | IOException | JWTVerifyException e) {
+            } catch (JWTVerificationException e) {
+                e.printStackTrace();
             }
         }
 

@@ -28,6 +28,7 @@ import javax.ws.rs.core.UriInfo;
 
 import org.glassfish.jersey.client.HttpUrlConnectorProvider;
 
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jivecake.api.OAuthConfiguration;
@@ -57,11 +58,11 @@ public class Auth0Resource {
     @Path("/api/v2/jobs/verification-email")
     @Authorized
     public void sendVerifyEmailAddress(
-        @Context JsonNode claims,
+        @Context DecodedJWT jwt,
         @Suspended AsyncResponse promise,
         UserEmailVerificationBody body
     ) {
-        String user_id = claims.get("sub").asText();
+        String user_id = jwt.getSubject();
 
         if (user_id.equals(body.user_id)) {
             boolean emailTimeViolation;
@@ -149,13 +150,18 @@ public class Auth0Resource {
     @GET
     @Path("/api/v2/users/{id}")
     @Authorized
-    public void getUser(@PathParam("id") String id, @Context UriInfo uriInfo, @Context JsonNode claims, @Suspended AsyncResponse promise) {
-        String sub = claims.get("sub").asText();
+    public void getUser(
+        @PathParam("id") String id,
+        @Context UriInfo uriInfo,
+        @Context DecodedJWT jwt,
+        @Suspended AsyncResponse promise
+    ) {
+        String sub = jwt.getSubject();
 
         if (sub.equals(id)) {
             ClientBuilder.newClient()
                 .target("https://" + this.oAuthConfiguration.domain)
-                .path("/api/v2/users/" + claims.get("sub").asText())
+                .path("/api/v2/users/" + sub)
                 .request()
                 .header("Authorization", "Bearer " + this.oAuthConfiguration.apiToken)
                 .buildGet()
@@ -179,13 +185,13 @@ public class Auth0Resource {
     @Path("/api/v2/users/{id}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
-    public void searchUsers(@PathParam("id") String id, @Context JsonNode claims, @Suspended AsyncResponse promise, String body) {
-        String sub = claims.get("sub").asText();
+    public void searchUsers(@PathParam("id") String id, @Context DecodedJWT jwt, @Suspended AsyncResponse promise, String body) {
+        String sub = jwt.getSubject();
 
         if (sub.equals(id)) {
             ClientBuilder.newClient()
                 .target("https://" + this.oAuthConfiguration.domain)
-                .path("/api/v2/users/" + claims.get("sub").asText())
+                .path("/api/v2/users/" + sub)
                 .request()
                 .header("Authorization", "Bearer " + this.oAuthConfiguration.apiToken)
                 .buildPost(Entity.json(body))
@@ -209,8 +215,8 @@ public class Auth0Resource {
     @Path("/api/v2/users/{id}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
-    public void updateUser(@PathParam("id") String id, @Context JsonNode claims, @Suspended AsyncResponse promise, Auth0UserUpdateEntity entity) {
-        String userId = claims.get("sub").asText();
+    public void updateUser(@PathParam("id") String id, @Context DecodedJWT jwt, @Suspended AsyncResponse promise, Auth0UserUpdateEntity entity) {
+        String userId = jwt.getSubject();
 
         if (userId.equals(id)) {
             ClientBuilder.newClient()
@@ -230,8 +236,8 @@ public class Auth0Resource {
                         node = null;
                     }
 
-                    String user_id = node.get("user_id").asText();
-                    boolean isNonAuth0IdentityProvider = user_id.startsWith("google") || user_id.startsWith("facebook");
+                    String userId = node.get("user_id").asText();
+                    boolean isNonAuth0IdentityProvider = userId.startsWith("google") || userId.startsWith("facebook");
 
                     if (isNonAuth0IdentityProvider) {
                         promise.resume(Response.status(Status.BAD_REQUEST).build());

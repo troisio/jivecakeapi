@@ -1,7 +1,6 @@
 package com.jivecake.api.resources;
 
 import java.util.Arrays;
-import java.util.Map;
 import java.util.Set;
 
 import javax.inject.Inject;
@@ -22,7 +21,7 @@ import org.glassfish.jersey.media.sse.EventOutput;
 import org.glassfish.jersey.media.sse.OutboundEvent;
 import org.glassfish.jersey.media.sse.SseFeature;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.model.Application;
@@ -63,7 +62,7 @@ public class NotificationsResource {
     @Authorized
     public Response sendEvent(
         @QueryParam("user_id") Set<String> userIds,
-        @Context JsonNode claims,
+        @Context DecodedJWT jwt,
         ServerSentEvent event
     ) {
         Application application = this.applicationService.read();
@@ -71,7 +70,7 @@ public class NotificationsResource {
         ResponseBuilder builder;
 
         boolean hasPermission = this.permissionService.has(
-            claims.get("sub").asText(),
+            jwt.getSubject(),
             Arrays.asList(application),
             PermissionService.WRITE
         );
@@ -115,13 +114,12 @@ public class NotificationsResource {
         if (token == null || !token.startsWith("Bearer ")) {
             builder = Response.status(Status.BAD_REQUEST);
         } else {
-            Map<String, Object> claims = this.auth0Service.getClaimsFromToken(token.substring("Bearer ".length()));
+            DecodedJWT jwt = this.auth0Service.getClaimsFromToken(token.substring("Bearer ".length()));
 
-            if (claims == null) {
+            if (jwt == null) {
                 builder = Response.status(Status.UNAUTHORIZED);
             } else {
-                String user_id = (String)claims.get("sub");
-                EventOutput output = this.clientConnectionService.getEventOutput(user_id);
+                EventOutput output = this.clientConnectionService.getEventOutput(jwt.getSubject());
                 builder = Response.ok(output);
             }
         }

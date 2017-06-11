@@ -24,7 +24,7 @@ import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.HasPermission;
@@ -33,6 +33,7 @@ import com.jivecake.api.filter.QueryRestrict;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.PaymentProfile;
 import com.jivecake.api.request.Paging;
+import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.PermissionService;
@@ -63,7 +64,7 @@ public class PaymentProfileResource {
     @Authorized
     @Path("{id}")
     @HasPermission(clazz=PaymentProfile.class, id="id", permission=PermissionService.READ)
-    public Response readPaymentProfile(@PathObject(value="id") PaymentProfile profile, @Context JsonNode claims) {
+    public Response readPaymentProfile(@PathObject(value="id") PaymentProfile profile) {
         return Response.ok(profile).type(MediaType.APPLICATION_JSON).build();
     }
 
@@ -74,7 +75,7 @@ public class PaymentProfileResource {
             .field("id").in(ids);
 
         FindOptions options = new FindOptions();
-        options.limit(100);
+        options.limit(ApplicationService.LIMIT_DEFAULT);
 
         Paging<PaymentProfile> paging = new Paging<>(query.asList(options), query.count());
         return Response.ok(paging).type(MediaType.APPLICATION_JSON).build();
@@ -89,12 +90,12 @@ public class PaymentProfileResource {
         @QueryParam("email") String email,
         @QueryParam("limit") Integer limit,
         @QueryParam("offset") Integer offset,
-        @Context JsonNode claims
+        @Context DecodedJWT jwt
     ) {
         ResponseBuilder builder;
 
         boolean hasPermission = this.permissionService.hasAllHierarchicalPermission(
-            claims.get("sub").asText(),
+            jwt.getSubject(),
             PermissionService.READ,
             organizationIds
         );
@@ -136,7 +137,7 @@ public class PaymentProfileResource {
     @Authorized
     @Path("{id}")
     @HasPermission(clazz=PaymentProfile.class, id="id", permission=PermissionService.WRITE)
-    public Response delete(@PathObject("id") PaymentProfile profile, @Context JsonNode claims) {
+    public Response delete(@PathObject("id") PaymentProfile profile) {
         ResponseBuilder builder;
 
         long count = this.datastore.createQuery(Event.class)
@@ -147,7 +148,7 @@ public class PaymentProfileResource {
             this.datastore.delete(PaymentProfile.class, profile.id);
             this.entityService.cascadeLastActivity(Arrays.asList(profile), new Date());
             this.notificationService.notify(Arrays.asList(profile), "paymentprofile.delete");
-            builder = Response.ok();
+            builder = Response.ok(profile).type(MediaType.APPLICATION_JSON);
         } else {
             Map<String, Object> entity = new HashMap<>();
             entity.put("error", "event");
