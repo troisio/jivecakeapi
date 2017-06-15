@@ -6,7 +6,10 @@ import java.util.List;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
+import javax.ws.rs.HeaderParam;
+import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
@@ -24,6 +27,7 @@ import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.model.Application;
 import com.jivecake.api.model.Request;
+import com.jivecake.api.model.UserInterfaceEvent;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.PermissionService;
@@ -106,6 +110,88 @@ public class LogResource {
             }
 
             Paging<Request> entity = new Paging<>(query.asList(options), query.count());
+            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+        } else {
+            builder = Response.status(Status.UNAUTHORIZED);
+        }
+
+        return builder.build();
+    }
+
+    @POST
+    @Path("ui")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response createUserInterfaceEvent(
+        @HeaderParam("User-Agent") String agent,
+        UserInterfaceEvent event,
+        @Context DecodedJWT jwt
+    ) {
+        event.id = null;
+        event.agent = agent;
+        event.timeCreated = new Date();
+
+        if (jwt != null) {
+            event.userId = jwt.getSubject();
+        }
+
+        this.datastore.save(event);
+        return Response.ok().build();
+    }
+
+    @GET
+    @Path("ui")
+    @Authorized
+    public Response searchUIInteractions(
+        @QueryParam("limit") Integer limit,
+        @QueryParam("offset") Integer offset,
+        @QueryParam("order") String order,
+        @QueryParam("userId") String userId,
+        @QueryParam("event") String event,
+        @QueryParam("timeCreatedLessThan") Long timeCreatedLessThan,
+        @QueryParam("timeCreatedGreaterThan") Long timeCreatedGreaterThan,
+        @Context DecodedJWT jwt
+    ) {
+        Application application = this.applicationService.read();
+
+        ResponseBuilder builder;
+
+        boolean hasPermission = this.permissionService.has(
+            jwt.getSubject(),
+            Arrays.asList(application),
+            PermissionService.READ
+        );
+
+        if (hasPermission) {
+            Query<UserInterfaceEvent> query = this.datastore.createQuery(UserInterfaceEvent.class);
+
+            if (userId != null) {
+                query.field("userId").equal(userId);
+            }
+
+            if (event != null) {
+                query.field("event").equal(event);
+            }
+
+            if (timeCreatedGreaterThan != null) {
+                query.field("timeCreated").greaterThan(new Date(timeCreatedGreaterThan));
+            }
+
+            if (timeCreatedLessThan != null) {
+                query.field("timeCreated").lessThan(new Date(timeCreatedLessThan));
+            }
+
+            if (order != null) {
+                query.order(order);
+            }
+
+            FindOptions options = new FindOptions();
+            options.limit(ApplicationService.LIMIT_DEFAULT);
+
+            if (offset != null && offset > -1) {
+                options.skip(offset);
+            }
+
+            Paging<UserInterfaceEvent> entity = new Paging<>(query.asList(options), query.count());
             builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);
