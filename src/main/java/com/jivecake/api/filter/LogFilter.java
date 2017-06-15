@@ -47,7 +47,6 @@ public class LogFilter implements ContainerRequestFilter {
         request.ip = this.request.getRemoteAddr();
         request.headers = requestContext.getHeaders();
         request.query = this.request.getParameterMap();
-        request.date = requestContext.getDate();
         request.timeCreated = new Date();
 
         if (log.body()) {

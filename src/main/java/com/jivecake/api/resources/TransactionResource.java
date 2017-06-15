@@ -293,13 +293,15 @@ public class TransactionResource {
             .filter(transaction -> !jwt.getSubject().equals(transaction.user_id))
             .count();
 
-        boolean hasPermission = this.permissionService.has(
+        boolean hasTransactionPermission = this.permissionService.has(
             jwt.getSubject(),
             transactions,
             PermissionService.READ
         );
 
-        if (!transactions.isEmpty() && (hasPermission || transactionsNotBelongingToRequester == 0)) {
+        boolean hasPermission = !transactions.isEmpty() && (hasTransactionPermission || transactionsNotBelongingToRequester == 0);
+
+        if (hasPermission) {
             if (user_ids.isEmpty()) {
                 promise.resume(Response.ok().entity(new ArrayList<>()).type(MediaType.APPLICATION_JSON).build());
             } else {

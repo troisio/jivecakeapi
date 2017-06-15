@@ -4,6 +4,7 @@ import java.util.Date;
 import java.util.List;
 
 import org.bson.types.ObjectId;
+import org.mongodb.morphia.annotations.Entity;
 import org.mongodb.morphia.annotations.Field;
 import org.mongodb.morphia.annotations.Id;
 import org.mongodb.morphia.annotations.Index;
@@ -16,6 +17,7 @@ import com.jivecake.api.serializer.ObjectIdSerializer;
 @Indexes({
     @Index(fields = @Field(value = "name", type = IndexType.TEXT))
 })
+@Entity
 public class Item {
     @Id
     @JsonSerialize(using=ObjectIdSerializer.class)
