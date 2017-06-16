@@ -2,6 +2,7 @@ package com.jivecake.api.resources;
 
 import java.io.InputStream;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,11 +37,15 @@ import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageClass;
+import com.google.cloud.storage.StorageException;
 import com.google.cloud.storage.StorageOptions;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.LimitUserRequest;
 import com.jivecake.api.filter.Log;
+import com.jivecake.api.model.AssetType;
+import com.jivecake.api.model.EntityAsset;
+import com.jivecake.api.model.EntityType;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.Permission;
 import com.jivecake.api.service.OrganizationService;
@@ -118,6 +123,7 @@ public class UserResource {
     public Response uploadSelfie(
         @PathParam("user_id") String pathUserId,
         @HeaderParam("Content-Type") String contentType,
+        @Context DecodedJWT jwt,
         InputStream stream
     ) {
         Storage storage = StorageOptions.getDefaultInstance().getService();
@@ -129,10 +135,35 @@ public class UserResource {
 
         Blob blob = storage.create(info, stream);
 
+        List<EntityAsset> assets = this.datastore.createQuery(EntityAsset.class)
+            .field("entityType").equal(EntityType.USER)
+            .field("entityId").equal(jwt.getSubject())
+            .field("assetType").equal(AssetType.GOOGLE_CLOUD_STORAGE_BLOB)
+            .asList();
+
+        for (EntityAsset asset: assets) {
+            String[] parts = asset.assetId.split("/");
+
+            try {
+                storage.delete(BlobId.of(parts[0], parts[1]));
+            } catch (StorageException e) {
+                e.printStackTrace();
+            }
+        }
+
         Map<String, Object> entity = new HashMap<>();
         entity.put("bucket", blob.getBucket());
         entity.put("name", blob.getName());
 
-        return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
+        EntityAsset asset = new EntityAsset();
+        asset.entityType = EntityType.USER;
+        asset.entityId = jwt.getSubject();
+        asset.assetId = String.format("%s/%s", blob.getBucket(), blob.getName());
+        asset.assetType = AssetType.GOOGLE_CLOUD_STORAGE_BLOB;
+        asset.timeCreated = new Date();
+
+        this.datastore.save(asset);
+
+        return Response.ok(asset).type(MediaType.APPLICATION_JSON).build();
     }
 }

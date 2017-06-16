@@ -75,7 +75,7 @@ public class Transaction {
         this.parentTransactionId = transaction.parentTransactionId;
         this.organizationId = transaction.organizationId;
         this.eventId = transaction.eventId;
-        this.itemId = transaction.eventId;
+        this.itemId = transaction.itemId;
         this.user_id = transaction.user_id;
         this.linkedId = transaction.linkedId;
         this.linkedObjectClass = transaction.linkedObjectClass;

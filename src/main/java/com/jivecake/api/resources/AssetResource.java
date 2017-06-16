@@ -51,9 +51,7 @@ public class AssetResource {
         if (hasPermission) {
             Query<EntityAsset> query = this.datastore.createQuery(EntityAsset.class);
 
-            if (entityType != null) {
-                query.field("entityType").equal(EntityType.USER);
-            }
+            query.field("entityType").equal(EntityType.USER);
 
             if (entityId != null) {
                 query.field("entityId").equal(entityId);

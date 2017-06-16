@@ -24,7 +24,6 @@ public class AuthorizedFilter implements ContainerRequestFilter {
 
     @Override
     public void filter(ContainerRequestContext context) {
-        Date date = new Date();
         String header = context.getHeaderString("Authorization");
 
         Response aborted = null;
@@ -50,7 +49,7 @@ public class AuthorizedFilter implements ContainerRequestFilter {
             } else {
                 Date exp = decoded.getExpiresAt();
 
-                if (date.after(exp)) {
+                if (new Date().after(exp)) {
                     aborted = Response.status(Status.BAD_REQUEST)
                         .type(MediaType.APPLICATION_JSON)
                         .entity("{\"error\": \"invalid_grant\", \"error_description\": \"exp\"}")
