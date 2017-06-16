@@ -119,7 +119,7 @@ public class UserResource {
     @Path("{user_id}/selfie")
     @Log(body = false)
     @Authorized
-    @LimitUserRequest(count=2, per=1000 * 60)
+    @LimitUserRequest(count=5, per=1000 * 60)
     public Response uploadSelfie(
         @PathParam("user_id") String pathUserId,
         @HeaderParam("Content-Type") String contentType,

@@ -66,7 +66,12 @@ public class AssetResource {
             }
 
             FindOptions options = new FindOptions();
-            options.limit(ApplicationService.LIMIT_DEFAULT);
+
+            if (limit != null && limit > -1 && limit <= ApplicationService.LIMIT_DEFAULT) {
+                options.limit(limit);
+            } else {
+                options.limit(ApplicationService.LIMIT_DEFAULT);
+            }
 
             if (skip != null && skip > -1) {
                 options.skip(skip);
