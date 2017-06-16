@@ -149,6 +149,8 @@ public class UserResource {
             } catch (StorageException e) {
                 e.printStackTrace();
             }
+
+            this.datastore.delete(asset);
         }
 
         Map<String, Object> entity = new HashMap<>();
