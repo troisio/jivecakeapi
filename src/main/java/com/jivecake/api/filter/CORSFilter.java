@@ -1,6 +1,5 @@
 package com.jivecake.api.filter;
 
-import java.util.Arrays;
 import java.util.List;
 
 import javax.ws.rs.container.ContainerRequestContext;
@@ -10,11 +9,11 @@ import javax.ws.rs.core.MultivaluedMap;
 
 @CORS
 public class CORSFilter implements ContainerResponseFilter {
-    private static final List<String> allowedOrigins = Arrays.asList(
-        "http://127.0.0.1",
-        "https://jivecake.com",
-        "http://jivecake.com"
-    );
+    private final List<String> allowedOrigins;
+
+    public CORSFilter(List<String> allowedOrigins) {
+        this.allowedOrigins = allowedOrigins;
+    }
 
     @Override
     public void filter(ContainerRequestContext context, ContainerResponseContext response) {
@@ -22,7 +21,7 @@ public class CORSFilter implements ContainerResponseFilter {
 
         String origin = context.getHeaderString("Origin");
 
-        if (CORSFilter.allowedOrigins.contains(origin)) {
+        if (this.allowedOrigins.contains(origin)) {
             headers.remove("Access-Control-Allow-Origin");
             headers.add("Access-Control-Allow-Origin", origin);
         }

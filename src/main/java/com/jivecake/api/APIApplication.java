@@ -58,6 +58,7 @@ import com.jivecake.api.resources.UserResource;
 import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.ClientConnectionService;
+import com.jivecake.api.service.CloudStorageService;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.HttpService;
@@ -79,7 +80,6 @@ import io.dropwizard.setup.Environment;
 public class APIApplication extends Application<APIConfiguration> {
     private final List<Class<?>> filters = Arrays.asList(
         AuthorizedFilter.class,
-        CORSFilter.class,
         HasPermissionFilter.class,
         LimitUserRequestFilter.class,
         LogFilter.class,
@@ -91,6 +91,7 @@ public class APIApplication extends Application<APIConfiguration> {
     private final List<Class<?>> resources = Arrays.asList(
         Auth0Resource.class,
         AssetResource.class,
+        CloudStorageService.class,
         ConnectionResource.class,
         EventResource.class,
         ItemResource.class,
@@ -198,6 +199,7 @@ public class APIApplication extends Application<APIConfiguration> {
                 this.bind(datastore).to(Datastore.class);
                 this.bind(configuration.oauth).to(OAuthConfiguration.class);
                 this.bind(configuration.stripe).to(StripeConfiguration.class);
+                this.bind(configuration).to(APIConfiguration.class);
 
                 for (Class<?> clazz: APIApplication.this.services) {
                     this.bind(clazz).to(clazz).in(Singleton.class);
@@ -220,6 +222,8 @@ public class APIApplication extends Application<APIConfiguration> {
         for (Class<? extends Object> clazz : registerClasses) {
             jersey.register(clazz);
         }
+
+        jersey.register(new CORSFilter(configuration.corsOrigins));
     }
 
     private void establishRootUsers(

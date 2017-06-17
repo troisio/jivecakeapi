@@ -9,8 +9,16 @@ oauth:
   domain: "default"
   apiToken: "default"
 
+stripe:
+  secretKey: "default"
+  publishableKey: "default"
+
 databases:
   - mongo:27017
+
+corsOrigins:
+  - https://jivecake.com
+  - http://jivecake.com
 
 server:
   gzip:
