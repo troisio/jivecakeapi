@@ -26,5 +26,6 @@ public class UserInterfaceEvent {
     public String agent;
     public String event;
     public Map<String, Object> parameters;
+    public String ip;
     public Date timeCreated;
 }

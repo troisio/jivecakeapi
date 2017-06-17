@@ -6,6 +6,7 @@ import java.util.List;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
 import javax.ws.rs.HeaderParam;
@@ -123,11 +124,13 @@ public class LogResource {
     @Consumes(MediaType.APPLICATION_JSON)
     public Response createUserInterfaceEvent(
         @HeaderParam("User-Agent") String agent,
-        UserInterfaceEvent event,
-        @Context DecodedJWT jwt
+        @Context HttpServletRequest request,
+        @Context DecodedJWT jwt,
+        UserInterfaceEvent event
     ) {
         event.id = null;
         event.agent = agent;
+        event.ip = request.getRemoteAddr();
         event.timeCreated = new Date();
 
         if (jwt != null) {
@@ -144,6 +147,7 @@ public class LogResource {
     public Response searchUIInteractions(
         @QueryParam("limit") Integer limit,
         @QueryParam("offset") Integer offset,
+        @QueryParam("ip") String ip,
         @QueryParam("order") String order,
         @QueryParam("userId") String userId,
         @QueryParam("event") String event,
@@ -170,6 +174,10 @@ public class LogResource {
 
             if (event != null) {
                 query.field("event").equal(event);
+            }
+
+            if (ip != null) {
+                query.field("ip").equal(ip);
             }
 
             if (timeCreatedGreaterThan != null) {

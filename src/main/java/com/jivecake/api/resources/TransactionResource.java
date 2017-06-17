@@ -40,6 +40,8 @@ import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.filter.QueryRestrict;
+import com.jivecake.api.model.EntityAsset;
+import com.jivecake.api.model.EntityType;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.Auth0Service;
@@ -261,16 +263,57 @@ public class TransactionResource {
 
         FindOptions options = new FindOptions();
 
-        if (limit != null) {
+        if (limit != null && limit > -1) {
             options.limit(limit);
         }
 
-        if (skip != null) {
+        if (skip != null && skip > -1) {
             options.skip(skip);
         }
 
         Paging<Transaction> entity = new Paging<>(query.asList(options), query.count());
         return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    @GET
+    @Path("asset/user")
+    @Authorized
+    public Response searchAssets(
+        @QueryParam("id") List<ObjectId> transactionIds,
+        @QueryParam("assetType") int assetType,
+        @Context DecodedJWT jwt
+    ) {
+        List<Transaction> transactions = this.datastore.createQuery(Transaction.class)
+            .field("id").in(transactionIds)
+            .field("user_id").exists()
+            .asList();
+
+        boolean hasPermission = this.permissionService.has(
+            jwt.getSubject(),
+            transactions,
+            PermissionService.READ
+        );
+
+        ResponseBuilder builder;
+
+        if (hasPermission) {
+            Set<String> userIds = transactions
+                .stream()
+                .map(transaction -> transaction.user_id)
+                .collect(Collectors.toSet());
+
+            List<EntityAsset> assets = this.datastore.createQuery(EntityAsset.class)
+                .field("entityId").in(userIds)
+                .field("entityType").equal(EntityType.USER)
+                .field("assetType").equal(assetType)
+                .asList();
+
+            builder = Response.ok(assets).type(MediaType.APPLICATION_JSON);
+        } else {
+            builder = Response.status(Status.UNAUTHORIZED);
+        }
+
+        return builder.build();
     }
 
     @GET
@@ -299,7 +342,8 @@ public class TransactionResource {
             PermissionService.READ
         );
 
-        boolean hasPermission = !transactions.isEmpty() && (hasTransactionPermission || transactionsNotBelongingToRequester == 0);
+        boolean hasPermission = !transactions.isEmpty() &&
+            (hasTransactionPermission || transactionsNotBelongingToRequester == 0);
 
         if (hasPermission) {
             if (user_ids.isEmpty()) {
