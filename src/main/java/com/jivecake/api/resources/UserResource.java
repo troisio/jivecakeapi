@@ -1,5 +1,6 @@
 package com.jivecake.api.resources;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
 import java.util.Date;
@@ -39,6 +40,9 @@ import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageClass;
 import com.google.cloud.storage.StorageException;
 import com.google.cloud.storage.StorageOptions;
+import com.google.cloud.vision.v1.AnnotateImageResponse;
+import com.google.cloud.vision.v1.FaceAnnotation;
+import com.google.cloud.vision.v1.Feature.Type;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.LimitUserRequest;
@@ -48,6 +52,7 @@ import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.EntityType;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.Permission;
+import com.jivecake.api.service.GoogleCloudPlatformService;
 import com.jivecake.api.service.OrganizationService;
 
 @CORS
@@ -56,14 +61,17 @@ import com.jivecake.api.service.OrganizationService;
 public class UserResource {
     private final Datastore datastore;
     private final OrganizationService organizationService;
+    private final GoogleCloudPlatformService googleCloudPlatformService;
 
     @Inject
     public UserResource(
         Datastore datastore,
-        OrganizationService organizationService
+        OrganizationService organizationService,
+        GoogleCloudPlatformService googleCloudPlatformService
     ) {
         this.datastore = datastore;
         this.organizationService = organizationService;
+        this.googleCloudPlatformService = googleCloudPlatformService;
     }
 
     @GET
@@ -127,7 +135,8 @@ public class UserResource {
         InputStream stream
     ) {
         Storage storage = StorageOptions.getDefaultInstance().getService();
-        BlobInfo info = BlobInfo.newBuilder(BlobId.of("jivecake", UUID.randomUUID().toString()))
+        String name = UUID.randomUUID().toString();
+        BlobInfo info = BlobInfo.newBuilder(BlobId.of("jivecake", name))
             .setContentType(contentType)
             .setAcl(Arrays.asList(Acl.of(User.ofAllUsers(), Role.READER)))
             .setStorageClass(StorageClass.REGIONAL)
@@ -135,37 +144,93 @@ public class UserResource {
 
         Blob blob = storage.create(info, stream);
 
-        List<EntityAsset> assets = this.datastore.createQuery(EntityAsset.class)
-            .field("entityType").equal(EntityType.USER)
-            .field("entityId").equal(jwt.getSubject())
-            .field("assetType").equal(AssetType.GOOGLE_CLOUD_STORAGE_BLOB)
-            .asList();
+        IOException exception = null;
+        List<AnnotateImageResponse> responses = null;
 
-        for (EntityAsset asset: assets) {
-            String[] parts = asset.assetId.split("/");
-
-            try {
-                storage.delete(BlobId.of(parts[0], parts[1]));
-            } catch (StorageException e) {
-                e.printStackTrace();
-            }
-
-            this.datastore.delete(asset);
+        try {
+            responses = this.googleCloudPlatformService.getAnnotations(
+                Type.FACE_DETECTION,
+                String.format("gs://jivecake/%s", name)
+            );
+            exception = null;
+        } catch (IOException e) {
+            exception = e;
         }
 
-        Map<String, Object> entity = new HashMap<>();
-        entity.put("bucket", blob.getBucket());
-        entity.put("name", blob.getName());
+        ResponseBuilder builder;
 
-        EntityAsset asset = new EntityAsset();
-        asset.entityType = EntityType.USER;
-        asset.entityId = jwt.getSubject();
-        asset.assetId = String.format("%s/%s", blob.getBucket(), blob.getName());
-        asset.assetType = AssetType.GOOGLE_CLOUD_STORAGE_BLOB;
-        asset.timeCreated = new Date();
+        if (exception == null) {
+            boolean detectsOneFace = false;
 
-        this.datastore.save(asset);
+            AnnotateImageResponse response = responses.get(0);
+            List<FaceAnnotation> annotations = response.getFaceAnnotationsList();
 
-        return Response.ok(asset).type(MediaType.APPLICATION_JSON).build();
+            if (annotations.size() ==1) {
+                FaceAnnotation annotation = annotations.get(0);
+                detectsOneFace = annotation.getDetectionConfidence() > 0.9;
+            }
+
+            if (detectsOneFace) {
+                List<EntityAsset> assets = this.datastore.createQuery(EntityAsset.class)
+                    .field("entityType").equal(EntityType.USER)
+                    .field("entityId").equal(jwt.getSubject())
+                    .field("assetType").equal(AssetType.GOOGLE_CLOUD_STORAGE_BLOB_FACE)
+                    .asList();
+
+                for (EntityAsset asset: assets) {
+                    String[] parts = asset.assetId.split("/");
+
+                    try {
+                        storage.delete(BlobId.of(parts[0], parts[1]));
+                    } catch (StorageException e) {
+                        e.printStackTrace();
+                    }
+
+                    this.datastore.delete(asset);
+                }
+
+                Map<String, Object> entity = new HashMap<>();
+                entity.put("bucket", blob.getBucket());
+                entity.put("name", blob.getName());
+
+                EntityAsset asset = new EntityAsset();
+                asset.entityType = EntityType.USER;
+                asset.entityId = jwt.getSubject();
+                asset.assetId = String.format("%s/%s", blob.getBucket(), blob.getName());
+                asset.assetType = AssetType.GOOGLE_CLOUD_STORAGE_BLOB_FACE;
+                asset.timeCreated = new Date();
+
+                this.datastore.save(asset);
+
+                builder = Response.ok(asset).type(MediaType.APPLICATION_JSON);
+            } else {
+                try {
+                    storage.delete(BlobId.of("jivecake", name));
+                } catch (StorageException e) {
+                    e.printStackTrace();
+                }
+
+                Map<String, Object> entity = new HashMap<>();
+                entity.put("error", "face");
+
+                Map<String, Object> data = new HashMap<>();
+                data.put("annotationsCount", annotations.size());
+
+                if (annotations.size() == 1) {
+                    FaceAnnotation annotation = annotations.get(0);
+                    data.put("confidence", annotation.getDetectionConfidence());
+                }
+
+                entity.put("data", data);
+
+                builder = Response.status(Status.BAD_REQUEST)
+                    .entity(entity)
+                    .type(MediaType.APPLICATION_JSON);
+            }
+        } else {
+            builder = Response.status(Status.SERVICE_UNAVAILABLE);
+        }
+
+        return builder.build();
     }
 }

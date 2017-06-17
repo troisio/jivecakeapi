@@ -58,9 +58,9 @@ import com.jivecake.api.resources.UserResource;
 import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.ClientConnectionService;
-import com.jivecake.api.service.CloudStorageService;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
+import com.jivecake.api.service.GoogleCloudPlatformService;
 import com.jivecake.api.service.HttpService;
 import com.jivecake.api.service.ItemService;
 import com.jivecake.api.service.NotificationService;
@@ -91,7 +91,6 @@ public class APIApplication extends Application<APIConfiguration> {
     private final List<Class<?>> resources = Arrays.asList(
         Auth0Resource.class,
         AssetResource.class,
-        CloudStorageService.class,
         ConnectionResource.class,
         EventResource.class,
         ItemResource.class,
@@ -113,6 +112,7 @@ public class APIApplication extends Application<APIConfiguration> {
         ClientConnectionService.class,
         EntityService.class,
         EventService.class,
+        GoogleCloudPlatformService.class,
         HttpService.class,
         ItemService.class,
         NotificationService.class,
