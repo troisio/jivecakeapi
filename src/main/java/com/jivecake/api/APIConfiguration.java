@@ -9,4 +9,5 @@ public class APIConfiguration extends Configuration {
     public OAuthConfiguration oauth;
     public List<String> rootOAuthIds;
     public StripeConfiguration stripe;
+    public List<String> corsOrigins;
 }
