@@ -1,5 +1,6 @@
 package com.jivecake.api.resources;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Set;
@@ -116,7 +117,7 @@ public class PermissionResource {
             List<Permission> permissions = query.asList();
 
             this.datastore.delete(query);
-            this.notificationService.notifyPermissionDelete(permissions);
+            this.notificationService.notify(new ArrayList<>(permissions), "permission.delete");
 
             List<Organization> organizations = this.datastore.get(Organization.class, objectIds)
                 .asList();

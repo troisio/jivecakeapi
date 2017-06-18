@@ -13,6 +13,13 @@ stripe:
   secretKey: "default"
   publishableKey: "default"
 
+gcp:
+  bucket: "default"
+
+stripe:
+  secretKey: "default"
+  publishableKey: "default"
+
 databases:
   - mongo:27017
 

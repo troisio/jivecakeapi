@@ -1,9 +1,11 @@
 package com.jivecake.api.service;
 
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -13,6 +15,8 @@ import javax.ws.rs.core.MediaType;
 import org.bson.types.ObjectId;
 import org.glassfish.jersey.media.sse.OutboundEvent;
 
+import com.jivecake.api.model.EntityAsset;
+import com.jivecake.api.model.EntityType;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.EventBroadcaster;
 import com.jivecake.api.model.Item;
@@ -37,102 +41,112 @@ public class NotificationService {
         this.permissionService = permissionService;
     }
 
-    public void sendEvent(Set<String> userIds, OutboundEvent chunk) {
-        for (String userId: userIds) {
-            if (this.clientConnectionService.broadcasters.containsKey(userId)) {
-                EventBroadcaster eventBroadcaster = this.clientConnectionService.broadcasters.get(userId);
-                eventBroadcaster.broadcaster.broadcast(chunk);
-            }
+    public void sendEvent(String userId, OutboundEvent chunk) {
+        if (this.clientConnectionService.broadcasters.containsKey(userId)) {
+            EventBroadcaster eventBroadcaster = this.clientConnectionService.broadcasters.get(userId);
+            eventBroadcaster.broadcaster.broadcast(chunk);
         }
     }
 
-    /*
-     * The logic below is naive and not correct.
-     * This method will execute correctly only when (after population) organizationIds.size() == 1
-     * Otherwise we may be sending the entire entities collection to users who may not
-     * have permission to view them
-     *
-     * Currently, this method is called in no place where that can happen but it ought to
-     * be rewritten so that items are seperated into collections by {entity}.organizationId
-     * so they can be sent to the correct places
-     * */
     public void notify(Collection<Object> entities, String name) {
-        Set<ObjectId> organizationIds = new HashSet<>();
+        Map<ObjectId, List<Object>> organizationToEntities = new HashMap<>();
+        Map<String, List<Object>> userToEntities = new HashMap<>();
 
         for (Object entity: entities) {
+            ObjectId organizationId = null;
+            String userId = null;
+
             if (entity instanceof Item) {
-                organizationIds.add(((Item)entity).organizationId);
+                organizationId = ((Item)entity).organizationId;
             } else if (entity instanceof Event) {
-                organizationIds.add(((Event)entity).organizationId);
+                organizationId = ((Event)entity).organizationId;
             } else if (entity instanceof Permission) {
                 Permission permission = (Permission)entity;
 
+                userId = permission.user_id;
+
                 if (permission.objectClass.equals(this.organizationService.getPermissionObjectClass())) {
-                    organizationIds.add(permission.objectId);
+                    organizationId = permission.objectId;
                 } else {
                     throw new IllegalArgumentException(entity + " is not a valid class for notification");
                 }
             } else if (entity instanceof Organization) {
-                organizationIds.add(((Organization)entity).id);
+                organizationId = ((Organization)entity).id;
             } else if (entity instanceof PaymentProfile) {
-                organizationIds.add(((PaymentProfile)entity).organizationId);
+                organizationId = ((PaymentProfile)entity).organizationId;
             } else if (entity instanceof Transaction) {
-                organizationIds.add(((Transaction)entity).organizationId);
+                Transaction transaction = (Transaction)entity;
+                organizationId = transaction.organizationId;
+                userId = transaction.user_id;
+            } else if (entity instanceof EntityAsset) {
+                EntityAsset asset = (EntityAsset)entity;
+
+                if (asset.entityType == EntityType.USER) {
+                    userId = asset.entityId;
+                } else if (asset.entityType == EntityType.ORGANIZATION) {
+                    organizationId = new ObjectId(asset.entityId);
+                } else {
+                    throw new IllegalArgumentException(entity + " is not a valid class for notification");
+                }
             } else {
                 throw new IllegalArgumentException(entity + " is not a valid class for notification");
             }
+
+            if (organizationId != null) {
+                if (!organizationToEntities.containsKey(organizationId)) {
+                    organizationToEntities.put(organizationId, new ArrayList<>());
+                }
+
+                organizationToEntities.get(organizationId).add(entity);
+            }
+
+            if (userId != null) {
+                if (!userToEntities.containsKey(userId)) {
+                    userToEntities.put(userId, new ArrayList<>());
+                }
+
+                userToEntities.get(userId).add(entity);
+            }
         }
 
-        List<Permission> permissions = this.permissionService.getQueryWithPermission(PermissionService.READ)
+        Map<ObjectId, List<Permission>> permissions = this.permissionService.getQueryWithPermission(PermissionService.READ)
             .field("objectClass").equal(this.organizationService.getPermissionObjectClass())
-            .field("objectId").in(organizationIds)
-            .asList();
+            .field("objectId").in(organizationToEntities.keySet())
+            .asList()
+            .stream()
+            .collect(Collectors.groupingBy(permission -> permission.objectId));
 
-        permissions.forEach(permission -> {
+        Map<String, Set<Object>> userToObjects = new HashMap<>();
+
+        organizationToEntities.forEach((organizationId, objects) -> {
+            permissions.get(organizationId)
+                .stream()
+                .map(permission -> permission.user_id)
+                .forEach(userId -> {
+                    if (!userToObjects.containsKey(userId)) {
+                        userToObjects.put(userId, new HashSet<>());
+                    }
+
+                    userToObjects.get(userId).addAll(objects);
+                });
+        });
+
+        userToEntities.forEach((userId, objects) -> {
+            if (!userToObjects.containsKey(userId)) {
+                userToObjects.put(userId, new HashSet<>());
+            }
+
+            userToObjects.get(userId).addAll(objects);
+        });
+
+        userToObjects.forEach((userId, objects) -> {
             OutboundEvent chunk = new OutboundEvent.Builder()
                 .mediaType(MediaType.APPLICATION_JSON_TYPE)
                 .name(name)
-                .data(entities)
+                .data(objects)
                 .build();
 
-            Set<String> userIds = new HashSet<>();
-            userIds.add(permission.user_id);
-
-            this.sendEvent(userIds, chunk);
+            this.sendEvent(userId, chunk);
         });
-    }
-
-    public void notifyPermissionWrite(Collection<Permission> permissions) {
-        permissions.stream()
-            .collect(
-                Collectors.groupingBy(
-                    permission -> permission.user_id
-                )
-            ).forEach((userId, entity) -> {
-                OutboundEvent chunk = new OutboundEvent.Builder()
-                    .mediaType(MediaType.APPLICATION_JSON_TYPE)
-                    .name("permission.write")
-                    .data(entity)
-                    .build();
-
-                this.sendEvent(new HashSet<>(Arrays.asList(userId)), chunk);
-            });
-    }
-
-    public void notifyPermissionDelete(Collection<Permission> permissions) {
-        permissions.stream()
-            .collect(
-                Collectors.groupingBy(
-                    permission -> permission.user_id
-                )
-            ).forEach((userId, entity) -> {
-                OutboundEvent chunk = new OutboundEvent.Builder()
-                    .mediaType(MediaType.APPLICATION_JSON_TYPE)
-                    .name("permission.delete")
-                    .data(entity)
-                    .build();
-
-                this.sendEvent(new HashSet<>(Arrays.asList(userId)), chunk);
-            });
     }
 }

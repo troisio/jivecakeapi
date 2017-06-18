@@ -106,7 +106,7 @@ public class OrganizationResource {
         }
 
         this.permissionService.write(permissions);
-        this.notificationService.notifyPermissionWrite(permissions);
+        this.notificationService.notify(new ArrayList<>(permissions), "permission.write");
         this.entityService.cascadeLastActivity(Arrays.asList(organization), currentTime);
 
         List<Permission> entity = this.datastore.createQuery(Permission.class)
@@ -128,26 +128,34 @@ public class OrganizationResource {
     ) {
         ResponseBuilder builder;
 
-        long profileCount = this.datastore.createQuery(PaymentProfile.class)
-            .field("organizationId").equal(organization.id)
-            .count();
+        boolean validProfile = profile.name != null &&
+            profile.email != null &&
+            profile.email.contains("@");
 
-        if (profileCount > 50) {
-            builder = Response.status(Status.BAD_REQUEST)
-                .entity("{\"error\": \"limit\"}")
-                .type(MediaType.APPLICATION_JSON);
+        if (validProfile) {
+            long profileCount = this.datastore.createQuery(PaymentProfile.class)
+                .field("organizationId").equal(organization.id)
+                .count();
+
+            if (profileCount > 50) {
+                builder = Response.status(Status.BAD_REQUEST)
+                    .entity("{\"error\": \"limit\"}")
+                    .type(MediaType.APPLICATION_JSON);
+            } else {
+                Date currentTime = new Date();
+
+                profile.organizationId = organization.id;
+                profile.timeCreated = currentTime;
+
+                Key<PaymentProfile> key = this.datastore.save(profile);
+                this.entityService.cascadeLastActivity(Arrays.asList(profile), currentTime);
+                this.notificationService.notify(Arrays.asList(profile), "paymentprofile.create");
+
+                PaymentProfile entity = this.datastore.get(PaymentProfile.class, key.getId());
+                builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+            }
         } else {
-            Date currentTime = new Date();
-
-            profile.organizationId = organization.id;
-            profile.timeCreated = currentTime;
-
-            Key<PaymentProfile> key = this.datastore.save(profile);
-            this.entityService.cascadeLastActivity(Arrays.asList(profile), currentTime);
-            this.notificationService.notify(Arrays.asList(profile), "paymentprofile.create");
-
-            PaymentProfile entity = this.datastore.get(PaymentProfile.class, key.getId());
-            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+            builder = Response.status(Status.BAD_REQUEST);
         }
 
         return builder.build();
