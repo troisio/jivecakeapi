@@ -16,7 +16,6 @@ import com.google.cloud.storage.Cors;
 import com.google.cloud.storage.Cors.Origin;
 import com.google.cloud.storage.HttpMethod;
 import com.google.cloud.storage.Storage;
-import com.google.cloud.storage.StorageOptions;
 import com.google.cloud.vision.v1.AnnotateImageRequest;
 import com.google.cloud.vision.v1.AnnotateImageResponse;
 import com.google.cloud.vision.v1.BatchAnnotateImagesResponse;
@@ -35,7 +34,7 @@ public class GoogleCloudPlatformService {
         this.configuration = configuration;
     }
 
-    public Bucket corsEnableBucket(String bucket) {
+    public Bucket corsEnableBucket(Storage storage, String bucket) {
         List<Origin> origins = this.configuration.corsOrigins
             .stream()
             .map(origin -> Origin.of(origin))
@@ -50,8 +49,6 @@ public class GoogleCloudPlatformService {
             .setResponseHeaders(headers)
             .setMethods(methods)
             .build();
-
-        Storage storage = StorageOptions.getDefaultInstance().getService();
 
         BucketInfo info = BucketInfo.newBuilder(bucket)
             .setCors(Arrays.asList(cors))

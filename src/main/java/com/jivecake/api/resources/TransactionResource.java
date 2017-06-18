@@ -534,15 +534,17 @@ public class TransactionResource {
     public Response delete(@PathObject("id") Transaction transaction) {
         ResponseBuilder builder;
 
+        boolean isUserRevoked = transaction.status == TransactionService.USER_REVOKED;
         boolean isVendorTransaction = this.transactionService.isVendorTransaction(transaction);
         boolean hasChildTransaction = this.datastore.createQuery(Transaction.class)
             .field("parentTransactionId").equal(transaction.id)
             .count() > 0;
 
-        if (isVendorTransaction || hasChildTransaction) {
+        if ((isVendorTransaction && !isUserRevoked) || hasChildTransaction) {
             builder = Response.status(Status.BAD_REQUEST);
         } else {
             this.datastore.delete(Transaction.class, transaction.id);
+            this.notificationService.notify(Arrays.asList(transaction), "transaction.delete");
 
             Transaction parentTransaction = this.datastore.get(Transaction.class, transaction.parentTransactionId);
 
@@ -552,12 +554,12 @@ public class TransactionResource {
             if (parentTransaction != null) {
                 parentTransaction.leaf = true;
                 this.datastore.save(parentTransaction);
+                this.notificationService.notify(Arrays.asList(parentTransaction), "transaction.update");
 
                 transactions.add(parentTransaction);
             }
 
             this.entityService.cascadeLastActivity(transactions, new Date());
-            this.notificationService.notify(transactions, "transaction.delete");
             builder = Response.ok(transaction).type(MediaType.APPLICATION_JSON);
         }
 

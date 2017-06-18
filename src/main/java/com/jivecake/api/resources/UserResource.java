@@ -43,6 +43,7 @@ import com.google.cloud.storage.StorageOptions;
 import com.google.cloud.vision.v1.AnnotateImageResponse;
 import com.google.cloud.vision.v1.FaceAnnotation;
 import com.google.cloud.vision.v1.Feature.Type;
+import com.jivecake.api.APIConfiguration;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.LimitUserRequest;
@@ -62,16 +63,19 @@ public class UserResource {
     private final Datastore datastore;
     private final OrganizationService organizationService;
     private final GoogleCloudPlatformService googleCloudPlatformService;
+    private final APIConfiguration configuration;
 
     @Inject
     public UserResource(
         Datastore datastore,
         OrganizationService organizationService,
-        GoogleCloudPlatformService googleCloudPlatformService
+        GoogleCloudPlatformService googleCloudPlatformService,
+        APIConfiguration configuration
     ) {
         this.datastore = datastore;
         this.organizationService = organizationService;
         this.googleCloudPlatformService = googleCloudPlatformService;
+        this.configuration = configuration;
     }
 
     @GET
@@ -136,7 +140,7 @@ public class UserResource {
     ) {
         Storage storage = StorageOptions.getDefaultInstance().getService();
         String name = UUID.randomUUID().toString();
-        BlobInfo info = BlobInfo.newBuilder(BlobId.of("jivecake", name))
+        BlobInfo info = BlobInfo.newBuilder(BlobId.of(this.configuration.gcp.bucket, name))
             .setContentType(contentType)
             .setAcl(Arrays.asList(Acl.of(User.ofAllUsers(), Role.READER)))
             .setStorageClass(StorageClass.REGIONAL)
@@ -150,7 +154,7 @@ public class UserResource {
         try {
             responses = this.googleCloudPlatformService.getAnnotations(
                 Type.FACE_DETECTION,
-                String.format("gs://jivecake/%s", name)
+                String.format("gs://%s/%s", this.configuration.gcp.bucket, name)
             );
             exception = null;
         } catch (IOException e) {
@@ -205,7 +209,7 @@ public class UserResource {
                 builder = Response.ok(asset).type(MediaType.APPLICATION_JSON);
             } else {
                 try {
-                    storage.delete(BlobId.of("jivecake", name));
+                    storage.delete(BlobId.of(this.configuration.gcp.bucket, name));
                 } catch (StorageException e) {
                     e.printStackTrace();
                 }
