@@ -48,19 +48,13 @@ public class ItemService {
         TransactionService transactionService,
         Date currentTime
     ) {
-        List<Transaction> transactions = this.datastore.createQuery(Transaction.class)
+        List<Transaction> leafTransactions = this.datastore.createQuery(Transaction.class)
             .field("eventId").equal(event.id)
+            .field("leaf").equal(true)
             .asList();
         List<Item> items = this.datastore.createQuery(Item.class)
             .field("eventId").equal(event.id)
             .asList();
-
-        List<List<Transaction>> forest = transactionService.getTransactionForest(transactions);
-
-        List<Transaction> leafTransactions = forest.stream()
-            .filter(lineage -> lineage.size() == 1)
-            .map(lineage -> lineage.get(0))
-            .collect(Collectors.toList());
 
         Map<ObjectId, List<Transaction>> itemToTransactions = items.stream()
             .collect(Collectors.toMap(item -> item.id, item -> new ArrayList<>()));

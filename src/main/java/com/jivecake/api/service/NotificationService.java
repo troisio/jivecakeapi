@@ -83,6 +83,10 @@ public class NotificationService {
 
                 if (asset.entityType == EntityType.USER) {
                     userId = asset.entityId;
+                    /*
+                     * Additionally, we ought to figure out how to notify an organization with
+                     * an active Event which has a transaction associated with with this user
+                     */
                 } else if (asset.entityType == EntityType.ORGANIZATION) {
                     organizationId = new ObjectId(asset.entityId);
                 } else {

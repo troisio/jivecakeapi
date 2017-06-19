@@ -30,6 +30,7 @@ import org.mongodb.morphia.query.Query;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
+import com.jivecake.api.filter.GZip;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Event;
@@ -85,6 +86,7 @@ public class EventResource {
     }
 
     @GET
+    @GZip
     @Path("/{eventId}/aggregated")
     public Response getAggregatedItemData(@PathObject("eventId") Event event, @Context DecodedJWT jwt) {
         ResponseBuilder builder;

@@ -54,6 +54,7 @@ import com.jivecake.api.model.EntityType;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.Permission;
 import com.jivecake.api.service.GoogleCloudPlatformService;
+import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.OrganizationService;
 
 @CORS
@@ -63,6 +64,7 @@ public class UserResource {
     private final Datastore datastore;
     private final OrganizationService organizationService;
     private final GoogleCloudPlatformService googleCloudPlatformService;
+    private final NotificationService notificationService;
     private final APIConfiguration configuration;
 
     @Inject
@@ -70,11 +72,13 @@ public class UserResource {
         Datastore datastore,
         OrganizationService organizationService,
         GoogleCloudPlatformService googleCloudPlatformService,
+        NotificationService notificationService,
         APIConfiguration configuration
     ) {
         this.datastore = datastore;
         this.organizationService = organizationService;
         this.googleCloudPlatformService = googleCloudPlatformService;
+        this.notificationService = notificationService;
         this.configuration = configuration;
     }
 
@@ -205,6 +209,7 @@ public class UserResource {
                 asset.timeCreated = new Date();
 
                 this.datastore.save(asset);
+                this.notificationService.notify(Arrays.asList(asset), "asset.create");
 
                 builder = Response.ok(asset).type(MediaType.APPLICATION_JSON);
             } else {

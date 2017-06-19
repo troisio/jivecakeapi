@@ -8,7 +8,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -102,19 +101,22 @@ public class TransactionService {
     }
 
     public List<Transaction> getTransactionsForItemTotal(ObjectId itemId) {
-        List<Transaction> transactions = this.datastore.createQuery(Transaction.class)
+        Query<Transaction> query = this.datastore.createQuery(Transaction.class)
             .field("itemId").equal(itemId)
-            .asList();
+            .field("leaf").equal(true);
 
-        List<List<Transaction>> forest = this.getTransactionForest(transactions);
+        query.and(
+            query.or(
+                query.criteria("paymentStatus").equal(TransactionService.PAYMENT_EQUAL),
+                query.criteria("paymentStatus").equal(TransactionService.PAYMENT_GREATER_THAN)
+            ),
+            query.or(
+                query.criteria("status").equal(TransactionService.SETTLED),
+                query.criteria("status").equal(TransactionService.PENDING)
+            )
+         );
 
-        List<Transaction> pendingOrCompleteLeafTransactions = forest.stream()
-            .filter(lineage -> lineage.size() == 1)
-            .map(lineage -> lineage.get(0))
-           .filter(this.usedForCountFilter)
-           .collect(Collectors.toList());
-
-        return pendingOrCompleteLeafTransactions;
+        return query.asList();
     }
 
     public boolean isValidTransaction(Transaction transaction) {
@@ -132,41 +134,6 @@ public class TransactionService {
                    transaction.paymentStatus == TransactionService.PAYMENT_GREATER_THAN ||
                    transaction.paymentStatus == TransactionService.PAYMENT_UNKNOWN
                );
-    }
-
-    public List<List<Transaction>> getTransactionForest(List<Transaction> transactions) {
-        Map<Transaction, List<Transaction>> transactionLineageMap = transactions.stream()
-            .collect(Collectors.toMap(Function.identity(), transaction -> new ArrayList<>(Arrays.asList(transaction))));
-
-        Map<ObjectId, Transaction> parentTransactionIdMap;
-
-        do {
-            List<ObjectId> parentTransactionIds = transactionLineageMap.entrySet().stream().map(entry -> {
-                List<Transaction> lineage = entry.getValue();
-                return lineage.get(lineage.size() - 1).id;
-            }).collect(Collectors.toList());
-
-            parentTransactionIdMap = this.datastore.find(Transaction.class)
-                .field("parentTransactionId").in(parentTransactionIds)
-                .asList()
-                .stream()
-                .collect(Collectors.toMap(transaction -> transaction.parentTransactionId, Function.identity()));
-
-            for (Transaction transaction: transactionLineageMap.keySet()) {
-                List<Transaction> lineage = transactionLineageMap.get(transaction);
-                Transaction last = lineage.get(lineage.size() - 1);
-
-                if (parentTransactionIdMap.containsKey(last.id)) {
-                    lineage.add(parentTransactionIdMap.get(last.id));
-                }
-            }
-        } while(!parentTransactionIdMap.isEmpty());
-
-        List<List<Transaction>> result = transactions.stream()
-            .map(transaction -> transactionLineageMap.get(transaction))
-            .collect(Collectors.toList());
-
-        return result;
     }
 
     public void writeToExcel(List<Transaction> transactions, List<JsonNode> users, File file) throws IOException {

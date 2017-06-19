@@ -1,7 +1,6 @@
 import static org.junit.Assert.assertEquals;
 
 import java.util.Arrays;
-import java.util.List;
 
 import org.bson.types.ObjectId;
 import org.junit.After;
@@ -63,26 +62,19 @@ public class PaypalRefundTest {
                 item,
                 detail,
                 rootIpn,
-                refundIpn
+                refundIpn,
+                transaction
             )
         );
 
-        this.datastore.save(transaction);
-
-        TransactionService itemTransactionService = new TransactionService(this.datastore);
-        PaypalService paypalService = new PaypalService(datastore, null, itemTransactionService);
+        TransactionService transactionService = new TransactionService(this.datastore);
+        PaypalService paypalService = new PaypalService(datastore, null, transactionService);
 
         this.datastore.save(
             paypalService.processRefund(refundIpn)
         );
 
-        List<List<Transaction>> forest = itemTransactionService.getTransactionForest(Arrays.asList(transaction));
-
-        forest.forEach((lineage) -> {
-            Transaction refundTransaction = lineage.get(lineage.size() - 1);
-
-            assertEquals(lineage.size(), 2);
-            assertEquals(TransactionService.REFUNDED, refundTransaction.status);
-        });
+        long count = this.datastore.createQuery(Transaction.class).count();
+        assertEquals(2, count);
     }
 }
