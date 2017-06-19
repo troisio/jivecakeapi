@@ -28,6 +28,7 @@ import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.AuthorizedFilter;
 import com.jivecake.api.filter.CORSFilter;
 import com.jivecake.api.filter.ClaimsFactory;
+import com.jivecake.api.filter.GZIPWriterInterceptor;
 import com.jivecake.api.filter.HasPermissionFilter;
 import com.jivecake.api.filter.HashDateCount;
 import com.jivecake.api.filter.LimitUserRequestFilter;
@@ -80,6 +81,7 @@ import io.dropwizard.setup.Environment;
 public class APIApplication extends Application<APIConfiguration> {
     private final List<Class<?>> filters = Arrays.asList(
         AuthorizedFilter.class,
+        GZIPWriterInterceptor.class,
         HasPermissionFilter.class,
         LimitUserRequestFilter.class,
         LogFilter.class,

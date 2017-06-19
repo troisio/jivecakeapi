@@ -37,6 +37,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
+import com.jivecake.api.filter.GZip;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.filter.QueryRestrict;
@@ -74,12 +75,13 @@ public class TransactionResource {
         this.transactionService = transactionService;
         this.notificationService = notificationService;
         this.permissionService = permissionService;
-        this.auth0Service = auth0Service;
         this.entityService = entityService;
+        this.auth0Service = auth0Service;
         this.datastore = datastore;
     }
 
     @GET
+    @GZip
     @Authorized
     public void search(
         @QueryParam("organizationId") List<ObjectId> organizationIds,
