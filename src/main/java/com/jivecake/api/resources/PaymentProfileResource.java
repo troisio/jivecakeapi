@@ -86,8 +86,6 @@ public class PaymentProfileResource {
     @QueryRestrict(hasAny=true, target={"organizationId"})
     public Response search(
         @QueryParam("organizationId") Set<ObjectId> organizationIds,
-        @QueryParam("name") String name,
-        @QueryParam("email") String email,
         @QueryParam("limit") Integer limit,
         @QueryParam("offset") Integer offset,
         @Context DecodedJWT jwt
@@ -103,14 +101,6 @@ public class PaymentProfileResource {
         if (hasPermission) {
             Query<PaymentProfile> query = this.datastore.createQuery(PaymentProfile.class)
                 .field("organizationId").in(organizationIds);
-
-            if (name != null) {
-                query.field("name").startsWithIgnoreCase(name);
-            }
-
-            if (email != null) {
-                query.field("email").startsWithIgnoreCase(email);
-            }
 
             FindOptions options = new FindOptions();
 

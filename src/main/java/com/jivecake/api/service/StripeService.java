@@ -5,12 +5,19 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.Future;
 
 import javax.inject.Inject;
+import javax.ws.rs.client.ClientBuilder;
+import javax.ws.rs.client.Entity;
+import javax.ws.rs.client.InvocationCallback;
+import javax.ws.rs.core.MultivaluedHashMap;
+import javax.ws.rs.core.MultivaluedMap;
 
 import org.bson.types.ObjectId;
 
 import com.jivecake.api.StripeConfiguration;
+import com.jivecake.api.request.StripeToken;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Subscription;
 import com.stripe.net.RequestOptions;
@@ -18,9 +25,11 @@ import com.stripe.net.RequestOptions.RequestOptionsBuilder;
 
 public class StripeService {
     private final RequestOptions requestOptions;
+    private final StripeConfiguration configuration;
 
     @Inject
     public StripeService(StripeConfiguration configuration) {
+        this.configuration = configuration;
         this.requestOptions = new RequestOptionsBuilder()
             .setApiKey(configuration.secretKey)
             .build();
@@ -32,6 +41,19 @@ public class StripeService {
 
     public String getMonthly10PlanId() {
         return "monthly10";
+    }
+
+    public Future<StripeToken> getToken(String code, InvocationCallback<StripeToken> callback) {
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.putSingle("grant_type", "authorization_code");
+        form.putSingle("code", code);
+        form.putSingle("client_secret", this.configuration.secretKey);
+
+        return ClientBuilder.newClient()
+            .target("https://connect.stripe.com/oauth/token")
+            .request()
+            .buildPost(Entity.form(form))
+            .submit(callback);
     }
 
     public List<Subscription> getCurrentSubscriptions(ObjectId organizationId) throws StripeException {
