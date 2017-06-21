@@ -23,6 +23,5 @@ public abstract class PaymentProfile {
 
     @JsonSerialize(using=ObjectIdSerializer.class)
     public ObjectId organizationId;
-    public String name;
     public Date timeCreated;
 }

@@ -18,6 +18,9 @@ import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.QueryParam;
+import javax.ws.rs.client.InvocationCallback;
+import javax.ws.rs.container.AsyncResponse;
+import javax.ws.rs.container.Suspended;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
@@ -40,7 +43,10 @@ import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.PaymentProfile;
 import com.jivecake.api.model.PaypalPaymentProfile;
 import com.jivecake.api.model.Permission;
+import com.jivecake.api.model.StripePaymentProfile;
 import com.jivecake.api.request.Paging;
+import com.jivecake.api.request.StripeOAuthCode;
+import com.jivecake.api.request.StripeToken;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.NotificationService;
@@ -81,6 +87,59 @@ public class OrganizationResource {
         this.notificationService = notificationService;
         this.entityService = entityService;
         this.datastore = datastore;
+    }
+
+    @POST
+    @Path("{id}/payment/profile/stripe")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Authorized
+    @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
+    public void createStripeProfile(
+        @PathObject("id") Organization organization,
+        @Suspended AsyncResponse asyncResponse,
+        StripeOAuthCode oauthCode
+    ) {
+        this.stripeService.getToken(oauthCode.code, new InvocationCallback<StripeToken>() {
+            @Override
+            public void completed(StripeToken token) {
+                List<StripePaymentProfile> profiles = OrganizationResource.this.datastore.createQuery(StripePaymentProfile.class)
+                    .field("organizationId").equal(organization.id)
+                    .field("stripe_user_id").equal(token.stripe_user_id)
+                    .asList();
+
+                StripePaymentProfile profile;
+
+                Status status;
+
+                if (profiles.isEmpty()) {
+                    status = Status.CREATED;
+
+                    profile = new StripePaymentProfile();
+                    profile.organizationId = organization.id;
+                    profile.stripe_publishable_key = token.stripe_publishable_key;
+                    profile.stripe_user_id = token.stripe_user_id;
+                    profile.timeCreated = new Date();
+
+                    OrganizationResource.this.datastore.save(profile);
+                    OrganizationResource.this.notificationService.notify(Arrays.asList(profile), "paymentprofile.create");
+                } else {
+                    status = Status.OK;
+                    profile = profiles.get(0);
+                }
+
+                asyncResponse.resume(
+                    Response.status(status)
+                        .entity(profile)
+                        .type(MediaType.APPLICATION_JSON)
+                        .build()
+                );
+            }
+
+            @Override
+            public void failed(Throwable throwable) {
+                asyncResponse.resume(throwable);
+            }
+        });
     }
 
     @POST
@@ -128,9 +187,7 @@ public class OrganizationResource {
     ) {
         ResponseBuilder builder;
 
-        boolean validProfile = profile.name != null &&
-            profile.email != null &&
-            profile.email.contains("@");
+        boolean validProfile = profile.email != null && profile.email.contains("@");
 
         if (validProfile) {
             long profileCount = this.datastore.createQuery(PaymentProfile.class)
