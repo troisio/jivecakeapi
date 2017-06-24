@@ -257,7 +257,9 @@ public class PaypalService {
                     Double amount;
 
                     if (item.countAmounts != null) {
-                        long count = this.transactionService.getTransactionsForItemTotal(item.id)
+                        long count = this.transactionService.getTransactionQueryForCounting()
+                            .field("itemId").equal(item.id)
+                            .asList()
                             .stream()
                             .map(subject -> subject.quantity)
                             .reduce(0L, Long::sum);

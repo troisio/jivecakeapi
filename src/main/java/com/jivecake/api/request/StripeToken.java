@@ -1,11 +1,15 @@
 package com.jivecake.api.request;
 
+import java.util.Map;
+
 public class StripeToken {
-    public String access_token;
+    public String id;
     public boolean livemode;
-    public String refresh_token;
-    public String token_type;
-    public String stripe_publishable_key;
-    public String stripe_user_id;
-    public String scope;
+    public String client_ip;
+    public long created;
+    public String email;
+    public String object;
+    public String type;
+    public boolean used;
+    public Map<String, Object> card;
 }

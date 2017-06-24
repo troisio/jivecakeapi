@@ -99,7 +99,9 @@ public class ItemResource {
         } else if (item.amount == 0) {
             Event event = this.datastore.get(Event.class, item.eventId);
 
-            List<Transaction> countedTransactions = this.transactionService.getTransactionsForItemTotal(item.id);
+            List<Transaction> countedTransactions = this.transactionService.getTransactionQueryForCounting()
+                .field("itemId").equal(item.id)
+                .asList();
 
             List<Transaction> transactionsForUser = countedTransactions.stream()
                 .filter(subject -> jwt.getSubject().equals(subject.user_id))
@@ -110,7 +112,7 @@ public class ItemResource {
             boolean maximumReached = item.totalAvailible != null &&
                 countedTransactions.size() > item.totalAvailible + transaction.quantity;
 
-            boolean activeViolation = item.status != this.itemService.getActiveItemStatus() ||
+            boolean activeViolation = item.status != ItemService.STATUS_ACTIVE ||
                 event.status != this.eventService.getActiveEventStatus();
 
             if (event.currency == null) {
@@ -321,7 +323,9 @@ public class ItemResource {
             if (item.totalAvailible == null) {
                 totalAvailibleViolation = false;
             } else {
-                long count = this.transactionService.getTransactionsForItemTotal(item.id)
+                long count = this.transactionService.getTransactionQueryForCounting()
+                    .field("itemId").equal(item.id)
+                    .asList()
                     .stream()
                     .map(subject -> subject.quantity)
                     .reduce(0L, Long::sum);

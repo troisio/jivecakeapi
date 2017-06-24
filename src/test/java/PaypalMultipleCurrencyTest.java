@@ -28,7 +28,6 @@ import com.mongodb.ServerAddress;
 
 public class PaypalMultipleCurrencyTest {
     private PaypalService paypalService;
-    private ItemService itemService;
     private TransactionService transactionService;
     private Datastore datastore;
     private MongoClient client;
@@ -39,7 +38,6 @@ public class PaypalMultipleCurrencyTest {
         this.client = new MongoClient(Arrays.asList(new ServerAddress(System.getProperty("db"))));
         this.datastore = new Morphia().createDatastore(this.client, "test");
 
-        this.itemService = new ItemService(this.datastore);
         this.transactionService = new TransactionService(this.datastore);
         this.paypalService = new PaypalService(this.datastore, null, this.transactionService);
     }
@@ -71,7 +69,7 @@ public class PaypalMultipleCurrencyTest {
         secondItem.eventId = event.id;
         secondItem.name = "Sunday Night Dance";
         secondItem.amount = 0.89;
-        secondItem.status = this.itemService.getActiveItemStatus();
+        secondItem.status = ItemService.STATUS_ACTIVE;
         secondItem.timeCreated = new Date();
 
         Item firstItem = new Item();
@@ -79,7 +77,7 @@ public class PaypalMultipleCurrencyTest {
         firstItem.eventId = event.id;
         firstItem.name = "Saturday Night Party";
         firstItem.amount = 0.78;
-        firstItem.status = this.itemService.getActiveItemStatus();
+        firstItem.status = ItemService.STATUS_ACTIVE;
         firstItem.timeCreated = new Date();
 
         PaypalIPN multiCurrencyPendingIpn = this.paypalService.create(this.httpService.bodyToMap(multiCurrencyPendingBody));

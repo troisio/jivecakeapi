@@ -1,6 +1,7 @@
 package com.jivecake.api.service;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +20,8 @@ import com.jivecake.api.request.ItemData;
 
 public class ItemService {
     private final Datastore datastore;
+    public static final int STATUS_ACTIVE = 0;
+    public static final int STATUS_INACTIVE = 1;
 
     @Inject
     public ItemService(Datastore datastore) {
@@ -36,8 +39,8 @@ public class ItemService {
             (item.maximumPerUser == null || item.maximumPerUser >= 0) &&
             (item.totalAvailible == null || item.totalAvailible >= 0) &&
             (
-                item.status == this.getActiveItemStatus() ||
-                item.status == this.getInactiveItemStatus()
+                item.status == ItemService.STATUS_ACTIVE ||
+                item.status == ItemService.STATUS_INACTIVE
             ) &&
             !hasTimeAndCountViolation &&
             !hasNegativeAmountViolation;
@@ -94,11 +97,31 @@ public class ItemService {
         return group;
     }
 
-    public int getActiveItemStatus() {
-        return  0;
-    }
+    public double[] getAmounts(List<Item> items, Date date, Collection<Transaction> transactions) {
+        double[] result = new double[items.size()];
 
-    public int getInactiveItemStatus() {
-        return  1;
+        Map<ObjectId, List<Transaction>> itemToTransactions = items.stream()
+            .collect(
+                Collectors.toMap(item -> item.id, item -> new ArrayList<>())
+            );
+
+        for (Transaction transaction: transactions) {
+            if (itemToTransactions.containsKey(transaction.itemId)) {
+                itemToTransactions.get(transaction.itemId).add(transaction);
+            }
+        }
+
+        for (int index = 0; index < items.size(); index++) {
+            Item item = items.get(index);
+
+            double amount = item.getDerivedAmount(
+                itemToTransactions.get(item.id).size(),
+                date
+            );
+
+            result[index] = amount;
+        }
+
+        return result;
     }
 }
