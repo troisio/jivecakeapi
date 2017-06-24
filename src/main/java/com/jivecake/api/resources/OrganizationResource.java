@@ -45,8 +45,8 @@ import com.jivecake.api.model.PaypalPaymentProfile;
 import com.jivecake.api.model.Permission;
 import com.jivecake.api.model.StripePaymentProfile;
 import com.jivecake.api.request.Paging;
+import com.jivecake.api.request.StripeAccountCredentials;
 import com.jivecake.api.request.StripeOAuthCode;
-import com.jivecake.api.request.StripeToken;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.NotificationService;
@@ -54,6 +54,7 @@ import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.StripeService;
 import com.stripe.exception.StripeException;
+import com.stripe.model.Account;
 import com.stripe.model.Subscription;
 
 @CORS
@@ -99,9 +100,9 @@ public class OrganizationResource {
         @Suspended AsyncResponse asyncResponse,
         StripeOAuthCode oauthCode
     ) {
-        this.stripeService.getToken(oauthCode.code, new InvocationCallback<StripeToken>() {
+        this.stripeService.getAccountCredentials(oauthCode.code, new InvocationCallback<StripeAccountCredentials>() {
             @Override
-            public void completed(StripeToken token) {
+            public void completed(StripeAccountCredentials token) {
                 List<StripePaymentProfile> profiles = OrganizationResource.this.datastore.createQuery(StripePaymentProfile.class)
                     .field("organizationId").equal(organization.id)
                     .field("stripe_user_id").equal(token.stripe_user_id)
@@ -109,30 +110,52 @@ public class OrganizationResource {
 
                 StripePaymentProfile profile;
 
-                Status status;
+                ResponseBuilder builder;
 
                 if (profiles.isEmpty()) {
-                    status = Status.CREATED;
-
                     profile = new StripePaymentProfile();
                     profile.organizationId = organization.id;
                     profile.stripe_publishable_key = token.stripe_publishable_key;
                     profile.stripe_user_id = token.stripe_user_id;
                     profile.timeCreated = new Date();
 
-                    OrganizationResource.this.datastore.save(profile);
-                    OrganizationResource.this.notificationService.notify(Arrays.asList(profile), "paymentprofile.create");
+                    StripeException exception = null;
+
+                    try {
+                        Account account = Account.retrieve(
+                            token.stripe_user_id,
+                            OrganizationResource.this.stripeService.getRequestOptions()
+                        );
+
+                        profile.email = account.getEmail();
+                    } catch (StripeException e) {
+                        exception = e;
+                    }
+
+                    if (exception == null) {
+                        OrganizationResource.this.datastore.save(profile);
+                        OrganizationResource.this.notificationService.notify(
+                            Arrays.asList(profile),
+                            "paymentprofile.create"
+                        );
+
+                        builder = Response.status(Status.CREATED)
+                            .entity(profile)
+                            .type(MediaType.APPLICATION_JSON);
+                    } else {
+                        builder = Response.status(Status.SERVICE_UNAVAILABLE).entity(exception);
+                    }
+
+                    asyncResponse.resume(builder.build());
                 } else {
-                    status = Status.OK;
                     profile = profiles.get(0);
+
+                    builder = Response.status(Status.OK)
+                        .entity(profile)
+                        .type(MediaType.APPLICATION_JSON);
                 }
 
-                asyncResponse.resume(
-                    Response.status(status)
-                        .entity(profile)
-                        .type(MediaType.APPLICATION_JSON)
-                        .build()
-                );
+                asyncResponse.resume(builder.build());
             }
 
             @Override

@@ -42,13 +42,25 @@ public class Item {
     public Date timeCreated;
     public Date lastActivity;
 
+    public double getDerivedAmount(long numberOfTransactions, Date date) {
+        double result = this.amount;
+
+        if (this.timeAmounts != null) {
+            result = this.getDerivedAmountFromTime(date);
+        } else if (this.countAmounts != null) {
+            result = this.getDerivedAmountFromCounts(numberOfTransactions);
+        }
+
+        return result;
+    }
+
     public double getDerivedAmountFromCounts(long numberOfTransactions) {
         double result = this.amount;
 
         for (int index = this.countAmounts.size() - 1; index > -1; index--) {
             ItemCountAmount countAmount = this.countAmounts.get(index);
 
-            if (numberOfTransactions > countAmount.count) {
+            if (numberOfTransactions >= countAmount.count) {
                 result = countAmount.amount;
                 break;
             }

@@ -6,4 +6,5 @@ import org.mongodb.morphia.annotations.Entity;
 public class StripePaymentProfile extends PaymentProfile {
     public String stripe_publishable_key;
     public String stripe_user_id;
+    public String email;
 }

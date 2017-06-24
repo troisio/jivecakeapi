@@ -99,7 +99,7 @@ public class EventResource {
             );
 
             group.itemData = group.itemData.stream()
-                .filter(itemData -> itemData.item.status == this.itemService.getActiveItemStatus())
+                .filter(itemData -> itemData.item.status == ItemService.STATUS_ACTIVE)
                 .collect(Collectors.toList());
 
             for (ItemData datum: group.itemData) {

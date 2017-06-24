@@ -15,20 +15,29 @@ import javax.ws.rs.core.MultivaluedHashMap;
 import javax.ws.rs.core.MultivaluedMap;
 
 import org.bson.types.ObjectId;
+import org.mongodb.morphia.Datastore;
+import org.mongodb.morphia.Key;
 
 import com.jivecake.api.StripeConfiguration;
-import com.jivecake.api.request.StripeToken;
+import com.jivecake.api.model.StripeCharge;
+import com.jivecake.api.request.StripeAccountCredentials;
 import com.stripe.exception.StripeException;
+import com.stripe.model.Charge;
 import com.stripe.model.Subscription;
 import com.stripe.net.RequestOptions;
 import com.stripe.net.RequestOptions.RequestOptionsBuilder;
 
 public class StripeService {
     private final RequestOptions requestOptions;
+    private final Datastore datastore;
     private final StripeConfiguration configuration;
 
     @Inject
-    public StripeService(StripeConfiguration configuration) {
+    public StripeService(
+        Datastore datastore,
+        StripeConfiguration configuration
+    ) {
+        this.datastore = datastore;
         this.configuration = configuration;
         this.requestOptions = new RequestOptionsBuilder()
             .setApiKey(configuration.secretKey)
@@ -43,7 +52,13 @@ public class StripeService {
         return "monthly10";
     }
 
-    public Future<StripeToken> getToken(String code, InvocationCallback<StripeToken> callback) {
+    public Key<StripeCharge> saveCharge(Charge charge) {
+        StripeCharge entity = new StripeCharge();
+        entity.stripeId = charge.getId();
+        return this.datastore.save(entity);
+    }
+
+    public Future<StripeAccountCredentials> getAccountCredentials(String code, InvocationCallback<StripeAccountCredentials> callback) {
         MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
         form.putSingle("grant_type", "authorization_code");
         form.putSingle("code", code);

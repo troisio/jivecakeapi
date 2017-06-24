@@ -100,9 +100,8 @@ public class TransactionService {
         return future;
     }
 
-    public List<Transaction> getTransactionsForItemTotal(ObjectId itemId) {
+    public Query<Transaction> getTransactionQueryForCounting() {
         Query<Transaction> query = this.datastore.createQuery(Transaction.class)
-            .field("itemId").equal(itemId)
             .field("leaf").equal(true);
 
         query.and(
@@ -116,24 +115,24 @@ public class TransactionService {
             )
          );
 
-        return query.asList();
+        return query;
     }
 
     public boolean isValidTransaction(Transaction transaction) {
         return transaction.quantity > 0 &&
-               this.currencies.contains(transaction.currency) &&
-               (
-                   transaction.status == TransactionService.PENDING ||
-                   transaction.status == TransactionService.REFUNDED ||
-                   transaction.status == TransactionService.SETTLED ||
-                   transaction.status == TransactionService.USER_REVOKED
-               ) &&
-               (
-                   transaction.paymentStatus == TransactionService.PAYMENT_EQUAL ||
-                   transaction.paymentStatus == TransactionService.PAYMENT_LESS_THAN ||
-                   transaction.paymentStatus == TransactionService.PAYMENT_GREATER_THAN ||
-                   transaction.paymentStatus == TransactionService.PAYMENT_UNKNOWN
-               );
+            this.currencies.contains(transaction.currency) &&
+            (
+                transaction.status == TransactionService.PENDING ||
+                transaction.status == TransactionService.REFUNDED ||
+                transaction.status == TransactionService.SETTLED ||
+                transaction.status == TransactionService.USER_REVOKED
+            ) &&
+            (
+                transaction.paymentStatus == TransactionService.PAYMENT_EQUAL ||
+                transaction.paymentStatus == TransactionService.PAYMENT_LESS_THAN ||
+                transaction.paymentStatus == TransactionService.PAYMENT_GREATER_THAN ||
+                transaction.paymentStatus == TransactionService.PAYMENT_UNKNOWN
+            );
     }
 
     public void writeToExcel(List<Transaction> transactions, List<JsonNode> users, File file) throws IOException {
