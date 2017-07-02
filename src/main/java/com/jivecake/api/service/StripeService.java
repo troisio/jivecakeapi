@@ -15,29 +15,20 @@ import javax.ws.rs.core.MultivaluedHashMap;
 import javax.ws.rs.core.MultivaluedMap;
 
 import org.bson.types.ObjectId;
-import org.mongodb.morphia.Datastore;
-import org.mongodb.morphia.Key;
 
 import com.jivecake.api.StripeConfiguration;
-import com.jivecake.api.model.StripeCharge;
 import com.jivecake.api.request.StripeAccountCredentials;
 import com.stripe.exception.StripeException;
-import com.stripe.model.Charge;
 import com.stripe.model.Subscription;
 import com.stripe.net.RequestOptions;
 import com.stripe.net.RequestOptions.RequestOptionsBuilder;
 
 public class StripeService {
     private final RequestOptions requestOptions;
-    private final Datastore datastore;
     private final StripeConfiguration configuration;
 
     @Inject
-    public StripeService(
-        Datastore datastore,
-        StripeConfiguration configuration
-    ) {
-        this.datastore = datastore;
+    public StripeService(StripeConfiguration configuration) {
         this.configuration = configuration;
         this.requestOptions = new RequestOptionsBuilder()
             .setApiKey(configuration.secretKey)
@@ -50,12 +41,6 @@ public class StripeService {
 
     public String getMonthly10PlanId() {
         return "monthly10";
-    }
-
-    public Key<StripeCharge> saveCharge(Charge charge) {
-        StripeCharge entity = new StripeCharge();
-        entity.stripeId = charge.getId();
-        return this.datastore.save(entity);
     }
 
     public Future<StripeAccountCredentials> getAccountCredentials(String code, InvocationCallback<StripeAccountCredentials> callback) {

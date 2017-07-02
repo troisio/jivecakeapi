@@ -210,8 +210,12 @@ public class TransactionService {
         amount.setCellValue(subject.amount);
         currency.setCellValue(subject.currency);
 
-        if (PaypalIPN.class.getSimpleName().equals(subject.linkedObjectClass)) {
+        if (PaypalIPN.class.getSimpleName().equals(subject.linkedObjectClass) || "PaypalPayment".equals(subject.linkedObjectClass)) {
             system.setCellValue("paypal");
+        }
+
+        if ("StripeCharge".equals(subject.linkedObjectClass)) {
+            system.setCellValue("stripe");
         }
 
         if (subject.timeCreated != null) {
@@ -257,6 +261,8 @@ public class TransactionService {
     }
 
     public boolean isVendorTransaction(Transaction transaction) {
-        return PaypalIPN.class.getSimpleName().equals(transaction.linkedObjectClass);
+        return PaypalIPN.class.getSimpleName().equals(transaction.linkedObjectClass) ||
+          "PaypalPayment".equals(transaction.linkedObjectClass) ||
+          "StripeCharge".equals(transaction.linkedObjectClass);
     }
 }

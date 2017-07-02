@@ -54,6 +54,7 @@ public class Transaction {
 
     @JsonSerialize(using=ObjectIdSerializer.class)
     public ObjectId linkedId;
+    public String linkedIdString;
     public String linkedObjectClass;
     public int status;
     public int paymentStatus;

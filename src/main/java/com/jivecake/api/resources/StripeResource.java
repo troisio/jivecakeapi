@@ -26,7 +26,6 @@ import javax.ws.rs.core.Response.Status;
 
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
-import org.mongodb.morphia.Key;
 
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.StripeConfiguration;
@@ -38,7 +37,6 @@ import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
-import com.jivecake.api.model.StripeCharge;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.request.StripeOrderPayload;
 import com.jivecake.api.service.EntityService;
@@ -91,8 +89,7 @@ public class StripeResource {
     @Log
     @POST
     @Path("webhook")
-    @Authorized
-    public Response order(
+    public Response webhook(
         @HeaderParam("Stripe-Signature") String signature,
         String body
     ) {
@@ -111,9 +108,9 @@ public class StripeResource {
         return Response.ok().build();
     }
 
-    @Log
     @POST
     @Path("{eventId}/order")
+    @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
     public Response order(
         @PathObject("eventId") Event event,
@@ -184,8 +181,6 @@ public class StripeResource {
                 }
 
                 if (exception == null) {
-                    Key<StripeCharge> key = this.stripeService.saveCharge(charge);
-
                     Charge finalCharge = charge;
 
                     List<Transaction> completedTransactions = new ArrayList<>();
@@ -202,8 +197,8 @@ public class StripeResource {
                         transaction.user_id = jwt.getSubject();
                         transaction.status = TransactionService.SETTLED;
                         transaction.paymentStatus = TransactionService.PAYMENT_EQUAL;
-                        transaction.linkedObjectClass = StripeCharge.class.getSimpleName();
-                        transaction.linkedId = (ObjectId)key.getId();
+                        transaction.linkedIdString = finalCharge.getId();
+                        transaction.linkedObjectClass = "StripeCharge";
                         transaction.eventId = item.eventId;
                         transaction.organizationId = item.organizationId;
                         transaction.email = finalCharge.getReceiptEmail();

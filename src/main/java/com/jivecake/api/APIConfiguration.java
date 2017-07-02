@@ -11,4 +11,5 @@ public class APIConfiguration extends Configuration {
     public List<String> databases;
     public StripeConfiguration stripe;
     public List<String> corsOrigins;
+    public PaypalConfiguration paypal;
 }

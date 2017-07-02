@@ -36,6 +36,7 @@ import org.mongodb.morphia.query.Query;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
+import com.jivecake.api.filter.GZip;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Event;
@@ -60,6 +61,7 @@ import com.stripe.model.Subscription;
 @CORS
 @Path("organization")
 @Singleton
+@GZip
 public class OrganizationResource {
     private final OrganizationService organizationService;
     private final EventService eventService;
@@ -256,7 +258,7 @@ public class OrganizationResource {
 
         if (isValid) {
             long activeEventsCount = this.datastore.createQuery(Event.class)
-                .field("status").equal(this.eventService.getActiveEventStatus())
+                .field("status").equal(EventService.STATUS_ACTIVE)
                 .field("organizationId").equal(organization.id)
                 .count();
 
@@ -264,7 +266,7 @@ public class OrganizationResource {
 
             StripeException stripeException = null;
 
-            if (event.status == this.eventService.getActiveEventStatus()) {
+            if (event.status == EventService.STATUS_ACTIVE) {
                 activeEventsCount++;
                 List<Subscription> subscriptions = null;
 

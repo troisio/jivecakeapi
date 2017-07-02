@@ -30,13 +30,14 @@ import org.mongodb.morphia.query.Query;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
+import com.jivecake.api.filter.GZip;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.Transaction;
-import com.jivecake.api.request.AggregatedItemGroup;
+import com.jivecake.api.request.AggregatedEvent;
 import com.jivecake.api.request.ItemData;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.ApplicationService;
@@ -53,6 +54,7 @@ import com.stripe.model.Subscription;
 @Path("/event")
 @CORS
 @Singleton
+@GZip
 public class EventResource {
     private final EventService eventService;
     private final ItemService itemService;
@@ -91,8 +93,8 @@ public class EventResource {
 
         if (event == null) {
             builder = Response.status(Status.NOT_FOUND);
-        } else if (event.status == this.eventService.getActiveEventStatus()) {
-            AggregatedItemGroup group = this.itemService.getAggregatedaGroupData(
+        } else if (event.status == EventService.STATUS_ACTIVE) {
+            AggregatedEvent group = this.itemService.getAggregatedaEventData(
                 event,
                 this.transactionService,
                 new Date()
@@ -140,7 +142,7 @@ public class EventResource {
         @QueryParam("text") String text
     ) {
         Query<Event> query = this.datastore.createQuery(Event.class)
-            .field("status").equal(this.eventService.getActiveEventStatus());
+            .field("status").equal(EventService.STATUS_ACTIVE);
 
         if (text != null && !text.isEmpty()) {
             List<ObjectId> organizationIds = this.datastore.createQuery(Organization.class)
@@ -214,7 +216,7 @@ public class EventResource {
         if (isValid) {
             long activeEventsCount = this.datastore.createQuery(Event.class)
                 .field("id").notEqual(original.id)
-                .field("status").equal(this.eventService.getActiveEventStatus())
+                .field("status").equal(EventService.STATUS_ACTIVE)
                 .field("organizationId").equal(original.organizationId)
                 .count();
 
@@ -222,7 +224,7 @@ public class EventResource {
             StripeException stripeException = null;
             List<Subscription> currentSubscriptions = null;
 
-            if (event.status == this.eventService.getActiveEventStatus()) {
+            if (event.status == EventService.STATUS_ACTIVE) {
                 activeEventsCount++;
 
                 try {
