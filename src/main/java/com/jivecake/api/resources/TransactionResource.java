@@ -54,6 +54,7 @@ import com.jivecake.api.service.TransactionService;
 @Path("transaction")
 @CORS
 @Singleton
+@GZip
 public class TransactionResource {
     private final TransactionService transactionService;
     private final NotificationService notificationService;
@@ -81,7 +82,6 @@ public class TransactionResource {
     }
 
     @GET
-    @GZip
     @Authorized
     public void search(
         @QueryParam("organizationId") List<ObjectId> organizationIds,

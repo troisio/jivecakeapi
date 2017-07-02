@@ -14,8 +14,9 @@ import org.mongodb.morphia.Datastore;
 
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
+import com.jivecake.api.model.PaymentProfile;
 import com.jivecake.api.model.Transaction;
-import com.jivecake.api.request.AggregatedItemGroup;
+import com.jivecake.api.request.AggregatedEvent;
 import com.jivecake.api.request.ItemData;
 
 public class ItemService {
@@ -46,11 +47,15 @@ public class ItemService {
             !hasNegativeAmountViolation;
     }
 
-    public AggregatedItemGroup getAggregatedaGroupData(
+    public AggregatedEvent getAggregatedaEventData(
         Event event,
         TransactionService transactionService,
         Date currentTime
     ) {
+        List<PaymentProfile> profiles = this.datastore.createQuery(PaymentProfile.class)
+            .field("id").equal(event.paymentProfileId)
+            .asList();
+
         List<Transaction> leafTransactions = this.datastore.createQuery(Transaction.class)
             .field("eventId").equal(event.id)
             .field("leaf").equal(true)
@@ -91,9 +96,14 @@ public class ItemService {
             return result;
         }).collect(Collectors.toList());
 
-        AggregatedItemGroup group = new AggregatedItemGroup();
+        AggregatedEvent group = new AggregatedEvent();
         group.event = event;
         group.itemData = itemData;
+
+        if (profiles.size() == 1) {
+            group.profile = profiles.get(0);
+        }
+
         return group;
     }
 

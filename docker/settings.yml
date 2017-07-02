@@ -4,10 +4,14 @@ rootOAuthIds:
 oauth:
   webClientId: "default"
   webClientSecret: "default"
-  nativeClientId: "default"
-  nativeClientSecret: "default"
   domain: "default"
   apiToken: "default"
+
+paypal:
+  accessToken: "default"
+  clientId: "default"
+  clientSecret: "default"
+  mode: production
 
 stripe:
   secretKey: "default"

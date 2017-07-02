@@ -66,7 +66,6 @@ import com.jivecake.api.service.HttpService;
 import com.jivecake.api.service.ItemService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.OrganizationService;
-import com.jivecake.api.service.PaypalService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.StripeService;
 import com.jivecake.api.service.TransactionService;
@@ -119,7 +118,6 @@ public class APIApplication extends Application<APIConfiguration> {
         ItemService.class,
         NotificationService.class,
         OrganizationService.class,
-        PaypalService.class,
         PermissionService.class,
         StripeService.class,
         TransactionService.class

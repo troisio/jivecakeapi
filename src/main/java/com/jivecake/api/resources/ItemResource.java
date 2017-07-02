@@ -33,6 +33,7 @@ import org.mongodb.morphia.query.Query;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
+import com.jivecake.api.filter.GZip;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Event;
@@ -52,10 +53,10 @@ import com.jivecake.api.service.TransactionService;
 @Path("item")
 @CORS
 @Singleton
+@GZip
 public class ItemResource {
     private final Auth0Service auth0Service;
     private final ItemService itemService;
-    private final EventService eventService;
     private final PermissionService permissionService;
     private final TransactionService transactionService;
     private final NotificationService notificationService;
@@ -66,7 +67,6 @@ public class ItemResource {
     public ItemResource(
         Auth0Service auth0Service,
         ItemService itemService,
-        EventService eventService,
         PermissionService permissionService,
         TransactionService transactionService,
         NotificationService notificationService,
@@ -75,7 +75,6 @@ public class ItemResource {
     ) {
         this.auth0Service = auth0Service;
         this.itemService = itemService;
-        this.eventService = eventService;
         this.permissionService = permissionService;
         this.transactionService = transactionService;
         this.notificationService = notificationService;
@@ -113,7 +112,7 @@ public class ItemResource {
                 countedTransactions.size() > item.totalAvailible + transaction.quantity;
 
             boolean activeViolation = item.status != ItemService.STATUS_ACTIVE ||
-                event.status != this.eventService.getActiveEventStatus();
+                event.status != EventService.STATUS_ACTIVE;
 
             if (event.currency == null) {
                 builder = Response.status(Status.BAD_REQUEST)
@@ -333,7 +332,7 @@ public class ItemResource {
                 totalAvailibleViolation = count > item.totalAvailible;
             }
 
-            boolean eventActiveViolation = event.status == this.eventService.getInactiveEventStatus();
+            boolean eventActiveViolation = event.status != EventService.STATUS_ACTIVE;
             boolean hasParentTransactionPermissionViolation = false;
 
             if (transaction.parentTransactionId != null) {
