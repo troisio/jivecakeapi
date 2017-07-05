@@ -279,11 +279,20 @@ public class OrganizationResource {
                 hasFeatureViolation = false;
             }
 
+            boolean hasValidPaymentProfile = event.paymentProfileId == null ||
+                this.datastore.createQuery(PaymentProfile.class)
+                    .field("id").equal(event.paymentProfileId)
+                    .count() > 0;
+
             long eventCount = this.datastore.createQuery(Event.class)
                 .field("organizationId").equal(organization.id)
                 .count();
 
-            if (stripeException != null) {
+            if (!hasValidPaymentProfile) {
+                builder = Response.status(Status.BAD_REQUEST)
+                    .entity("{\"error\": \"paymentProfileId\"}")
+                    .type(MediaType.APPLICATION_JSON);
+            } else if (stripeException != null) {
                 builder = Response.status(Status.SERVICE_UNAVAILABLE)
                     .entity(stripeException);
             } else if (eventCount > 100) {

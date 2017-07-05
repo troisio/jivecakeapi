@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.jivecake.api.serializer.ObjectIdSerializer;
 
 @Indexes({
+    @Index(fields = @Field("linkedIdString")),
     @Index(fields = @Field("itemId")),
     @Index(fields = @Field("eventId")),
     @Index(fields = @Field("organizationId")),
@@ -79,6 +80,7 @@ public class Transaction {
         this.itemId = transaction.itemId;
         this.user_id = transaction.user_id;
         this.linkedId = transaction.linkedId;
+        this.linkedIdString = transaction.linkedIdString;
         this.linkedObjectClass = transaction.linkedObjectClass;
         this.status = transaction.status;
         this.paymentStatus = transaction.paymentStatus;

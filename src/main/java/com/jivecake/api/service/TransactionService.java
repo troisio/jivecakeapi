@@ -3,6 +3,7 @@ package com.jivecake.api.service;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -28,27 +29,28 @@ import org.mongodb.morphia.query.Query;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
-import com.jivecake.api.model.PaypalIPN;
 import com.jivecake.api.model.Transaction;
 
 public class TransactionService {
-    public static final int PAYMENT_EQUAL= 0;
-    public static final int PAYMENT_LESS_THAN = 1;
-    public static final int PAYMENT_GREATER_THAN = 2;
-    public static final int PAYMENT_UNKNOWN = 3;
-
+    public static final int PAYMENT_EQUAL = 0;
     public static final int SETTLED = 0;
     public static final int PENDING = 1;
     public static final int USER_REVOKED = 2;
     public static final int REFUNDED = 3;
     public static final int UNKNOWN = 4;
 
+    public static final DecimalFormat DEFAULT_DECIMAL_FORMAT = new DecimalFormat();
+
+    static {
+        TransactionService.DEFAULT_DECIMAL_FORMAT.setMinimumFractionDigits(2);
+        TransactionService.DEFAULT_DECIMAL_FORMAT.setMaximumFractionDigits(2);
+        TransactionService.DEFAULT_DECIMAL_FORMAT.setGroupingUsed(false);
+    }
+
     private final Datastore datastore;
     private final List<String> currencies = Arrays.asList("EUR", "USD");
-    public final Predicate<Transaction> usedForCountFilter = (transaction) -> (
-            transaction.paymentStatus == TransactionService.PAYMENT_EQUAL ||
-            transaction.paymentStatus == TransactionService.PAYMENT_GREATER_THAN
-        ) && (
+    public final Predicate<Transaction> usedForCountFilter = transaction -> transaction.leaf &&
+        (
             transaction.status == TransactionService.SETTLED ||
             transaction.status == TransactionService.PENDING
         );
@@ -101,14 +103,10 @@ public class TransactionService {
     }
 
     public Query<Transaction> getTransactionQueryForCounting() {
-        Query<Transaction> query = this.datastore.createQuery(Transaction.class)
-            .field("leaf").equal(true);
+        Query<Transaction> query = this.datastore.createQuery(Transaction.class);
 
         query.and(
-            query.or(
-                query.criteria("paymentStatus").equal(TransactionService.PAYMENT_EQUAL),
-                query.criteria("paymentStatus").equal(TransactionService.PAYMENT_GREATER_THAN)
-            ),
+            query.criteria("leaf").equal(true),
             query.or(
                 query.criteria("status").equal(TransactionService.SETTLED),
                 query.criteria("status").equal(TransactionService.PENDING)
@@ -128,10 +126,7 @@ public class TransactionService {
                 transaction.status == TransactionService.USER_REVOKED
             ) &&
             (
-                transaction.paymentStatus == TransactionService.PAYMENT_EQUAL ||
-                transaction.paymentStatus == TransactionService.PAYMENT_LESS_THAN ||
-                transaction.paymentStatus == TransactionService.PAYMENT_GREATER_THAN ||
-                transaction.paymentStatus == TransactionService.PAYMENT_UNKNOWN
+                transaction.paymentStatus == TransactionService.PAYMENT_EQUAL
             );
     }
 
@@ -210,11 +205,9 @@ public class TransactionService {
         amount.setCellValue(subject.amount);
         currency.setCellValue(subject.currency);
 
-        if (PaypalIPN.class.getSimpleName().equals(subject.linkedObjectClass) || "PaypalPayment".equals(subject.linkedObjectClass)) {
+        if ("PaypalPayment".equals(subject.linkedObjectClass)) {
             system.setCellValue("paypal");
-        }
-
-        if ("StripeCharge".equals(subject.linkedObjectClass)) {
+        } else if ("StripeCharge".equals(subject.linkedObjectClass)) {
             system.setCellValue("stripe");
         }
 
@@ -261,8 +254,7 @@ public class TransactionService {
     }
 
     public boolean isVendorTransaction(Transaction transaction) {
-        return PaypalIPN.class.getSimpleName().equals(transaction.linkedObjectClass) ||
-          "PaypalPayment".equals(transaction.linkedObjectClass) ||
+        return "PaypalPayment".equals(transaction.linkedObjectClass) ||
           "StripeCharge".equals(transaction.linkedObjectClass);
     }
 }

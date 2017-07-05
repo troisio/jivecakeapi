@@ -1,6 +1,5 @@
 package com.jivecake.api.resources;
 
-import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
@@ -24,6 +23,7 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
+import org.apache.log4j.Logger;
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 
@@ -49,13 +49,16 @@ import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Charge;
 import com.stripe.model.Customer;
+import com.stripe.model.Refund;
 import com.stripe.model.Subscription;
+import com.stripe.net.RequestOptions;
 import com.stripe.net.Webhook;
 
 @CORS
 @Path("stripe")
 @Singleton
 public class StripeResource {
+    private final Logger logger = Logger.getLogger(StripeResource.class);
     private final StripeConfiguration stripeConfiguration;
     private final StripeService stripeService;
     private final TransactionService transactionService;
@@ -93,19 +96,122 @@ public class StripeResource {
         @HeaderParam("Stripe-Signature") String signature,
         String body
     ) {
-        com.stripe.model.Event event;
+        com.stripe.model.Event event = null;
+        SignatureVerificationException exception = null;
 
         try {
-            event = Webhook.constructEvent(
-                body,
-                signature,
-                this.stripeConfiguration.secretKey
-            );
+            event = Webhook.constructEvent(body, signature, this.stripeConfiguration.signingSecret);
         } catch (SignatureVerificationException e) {
-            e.printStackTrace();
+            exception = e;
+        }
+
+        if (exception == null) {
+            if ("charge.refunded".equals(event.getType())) {
+                Charge charge = (Charge)event.getData().getObject();
+
+                long amount = charge.getAmountRefunded();
+
+                Transaction transaction = this.datastore.createQuery(Transaction.class)
+                    .field("objectId").equal(charge.getId())
+                    .field("leaf").equal(true)
+                    .get();
+
+                if (transaction == null) {
+                    this.logger.info("Unable to find transaction for StripeCharge " + charge.getId());
+                } else if (transaction.status == TransactionService.REFUNDED) {
+                    String message = String.format("Stripe Webhook: transaction %s has already been refunded", transaction.id);
+                    this.logger.info(message);
+                } else {
+                    Transaction refundedTransaction = new Transaction(transaction);
+                    refundedTransaction.id = null;
+                    refundedTransaction.parentTransactionId = transaction.id;
+                    refundedTransaction.status = TransactionService.REFUNDED;
+                    refundedTransaction.paymentStatus = TransactionService.PAYMENT_EQUAL;
+                    refundedTransaction.amount = amount / 100;
+                    refundedTransaction.leaf = true;
+                    refundedTransaction.timeCreated = new Date();
+
+                    transaction.leaf = false;
+
+                    this.datastore.save(Arrays.asList(refundedTransaction, transaction));
+
+                    this.entityService.cascadeLastActivity(
+                        Arrays.asList(refundedTransaction, transaction),
+                        new Date()
+                    );
+                    this.notificationService.notify(
+                        Arrays.asList(refundedTransaction),
+                        "transaction.create"
+                    );
+                    this.notificationService.notify(
+                        Arrays.asList(transaction),
+                        "transaction.update"
+                    );
+                }
+            }
+        } else {
+            this.logger.info(exception);
         }
 
         return Response.ok().build();
+    }
+
+    @POST
+    @Path("{id}/refund")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @HasPermission(id="id", clazz=Transaction.class, permission=PermissionService.WRITE)
+    public Response refund(@PathObject("id") Transaction transaction) {
+        boolean canRefund = transaction.leaf = true &&
+            transaction.status == TransactionService.SETTLED &&
+            "StripeCharge".equals(transaction.linkedObjectClass);
+
+        ResponseBuilder builder;
+
+        if (canRefund) {
+            RequestOptions options = this.stripeService.getRequestOptions();
+
+            long amount = (long)(transaction.amount * 100);
+
+            Map<String, Object> parameters = new HashMap<>();
+            parameters.put("charge", transaction.linkedIdString);
+            parameters.put("amount", amount);
+
+            StripeException exception = null;
+
+            try {
+                Refund.create(parameters, options);
+            } catch (StripeException e) {
+                exception = e;
+            }
+
+            if (exception == null) {
+                Transaction refundTransaction = new Transaction(transaction);
+                refundTransaction.id = null;
+                refundTransaction.parentTransactionId = transaction.id;
+                refundTransaction.leaf = true;
+                refundTransaction.amount = new Double(TransactionService.DEFAULT_DECIMAL_FORMAT.format(amount / -100));
+                refundTransaction.status = TransactionService.REFUNDED;
+                refundTransaction.paymentStatus = TransactionService.PAYMENT_EQUAL;
+                refundTransaction.timeCreated = new Date();
+
+                transaction.leaf = false;
+
+                this.datastore.save(Arrays.asList(transaction, refundTransaction));
+
+                this.notificationService.notify(Arrays.asList(transaction), "transaction.update");
+                this.notificationService.notify(Arrays.asList(refundTransaction), "transaction.create");
+                this.entityService.cascadeLastActivity(Arrays.asList(transaction, refundTransaction), new Date());
+
+                builder = Response.ok(refundTransaction).type(MediaType.APPLICATION_JSON);
+            } else {
+                exception.printStackTrace();
+                builder = Response.status(Status.SERVICE_UNAVAILABLE);
+            }
+        } else {
+            builder = Response.status(Status.BAD_REQUEST);
+        }
+
+        return builder.build();
     }
 
     @POST
@@ -158,8 +264,7 @@ public class StripeResource {
                     total += quantity * amount;
                 }
 
-                DecimalFormat format = new DecimalFormat("#.##");
-                String string = format.format(total);
+                String string = TransactionService.DEFAULT_DECIMAL_FORMAT.format(total);
                 double amountAsDouble = new Double(string);
                 int amount = (int)(amountAsDouble * 100);
 
@@ -189,21 +294,20 @@ public class StripeResource {
                         Item item = items.get(index);
 
                         Transaction transaction = new Transaction();
-                        transaction.eventId = item.eventId;
                         transaction.organizationId = item.organizationId;
-                        transaction.leaf = true;
+                        transaction.eventId = item.eventId;
+                        transaction.itemId = item.id;
                         transaction.quantity = quantities.get(item.id);
-                        transaction.amount = amounts[index];
+                        transaction.amount = amounts[index] * transaction.quantity;
                         transaction.user_id = jwt.getSubject();
                         transaction.status = TransactionService.SETTLED;
                         transaction.paymentStatus = TransactionService.PAYMENT_EQUAL;
                         transaction.linkedIdString = finalCharge.getId();
                         transaction.linkedObjectClass = "StripeCharge";
                         transaction.eventId = item.eventId;
-                        transaction.organizationId = item.organizationId;
                         transaction.email = finalCharge.getReceiptEmail();
-                        transaction.itemId = item.id;
                         transaction.currency = finalCharge.getCurrency().toUpperCase();
+                        transaction.leaf = true;
                         transaction.timeCreated = date;
 
                         completedTransactions.add(transaction);
@@ -216,7 +320,7 @@ public class StripeResource {
                         "transaction.create"
                     );
 
-                    builder = Response.ok(charge).type(MediaType.APPLICATION_JSON);
+                    builder = Response.ok();
                 } else {
                     builder = Response.status(Status.SERVICE_UNAVAILABLE)
                         .entity(exception);
