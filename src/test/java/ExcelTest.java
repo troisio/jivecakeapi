@@ -15,7 +15,6 @@ import org.mongodb.morphia.Morphia;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jivecake.api.model.Item;
-import com.jivecake.api.model.PaypalIPN;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.service.TransactionService;
 import com.mongodb.MongoClient;
@@ -82,7 +81,6 @@ public class ExcelTest {
         transaction.id = new ObjectId();
         transaction.itemId = item.id;
         transaction.linkedId = new ObjectId();
-        transaction.linkedObjectClass = PaypalIPN.class.getSimpleName();
         transaction.timeCreated = new Date();
         transaction.user_id = "identity-provider|105223432348009656993";
         transaction.given_name = "Luis";

@@ -36,6 +36,7 @@ import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
+import com.jivecake.api.model.PaymentProfile;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.request.AggregatedEvent;
 import com.jivecake.api.request.ItemData;
@@ -224,6 +225,11 @@ public class EventResource {
             StripeException stripeException = null;
             List<Subscription> currentSubscriptions = null;
 
+            boolean hasValidPaymentProfile = event.paymentProfileId == null ||
+                this.datastore.createQuery(PaymentProfile.class)
+                    .field("id").equal(event.paymentProfileId)
+                    .count() > 0;
+
             if (event.status == EventService.STATUS_ACTIVE) {
                 activeEventsCount++;
 
@@ -238,9 +244,13 @@ public class EventResource {
                 hasSubscriptionViolation = false;
             }
 
-            if (stripeException != null) {
-                builder = Response.status(Status.SERVICE_UNAVAILABLE)
-                    .entity(stripeException);
+            if (!hasValidPaymentProfile) {
+                builder = Response.status(Status.BAD_REQUEST)
+                    .entity("{\"error\": \"paymentProfileId\"}")
+                    .type(MediaType.APPLICATION_JSON);
+            } else if (stripeException != null) {
+                stripeException.printStackTrace();
+                builder = Response.status(Status.SERVICE_UNAVAILABLE);
             } else if (hasSubscriptionViolation) {
                 Map<String, Object> entity = new HashMap<>();
                 entity.put("error", "subscription");
@@ -252,8 +262,8 @@ public class EventResource {
             } else {
                 Date currentTime = new Date();
 
-                event.organizationId = original.organizationId;
                 event.id = original.id;
+                event.organizationId = original.organizationId;
                 event.timeCreated = original.timeCreated;
                 event.timeUpdated = currentTime;
                 event.lastActivity = currentTime;
@@ -262,7 +272,7 @@ public class EventResource {
 
                 Event searchedEvent = this.datastore.get(Event.class, key.getId());
                 this.notificationService.notify(Arrays.asList(searchedEvent), "event.update");
-                this.entityService.cascadeLastActivity(Arrays.asList(event), currentTime);
+                this.entityService.cascadeLastActivity(Arrays.asList(searchedEvent), currentTime);
 
                 builder = Response.ok(searchedEvent).type(MediaType.APPLICATION_JSON);
             }

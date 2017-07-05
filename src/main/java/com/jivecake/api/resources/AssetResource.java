@@ -18,6 +18,7 @@ import org.mongodb.morphia.query.Query;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
+import com.jivecake.api.filter.GZip;
 import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.EntityType;
 import com.jivecake.api.service.ApplicationService;
@@ -25,6 +26,7 @@ import com.jivecake.api.service.ApplicationService;
 @CORS
 @Path("asset")
 @Singleton
+@GZip
 public class AssetResource {
     private final Datastore datastore;
 

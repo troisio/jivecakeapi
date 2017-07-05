@@ -3,13 +3,13 @@ package com.jivecake.api.resources;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SignatureException;
-import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -21,7 +21,6 @@ import javax.ws.rs.GET;
 import javax.ws.rs.HeaderParam;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
-import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.HttpHeaders;
 import javax.ws.rs.core.MediaType;
@@ -32,25 +31,20 @@ import javax.ws.rs.core.Response.Status;
 
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
-import org.mongodb.morphia.query.FindOptions;
-import org.mongodb.morphia.query.Query;
 
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.APIConfiguration;
-import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
+import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.Log;
 import com.jivecake.api.filter.PathObject;
-import com.jivecake.api.model.Application;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
-import com.jivecake.api.model.PaypalIPN;
 import com.jivecake.api.model.PaypalPaymentProfile;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.request.AggregatedEvent;
 import com.jivecake.api.request.EntityQuantity;
 import com.jivecake.api.request.ItemData;
-import com.jivecake.api.request.Paging;
 import com.jivecake.api.request.PaypalAuthorization;
 import com.jivecake.api.request.PaypalOrder;
 import com.jivecake.api.service.ApplicationService;
@@ -65,9 +59,13 @@ import com.paypal.api.payments.Details;
 import com.paypal.api.payments.ItemList;
 import com.paypal.api.payments.Payee;
 import com.paypal.api.payments.Payer;
+import com.paypal.api.payments.PayerInfo;
 import com.paypal.api.payments.Payment;
 import com.paypal.api.payments.PaymentExecution;
 import com.paypal.api.payments.RedirectUrls;
+import com.paypal.api.payments.RefundRequest;
+import com.paypal.api.payments.RelatedResources;
+import com.paypal.api.payments.Sale;
 import com.paypal.base.rest.APIContext;
 import com.paypal.base.rest.PayPalRESTException;
 
@@ -108,6 +106,134 @@ public class PaypalResource {
             apiConfiguration.paypal.clientSecret,
             apiConfiguration.paypal.mode
         );
+    }
+
+    @POST
+    @Path("{id}/refund")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @HasPermission(id="id", clazz=Transaction.class, permission=PermissionService.WRITE)
+    public Response refund(@PathObject("id") Transaction transaction) {
+        ResponseBuilder builder;
+
+        boolean canRefund = transaction.status == TransactionService.SETTLED &&
+            transaction.leaf &&
+            "PaypalPayment".equals(transaction.linkedObjectClass);
+
+        if (canRefund) {
+            Payment payment = null;
+            PayPalRESTException exception = null;
+
+            try {
+                payment = Payment.get(this.context, transaction.linkedIdString);
+            } catch (PayPalRESTException e) {
+                exception = e;
+            }
+
+            if (exception == null) {
+                List<com.paypal.api.payments.Transaction> transactions = payment.getTransactions();
+
+                if (transactions.size() == 1) {
+                    com.paypal.api.payments.Transaction paypalTransaction = transactions.get(0);
+                    String currency = paypalTransaction.getAmount().getCurrency();
+
+                    List<Sale> sales = paypalTransaction.getRelatedResources().stream()
+                        .map(RelatedResources::getSale)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toList());
+
+                    if (sales.size() == 1) {
+                        Sale sale = sales.get(0);
+                        RefundRequest request = new RefundRequest();
+
+                        RefundRequest refundRequest = new RefundRequest();
+
+                        Amount amount = new Amount();
+                        amount.setTotal(
+                            TransactionService.DEFAULT_DECIMAL_FORMAT.format(
+                                transaction.amount * transaction.quantity
+                            )
+                        );
+                        amount.setCurrency(currency);
+
+                        refundRequest.setAmount(amount);
+
+                        PayPalRESTException refundException = null;
+
+                        try {
+                            sale.refund(this.context, request);
+                        } catch (PayPalRESTException e) {
+                            refundException = e;
+                        }
+
+                        if (refundException == null) {
+                            Transaction refundTransaction = new Transaction(transaction);
+                            refundTransaction.id = null;
+                            refundTransaction.parentTransactionId = transaction.id;
+                            refundTransaction.leaf = true;
+                            refundTransaction.amount = transaction.amount * transaction.quantity * -1;
+                            refundTransaction.status = TransactionService.REFUNDED;
+                            refundTransaction.timeCreated = new Date();
+
+                            transaction.leaf = false;
+
+                            this.datastore.save(Arrays.asList(transaction, refundTransaction));
+
+                            this.notificationService.notify(Arrays.asList(transaction), "transaction.update");
+                            this.notificationService.notify(Arrays.asList(refundTransaction), "transaction.create");
+                            this.entityService.cascadeLastActivity(Arrays.asList(transaction, refundTransaction), new Date());
+
+                            builder = Response.ok(refundTransaction).type(MediaType.APPLICATION_JSON);
+                        } else {
+                            refundException.printStackTrace();
+                            builder = Response.status(Status.SERVICE_UNAVAILABLE);
+                        }
+                    } else {
+                        String entity = String.format("{\"error\": \"saleCount\", \"data\": %s}", sales.size());
+                        builder = Response.status(Status.BAD_REQUEST)
+                            .entity(entity)
+                            .type(MediaType.APPLICATION_JSON);
+                    }
+                } else {
+                    builder = Response.status(Status.BAD_REQUEST)
+                        .entity("{\"error\": \"multiplePaypalTransactions\"}")
+                        .type(MediaType.APPLICATION_JSON);
+                }
+            } else {
+                exception.printStackTrace();
+                builder = Response.status(Status.SERVICE_UNAVAILABLE);
+            }
+        } else {
+            builder = Response.status(Status.BAD_REQUEST);
+        }
+
+        return builder.build();
+    }
+
+    @GET
+    @Path("{transactionId}/payment")
+    @HasPermission(clazz=Transaction.class, id="transactionId", permission=PermissionService.READ)
+    public Response getPayment(
+        @PathObject("transactionId") Transaction transaction
+    ) {
+        PayPalRESTException exception = null;
+        Payment payment = null;
+
+        try {
+            payment = Payment.get(this.context, transaction.linkedIdString);
+        } catch (PayPalRESTException e) {
+            exception = e;
+        }
+
+        ResponseBuilder builder;
+
+        if (exception == null) {
+            builder = Response.ok(payment.toJSON()).type(MediaType.APPLICATION_JSON);
+        } else {
+            exception.printStackTrace();
+            builder = Response.status(Status.SERVICE_UNAVAILABLE);
+        }
+
+        return builder.build();
     }
 
     @POST
@@ -154,12 +280,18 @@ public class PaypalResource {
                     transaction.paymentStatus = TransactionService.PAYMENT_EQUAL;
                     transaction.status = TransactionService.SETTLED;
                     transaction.quantity = new Long(paypalItem.getQuantity());
-                    transaction.amount = new Double(paypalItem.getPrice());
+                    transaction.amount = new Double(paypalItem.getPrice()) * transaction.quantity;
                     transaction.currency = paypalItem.getCurrency();
                     transaction.leaf = true;
                     transaction.timeCreated = date;
 
-                    if (jwt != null) {
+                    if (jwt == null) {
+                        Payer payer = complete.getPayer();
+                        PayerInfo info = payer.getPayerInfo();
+
+                        transaction.given_name = info.getFirstName();
+                        transaction.family_name = info.getFirstName();
+                    } else {
                         transaction.user_id = jwt.getSubject();
                     }
 
@@ -183,7 +315,8 @@ public class PaypalResource {
                 builder = Response.ok(body).type(MediaType.APPLICATION_JSON);
             }
         } else {
-            builder = Response.status(Status.SERVICE_UNAVAILABLE).entity(exception);
+            exception.printStackTrace();
+            builder = Response.status(Status.SERVICE_UNAVAILABLE);
         }
 
         return builder.build();
@@ -227,10 +360,6 @@ public class PaypalResource {
             if (validRequest) {
                 List<com.paypal.api.payments.Item> items = new ArrayList<>();
 
-                DecimalFormat format = new DecimalFormat();
-                format.setMinimumFractionDigits(2);
-                format.setMaximumFractionDigits(2);
-
                 double total = 0;
 
                 for (EntityQuantity<ObjectId> entityQuantity: order.itemData) {
@@ -239,7 +368,7 @@ public class PaypalResource {
                     com.paypal.api.payments.Item paypalItem = new com.paypal.api.payments.Item();
                     Item item = itemData.item;
 
-                    paypalItem.setPrice(format.format(itemData.amount));
+                    paypalItem.setPrice(TransactionService.DEFAULT_DECIMAL_FORMAT.format(itemData.amount));
                     paypalItem.setQuantity(Integer.toString(entityQuantity.quantity));
                     paypalItem.setName(item.name);
                     paypalItem.setSku(item.id.toString());
@@ -254,13 +383,13 @@ public class PaypalResource {
                 itemList.setItems(items);
 
                 Details details = new Details();
-                details.setSubtotal(format.format(total));
+                details.setSubtotal(TransactionService.DEFAULT_DECIMAL_FORMAT.format(total));
                 details.setShipping("0");
                 details.setTax("0");
 
                 Amount amount = new Amount();
                 amount.setCurrency(group.event.currency);
-                amount.setTotal(format.format(total));
+                amount.setTotal(TransactionService.DEFAULT_DECIMAL_FORMAT.format(total));
                 amount.setDetails(details);
 
                 PaypalPaymentProfile paypalProfile = (PaypalPaymentProfile)group.profile;
@@ -271,7 +400,7 @@ public class PaypalResource {
                 com.paypal.api.payments.Transaction transaction = new com.paypal.api.payments.Transaction();
                 transaction.setAmount(amount);
                 transaction.setItemList(itemList);
-                transaction.setDescription("JiveCake/" + event.name);
+                transaction.setDescription(event.name);
                 transaction.setPayee(payee);
 
                 List<com.paypal.api.payments.Transaction> transactions = new ArrayList<>();
@@ -306,7 +435,7 @@ public class PaypalResource {
                     builder = Response.ok(body).type(MediaType.APPLICATION_JSON);
                 } else {
                     exception.printStackTrace();
-                    builder = Response.status(Status.SERVICE_UNAVAILABLE).entity(exception);
+                    builder = Response.status(Status.SERVICE_UNAVAILABLE);
                 }
             } else {
                 builder = Response.status(Status.BAD_REQUEST);
@@ -342,92 +471,5 @@ public class PaypalResource {
         }
 
         return Response.ok().build();
-    }
-
-    @GET
-    @Path("ipn")
-    @Authorized
-    public Response search(
-        @QueryParam("id") ObjectId id,
-        @QueryParam("txn_id") String txn_id,
-        @QueryParam("parent_txn_id") String parent_txn_id,
-        @QueryParam("timeCreated") Long timeCreated,
-        @QueryParam("timeCreatedLessThan") Long timeCreatedLessThan,
-        @QueryParam("item_number") String itemNumber,
-        @QueryParam("timeCreatedGreaterThan") Long timeCreatedGreaterThan,
-        @QueryParam("custom") List<String> custom,
-        @QueryParam("payment_status") List<String> paymentStatuses,
-        @QueryParam("limit") Integer limit,
-        @QueryParam("offset") Integer offset,
-        @QueryParam("order") String order,
-        @Context DecodedJWT jwt
-    ) {
-        Application application = this.applicationService.read();
-
-        ResponseBuilder builder;
-
-        boolean hasPermission = this.permissionService.has(
-            jwt.getSubject(),
-            Arrays.asList(application),
-            PermissionService.READ
-        );
-
-        if (hasPermission) {
-            Query<PaypalIPN> query = this.datastore.createQuery(PaypalIPN.class);
-
-            if (id != null) {
-                query.field("id").equal(id);
-            }
-
-            if (txn_id != null) {
-                query.field("txn_id").equal(txn_id);
-            }
-
-            if (parent_txn_id != null) {
-                query.field("parent_txn_id").equal(parent_txn_id);
-            }
-
-            if (!custom.isEmpty()) {
-                query.field("custom").in(custom);
-            }
-
-            if (itemNumber != null) {
-                query.field("item_number").equal(itemNumber);
-            }
-
-            if (!paymentStatuses.isEmpty()) {
-                query.field("payment_status").in(paymentStatuses);
-            }
-
-            if (timeCreated != null) {
-                query.field("timeCreated").equal(new Date(timeCreated));
-            }
-
-            if (timeCreatedLessThan != null) {
-                query.field("timeCreated").lessThan(new Date(timeCreatedLessThan));
-            }
-
-            if (timeCreatedGreaterThan != null) {
-                query.field("timeCreated").greaterThan(new Date(timeCreatedGreaterThan));
-            }
-
-            if (order != null) {
-                query.order(order);
-            }
-
-            FindOptions options = new FindOptions();
-            options.limit(ApplicationService.LIMIT_DEFAULT);
-
-            if (offset != null) {
-                options.skip(offset);
-            }
-
-            Paging<PaypalIPN> entity = new Paging<>(query.asList(options), query.count());
-            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-        } else {
-            builder = Response.status(Status.UNAUTHORIZED);
-        }
-
-        return builder.build();
     }
 }

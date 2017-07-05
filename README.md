@@ -3,14 +3,15 @@
 #### Build
 
 ```sh
-docker build -t jivecakeapi --file docker/Dockerfile
+cd docker
+docker build -t jivecakeapi .
 ```
 
 #### Restart
 
 ```sh
-gradle clean shadowJar
-docker-compose --file docker/docker-compose.yml down
+gradle clean shadowJar && \
+docker-compose --file docker/docker-compose.yml down && \
 docker-compose --file docker/docker-compose.yml up
 ```
 
