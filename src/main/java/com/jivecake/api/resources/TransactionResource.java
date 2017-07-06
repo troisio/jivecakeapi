@@ -537,15 +537,19 @@ public class TransactionResource {
     public Response delete(@PathObject("id") Transaction transaction) {
         ResponseBuilder builder;
 
+        boolean isSettled = transaction.status == TransactionService.SETTLED;
         boolean isUserRevoked = transaction.status == TransactionService.USER_REVOKED;
         boolean isVendorTransaction = this.transactionService.isVendorTransaction(transaction);
         boolean hasChildTransaction = this.datastore.createQuery(Transaction.class)
             .field("parentTransactionId").equal(transaction.id)
             .count() > 0;
 
-        if ((isVendorTransaction && !isUserRevoked) || hasChildTransaction) {
-            builder = Response.status(Status.BAD_REQUEST);
-        } else {
+        boolean canDelete = !hasChildTransaction && (
+            (isVendorTransaction && isUserRevoked) ||
+            (isSettled && !isVendorTransaction)
+        );
+
+        if (canDelete) {
             this.datastore.delete(Transaction.class, transaction.id);
             this.notificationService.notify(Arrays.asList(transaction), "transaction.delete");
 
@@ -564,6 +568,8 @@ public class TransactionResource {
 
             this.entityService.cascadeLastActivity(transactions, new Date());
             builder = Response.ok(transaction).type(MediaType.APPLICATION_JSON);
+        } else {
+            builder = Response.status(Status.BAD_REQUEST);
         }
 
         return builder.build();
