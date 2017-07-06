@@ -17,7 +17,6 @@ import java.util.stream.Collectors;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import javax.ws.rs.Consumes;
-import javax.ws.rs.GET;
 import javax.ws.rs.HeaderParam;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
@@ -65,6 +64,7 @@ import com.paypal.api.payments.RedirectUrls;
 import com.paypal.api.payments.RefundRequest;
 import com.paypal.api.payments.RelatedResources;
 import com.paypal.api.payments.Sale;
+import com.paypal.base.Constants;
 import com.paypal.base.rest.APIContext;
 import com.paypal.base.rest.PayPalRESTException;
 
@@ -86,7 +86,7 @@ public class PaypalResource {
         EntityService entityService,
         NotificationService notificationService,
         TransactionService transactionService,
-        APIConfiguration apiConfiguration
+        APIConfiguration configuration
     ) {
         this.datastore = datastore;
         this.itemService = itemService;
@@ -95,10 +95,14 @@ public class PaypalResource {
         this.transactionService = transactionService;
 
         this.context = new APIContext(
-            apiConfiguration.paypal.clientId,
-            apiConfiguration.paypal.clientSecret,
-            apiConfiguration.paypal.mode
+            configuration.paypal.clientId,
+            configuration.paypal.clientSecret,
+            configuration.paypal.mode
         );
+
+        Map<String, String> config = new HashMap<>();
+        config.put(Constants.PAYPAL_WEBHOOK_ID, configuration.paypal.webhookId);
+        this.context.setConfigurationMap(config);
     }
 
     @POST
@@ -202,33 +206,6 @@ public class PaypalResource {
         return builder.build();
     }
 
-    @GET
-    @Path("{transactionId}/payment")
-    @HasPermission(clazz=Transaction.class, id="transactionId", permission=PermissionService.READ)
-    public Response getPayment(
-        @PathObject("transactionId") Transaction transaction
-    ) {
-        PayPalRESTException exception = null;
-        Payment payment = null;
-
-        try {
-            payment = Payment.get(this.context, transaction.linkedId);
-        } catch (PayPalRESTException e) {
-            exception = e;
-        }
-
-        ResponseBuilder builder;
-
-        if (exception == null) {
-            builder = Response.ok(payment.toJSON()).type(MediaType.APPLICATION_JSON);
-        } else {
-            exception.printStackTrace();
-            builder = Response.status(Status.SERVICE_UNAVAILABLE);
-        }
-
-        return builder.build();
-    }
-
     @POST
     @Path("payment/execute")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -257,7 +234,7 @@ public class PaypalResource {
 
             com.paypal.api.payments.Transaction paypalTransaction = complete.getTransactions().get(0);
             List<com.paypal.api.payments.Item> items = paypalTransaction.getItemList().getItems();
-
+System.out.format("%n%n%s%n%n", complete.toJSON());
             if ("created".equals(complete.getState()) || "approved".equals(complete.getState()) || complete.getState() == null) {
                 List<Transaction> transactions = new ArrayList<>();
 
