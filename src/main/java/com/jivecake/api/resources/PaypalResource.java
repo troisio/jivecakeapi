@@ -77,7 +77,7 @@ public class PaypalResource {
     private final EntityService entityService;
     private final NotificationService notificationService;
     private final TransactionService transactionService;
-    private final APIContext context;
+    private final APIConfiguration configuration;
 
     @Inject
     public PaypalResource(
@@ -93,16 +93,7 @@ public class PaypalResource {
         this.entityService = entityService;
         this.notificationService = notificationService;
         this.transactionService = transactionService;
-
-        this.context = new APIContext(
-            configuration.paypal.clientId,
-            configuration.paypal.clientSecret,
-            configuration.paypal.mode
-        );
-
-        Map<String, String> config = new HashMap<>();
-        config.put(Constants.PAYPAL_WEBHOOK_ID, configuration.paypal.webhookId);
-        this.context.setConfigurationMap(config);
+        this.configuration = configuration;
     }
 
     @POST
@@ -120,8 +111,14 @@ public class PaypalResource {
             Payment payment = null;
             PayPalRESTException exception = null;
 
+            APIContext context = new APIContext(
+                this.configuration.paypal.clientId,
+                this.configuration.paypal.clientSecret,
+                this.configuration.paypal.mode
+            );
+
             try {
-                payment = Payment.get(this.context, transaction.linkedId);
+                payment = Payment.get(context, transaction.linkedId);
             } catch (PayPalRESTException e) {
                 exception = e;
             }
@@ -157,7 +154,7 @@ public class PaypalResource {
                         PayPalRESTException refundException = null;
 
                         try {
-                            sale.refund(this.context, request);
+                            sale.refund(context, request);
                         } catch (PayPalRESTException e) {
                             refundException = e;
                         }
@@ -223,8 +220,14 @@ public class PaypalResource {
         Payment payment = new Payment();
         payment.setId(authorization.paymentID);
 
+        APIContext context = new APIContext(
+            this.configuration.paypal.clientId,
+            this.configuration.paypal.clientSecret,
+            this.configuration.paypal.mode
+        );
+
         try {
-            complete = payment.execute(this.context, execution);
+            complete = payment.execute(context, execution);
         } catch (PayPalRESTException e) {
             exception = e;
         }
@@ -392,8 +395,14 @@ System.out.format("%n%n%s%n%n", complete.toJSON());
                 PayPalRESTException exception = null;
                 Payment newPayment = null;
 
+                APIContext context = new APIContext(
+                    this.configuration.paypal.clientId,
+                    this.configuration.paypal.clientSecret,
+                    this.configuration.paypal.mode
+                );
+
                 try {
-                    newPayment = payment.create(this.context);
+                    newPayment = payment.create(context);
                 } catch (PayPalRESTException e) {
                     exception = e;
                 }
@@ -427,8 +436,18 @@ System.out.format("%n%n%s%n%n", complete.toJSON());
         Exception exception = null;
         boolean valid = false;
 
+        APIContext context = new APIContext(
+            this.configuration.paypal.clientId,
+            this.configuration.paypal.clientSecret,
+            this.configuration.paypal.mode
+        );
+
+        Map<String, String> config = new HashMap<>();
+        config.put(Constants.PAYPAL_WEBHOOK_ID, this.configuration.paypal.webhookId);
+        context.setConfigurationMap(config);
+
         try {
-            valid = com.paypal.api.payments.Event.validateReceivedEvent(this.context, headers, body);
+            valid = com.paypal.api.payments.Event.validateReceivedEvent(context, headers, body);
         } catch (InvalidKeyException | NoSuchAlgorithmException | SignatureException | PayPalRESTException e) {
             exception = e;
         }
