@@ -112,7 +112,7 @@ public class StripeResource {
                 long amount = charge.getAmountRefunded();
 
                 Transaction transaction = this.datastore.createQuery(Transaction.class)
-                    .field("objectId").equal(charge.getId())
+                    .field("linkedId").equal(charge.getId())
                     .field("leaf").equal(true)
                     .get();
 
