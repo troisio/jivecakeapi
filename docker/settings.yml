@@ -8,7 +8,6 @@ oauth:
   apiToken: "default"
 
 paypal:
-  accessToken: "default"
   clientId: "default"
   clientSecret: "default"
   mode: production

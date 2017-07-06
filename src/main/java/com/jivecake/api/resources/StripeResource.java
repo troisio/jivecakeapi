@@ -173,7 +173,7 @@ public class StripeResource {
             long amount = (long)(transaction.amount * 100);
 
             Map<String, Object> parameters = new HashMap<>();
-            parameters.put("charge", transaction.linkedIdString);
+            parameters.put("charge", transaction.linkedId);
             parameters.put("amount", amount);
 
             StripeException exception = null;
@@ -302,7 +302,7 @@ public class StripeResource {
                         transaction.user_id = jwt.getSubject();
                         transaction.status = TransactionService.SETTLED;
                         transaction.paymentStatus = TransactionService.PAYMENT_EQUAL;
-                        transaction.linkedIdString = finalCharge.getId();
+                        transaction.linkedId = finalCharge.getId();
                         transaction.linkedObjectClass = "StripeCharge";
                         transaction.eventId = item.eventId;
                         transaction.email = finalCharge.getReceiptEmail();
