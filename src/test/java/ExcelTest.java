@@ -80,7 +80,6 @@ public class ExcelTest {
         Transaction transaction = new Transaction();
         transaction.id = new ObjectId();
         transaction.itemId = item.id;
-        transaction.linkedId = new ObjectId();
         transaction.timeCreated = new Date();
         transaction.user_id = "identity-provider|105223432348009656993";
         transaction.given_name = "Luis";

@@ -80,16 +80,15 @@ public class TransactionResource {
         this.datastore = datastore;
     }
 
+    @GZip
     @GET
     @Authorized
-    @GZip
     public void search(
         @QueryParam("organizationId") List<ObjectId> organizationIds,
         @QueryParam("eventId") List<ObjectId> eventIds,
         @QueryParam("itemId") List<ObjectId> itemIds,
         @QueryParam("user_id") Set<String> userIds,
         @QueryParam("id") List<ObjectId> ids,
-        @QueryParam("linkedIdString") String linkedIdString,
         @QueryParam("parentTransactionId") List<ObjectId> parentTransactionIds,
         @QueryParam("timeCreatedLessThan") Long timeCreatedLessThan,
         @QueryParam("timeCreatedGreaterThan") Long timeCreatedGreaterThan,
@@ -130,10 +129,6 @@ public class TransactionResource {
 
         if (!paymentStatuses.isEmpty()) {
             query.field("paymentStatus").in(paymentStatuses);
-        }
-
-        if (linkedIdString != null) {
-            query.field("linkedIdString").equal(linkedIdString);
         }
 
         if (!parentTransactionIds.isEmpty()) {
@@ -282,6 +277,7 @@ public class TransactionResource {
         return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
     }
 
+    @GZip
     @GET
     @Path("asset/user")
     @Authorized

@@ -47,7 +47,6 @@ import com.jivecake.api.request.EntityQuantity;
 import com.jivecake.api.request.ItemData;
 import com.jivecake.api.request.PaypalAuthorization;
 import com.jivecake.api.request.PaypalOrder;
-import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.ItemService;
@@ -74,10 +73,8 @@ import com.paypal.base.rest.PayPalRESTException;
 @Singleton
 public class PaypalResource {
     private final Datastore datastore;
-    private final PermissionService permissionService;
     private final ItemService itemService;
     private final EntityService entityService;
-    private final ApplicationService applicationService;
     private final NotificationService notificationService;
     private final TransactionService transactionService;
     private final APIContext context;
@@ -85,19 +82,15 @@ public class PaypalResource {
     @Inject
     public PaypalResource(
         Datastore datastore,
-        PermissionService permissionService,
         ItemService itemService,
         EntityService entityService,
-        ApplicationService applicationService,
         NotificationService notificationService,
         TransactionService transactionService,
         APIConfiguration apiConfiguration
     ) {
         this.datastore = datastore;
-        this.permissionService = permissionService;
         this.itemService = itemService;
         this.entityService = entityService;
-        this.applicationService = applicationService;
         this.notificationService = notificationService;
         this.transactionService = transactionService;
 
@@ -124,7 +117,7 @@ public class PaypalResource {
             PayPalRESTException exception = null;
 
             try {
-                payment = Payment.get(this.context, transaction.linkedIdString);
+                payment = Payment.get(this.context, transaction.linkedId);
             } catch (PayPalRESTException e) {
                 exception = e;
             }
@@ -219,7 +212,7 @@ public class PaypalResource {
         Payment payment = null;
 
         try {
-            payment = Payment.get(this.context, transaction.linkedIdString);
+            payment = Payment.get(this.context, transaction.linkedId);
         } catch (PayPalRESTException e) {
             exception = e;
         }
@@ -275,7 +268,7 @@ public class PaypalResource {
                     transaction.itemId = item.id;
                     transaction.eventId = item.eventId;
                     transaction.organizationId = item.organizationId;
-                    transaction.linkedIdString = payment.getId();
+                    transaction.linkedId = payment.getId();
                     transaction.linkedObjectClass = "PaypalPayment";
                     transaction.paymentStatus = TransactionService.PAYMENT_EQUAL;
                     transaction.status = TransactionService.SETTLED;
