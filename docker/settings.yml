@@ -8,6 +8,7 @@ oauth:
   apiToken: "default"
 
 paypal:
+  webhookId: "default"
   clientId: "default"
   clientSecret: "default"
   mode: production
@@ -15,6 +16,7 @@ paypal:
 stripe:
   secretKey: "default"
   publishableKey: "default"
+  signingSecret: "default"
 
 gcp:
   bucket: "default"
