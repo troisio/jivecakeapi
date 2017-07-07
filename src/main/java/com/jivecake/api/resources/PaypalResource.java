@@ -17,6 +17,7 @@ import java.util.stream.Collectors;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import javax.ws.rs.Consumes;
+import javax.ws.rs.GET;
 import javax.ws.rs.HeaderParam;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
@@ -32,6 +33,8 @@ import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 
 import com.auth0.jwt.interfaces.DecodedJWT;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jivecake.api.APIConfiguration;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.HasPermission;
@@ -78,6 +81,8 @@ public class PaypalResource {
     private final NotificationService notificationService;
     private final TransactionService transactionService;
     private final APIConfiguration configuration;
+    private final APIContext context;
+    private final ObjectMapper mapper = new ObjectMapper();
 
     @Inject
     public PaypalResource(
@@ -94,6 +99,12 @@ public class PaypalResource {
         this.notificationService = notificationService;
         this.transactionService = transactionService;
         this.configuration = configuration;
+
+        this.context = new APIContext(
+            this.configuration.paypal.clientId,
+            this.configuration.paypal.clientSecret,
+            this.configuration.paypal.mode
+        );
     }
 
     @POST
@@ -111,14 +122,8 @@ public class PaypalResource {
             Payment payment = null;
             PayPalRESTException exception = null;
 
-            APIContext context = new APIContext(
-                this.configuration.paypal.clientId,
-                this.configuration.paypal.clientSecret,
-                this.configuration.paypal.mode
-            );
-
             try {
-                payment = Payment.get(context, transaction.linkedId);
+                payment = Payment.get(this.context, transaction.linkedId);
             } catch (PayPalRESTException e) {
                 exception = e;
             }
@@ -154,7 +159,7 @@ public class PaypalResource {
                         PayPalRESTException refundException = null;
 
                         try {
-                            sale.refund(context, request);
+                            sale.refund(this.context, request);
                         } catch (PayPalRESTException e) {
                             refundException = e;
                         }
@@ -220,14 +225,8 @@ public class PaypalResource {
         Payment payment = new Payment();
         payment.setId(authorization.paymentID);
 
-        APIContext context = new APIContext(
-            this.configuration.paypal.clientId,
-            this.configuration.paypal.clientSecret,
-            this.configuration.paypal.mode
-        );
-
         try {
-            complete = payment.execute(context, execution);
+            complete = payment.execute(this.context, execution);
         } catch (PayPalRESTException e) {
             exception = e;
         }
@@ -237,9 +236,15 @@ public class PaypalResource {
 
             com.paypal.api.payments.Transaction paypalTransaction = complete.getTransactions().get(0);
             List<com.paypal.api.payments.Item> items = paypalTransaction.getItemList().getItems();
-System.out.format("%n%n%s%n%n", complete.toJSON());
+
             if ("created".equals(complete.getState()) || "approved".equals(complete.getState()) || complete.getState() == null) {
                 List<Transaction> transactions = new ArrayList<>();
+
+                Sale sale = paypalTransaction.getRelatedResources().stream()
+                    .map(RelatedResources::getSale)
+                    .filter(Objects::nonNull)
+                    .findFirst()
+                    .get();
 
                 for (com.paypal.api.payments.Item paypalItem: items) {
                     Item item = this.datastore.get(Item.class, new ObjectId(paypalItem.getSku()));
@@ -251,12 +256,17 @@ System.out.format("%n%n%s%n%n", complete.toJSON());
                     transaction.linkedId = payment.getId();
                     transaction.linkedObjectClass = "PaypalPayment";
                     transaction.paymentStatus = TransactionService.PAYMENT_EQUAL;
-                    transaction.status = TransactionService.SETTLED;
                     transaction.quantity = new Long(paypalItem.getQuantity());
                     transaction.amount = new Double(paypalItem.getPrice()) * transaction.quantity;
                     transaction.currency = paypalItem.getCurrency();
                     transaction.leaf = true;
                     transaction.timeCreated = date;
+
+                    if ("pending".equals(sale.getState())) {
+                        transaction.status = TransactionService.PENDING;
+                    } else {
+                        transaction.status = TransactionService.SETTLED;
+                    }
 
                     if (jwt == null) {
                         Payer payer = complete.getPayer();
@@ -395,14 +405,8 @@ System.out.format("%n%n%s%n%n", complete.toJSON());
                 PayPalRESTException exception = null;
                 Payment newPayment = null;
 
-                APIContext context = new APIContext(
-                    this.configuration.paypal.clientId,
-                    this.configuration.paypal.clientSecret,
-                    this.configuration.paypal.mode
-                );
-
                 try {
-                    newPayment = payment.create(context);
+                    newPayment = payment.create(this.context);
                 } catch (PayPalRESTException e) {
                     exception = e;
                 }
@@ -424,9 +428,34 @@ System.out.format("%n%n%s%n%n", complete.toJSON());
         return builder.build();
     }
 
+    @GET
+    @Path("{transactionId}/payment")
+    @HasPermission(clazz=Transaction.class, id="transactionId", permission=PermissionService.READ)
+    public Response getPayment(@PathObject("transactionId") Transaction transaction) {
+        PayPalRESTException exception = null;
+        Payment payment = null;
+
+        try {
+            payment = Payment.get(this.context, transaction.linkedId);
+        } catch (PayPalRESTException e) {
+            exception = e;
+        }
+
+        ResponseBuilder builder;
+
+        if (exception == null) {
+            builder = Response.ok(payment.toJSON()).type(MediaType.APPLICATION_JSON);
+        } else {
+            exception.printStackTrace();
+            builder = Response.status(Status.SERVICE_UNAVAILABLE);
+        }
+
+        return builder.build();
+    }
+
+    @Log
     @POST
     @Path("webhook")
-    @Log
     public Response webhook(@Context HttpHeaders httpHeaders, String body) {
         MultivaluedMap<String, String> map = httpHeaders.getRequestHeaders();
         Map<String, String> headers = map.keySet()
@@ -452,13 +481,49 @@ System.out.format("%n%n%s%n%n", complete.toJSON());
             exception = e;
         }
 
+        ResponseBuilder builder = Response.ok();
+
         if (exception == null) {
             if (valid) {
+                Exception paypalException = null;
+                com.paypal.api.payments.Event event = null;
+
+                try {
+                    JsonNode node = this.mapper.readTree(body);
+                    event = com.paypal.api.payments.Event.get(this.context, node.get("id").asText());
+                } catch (Exception e) {
+                    paypalException = e;
+                }
+
+                if (paypalException == null) {
+                    boolean isCompleteSale = "PAYMENT.SALE.COMPLETED".equals(event.getEventType()) &&
+                        "sale".equals(event.getResourceType());
+
+                    if (isCompleteSale) {
+                        Sale sale = (Sale)event.getResource();
+
+                        List<Transaction> transactions = this.datastore.createQuery(Transaction.class)
+                            .field("objectClass").equal("PaypalPayment")
+                            .field("linkedId").equal(sale.getParentPayment())
+                            .asList();
+
+                        for (Transaction transaction: transactions) {
+                            transaction.status = TransactionService.SETTLED;
+                        }
+
+                        this.datastore.save(transactions);
+                        this.notificationService.notify(Arrays.asList(transactions), "transaction.update");
+                        this.entityService.cascadeLastActivity(Arrays.asList(transactions), new Date());
+                    }
+                } else {
+                    paypalException.printStackTrace();
+                    builder = Response.status(Status.SERVICE_UNAVAILABLE);
+                }
             }
         } else {
             exception.printStackTrace();
         }
 
-        return Response.ok().build();
+        return builder.build();
     }
 }

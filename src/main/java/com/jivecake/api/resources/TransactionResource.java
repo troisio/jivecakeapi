@@ -185,10 +185,14 @@ public class TransactionResource {
                 query.field("id").in(textTransactionIds);
             }
 
+            int defaultLimit = 5000;
+
             FindOptions options = new FindOptions();
 
-            if (limit != null && limit > -1) {
+            if (limit != null && limit > -1 && limit <= defaultLimit) {
                 options.limit(limit);
+            } else {
+                options.limit(defaultLimit);
             }
 
             if (offset != null && offset > -1) {
