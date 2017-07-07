@@ -1,5 +1,6 @@
 package com.jivecake.api.resources;
 
+import java.io.IOException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SignatureException;
@@ -485,26 +486,24 @@ public class PaypalResource {
 
         if (exception == null) {
             if (valid) {
-                Exception paypalException = null;
-                com.paypal.api.payments.Event event = null;
+                Exception jsonException = null;
+                JsonNode node = null;
 
                 try {
-                    JsonNode node = this.mapper.readTree(body);
-                    event = com.paypal.api.payments.Event.get(this.context, node.get("id").asText());
-                } catch (Exception e) {
-                    paypalException = e;
+                    node = this.mapper.readTree(body);
+                } catch (IOException e) {
+                    jsonException = e;
                 }
 
-                if (paypalException == null) {
-                    boolean isCompleteSale = "PAYMENT.SALE.COMPLETED".equals(event.getEventType()) &&
-                        "sale".equals(event.getResourceType());
+                if (jsonException == null) {
+                    boolean isCompleteSale = "PAYMENT.SALE.COMPLETED".equals(node.get("event_type").asText());
 
                     if (isCompleteSale) {
-                        Sale sale = (Sale)event.getResource();
+                        String linkedId = node.get("resource").get("parent_payment").asText();
 
                         List<Transaction> transactions = this.datastore.createQuery(Transaction.class)
                             .field("objectClass").equal("PaypalPayment")
-                            .field("linkedId").equal(sale.getParentPayment())
+                            .field("linkedId").equal(linkedId)
                             .asList();
 
                         for (Transaction transaction: transactions) {
@@ -516,7 +515,7 @@ public class PaypalResource {
                         this.entityService.cascadeLastActivity(Arrays.asList(transactions), new Date());
                     }
                 } else {
-                    paypalException.printStackTrace();
+                    jsonException.printStackTrace();
                     builder = Response.status(Status.SERVICE_UNAVAILABLE);
                 }
             }
