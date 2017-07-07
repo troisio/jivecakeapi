@@ -502,7 +502,7 @@ public class PaypalResource {
                         String linkedId = node.get("resource").get("parent_payment").asText();
 
                         List<Transaction> transactions = this.datastore.createQuery(Transaction.class)
-                            .field("objectClass").equal("PaypalPayment")
+                            .field("linkedObjectClass").equal("PaypalPayment")
                             .field("linkedId").equal(linkedId)
                             .asList();
 
