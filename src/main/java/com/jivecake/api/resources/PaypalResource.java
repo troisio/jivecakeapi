@@ -511,8 +511,8 @@ public class PaypalResource {
                         }
 
                         this.datastore.save(transactions);
-                        this.notificationService.notify(Arrays.asList(transactions), "transaction.update");
-                        this.entityService.cascadeLastActivity(Arrays.asList(transactions), new Date());
+                        this.notificationService.notify(new ArrayList<>(transactions), "transaction.update");
+                        this.entityService.cascadeLastActivity(new ArrayList<>(transactions), new Date());
                     }
                 } else {
                     jsonException.printStackTrace();
