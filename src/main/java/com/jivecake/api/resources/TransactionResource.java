@@ -203,12 +203,16 @@ public class TransactionResource {
 
             String userId = jwt.getSubject();
 
-            boolean hasUserIdPermission = userIds.size() == 1 && userIds.contains(userId);
-            boolean hasPermission = this.permissionService.has(userId, transactions, PermissionService.READ);
+            boolean hasPermission = userIds.size() == 1 && userIds.contains(userId) ||
+                this.permissionService.has(
+                    userId,
+                    transactions,
+                    PermissionService.READ
+                );
 
             ResponseBuilder builder;
 
-            if (hasUserIdPermission || hasPermission) {
+            if (hasPermission) {
                 Paging<Transaction> entity = new Paging<>(transactions, query.count());
                 builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
             } else {

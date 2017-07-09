@@ -472,6 +472,7 @@ public class OrganizationResource {
         @QueryParam("order") String order,
         @QueryParam("limit") Integer limit,
         @QueryParam("offset") Integer offset,
+        @QueryParam("lastActivityGreaterThan") Long lastActivityGreaterThan,
         @Context DecodedJWT jwt
     ) {
         Query<Organization> query = this.datastore.createQuery(Organization.class);
@@ -486,6 +487,10 @@ public class OrganizationResource {
 
         if (email != null) {
             query.field("email").startsWithIgnoreCase(email);
+        }
+
+        if (lastActivityGreaterThan != null) {
+            query.field("lastActivity").greaterThan(new Date(lastActivityGreaterThan));
         }
 
         if (order != null) {
