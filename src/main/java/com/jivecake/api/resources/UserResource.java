@@ -46,6 +46,7 @@ import com.google.cloud.vision.v1.Feature.Type;
 import com.jivecake.api.APIConfiguration;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
+import com.jivecake.api.filter.GZip;
 import com.jivecake.api.filter.LimitUserRequest;
 import com.jivecake.api.filter.Log;
 import com.jivecake.api.model.AssetType;
@@ -82,6 +83,7 @@ public class UserResource {
         this.configuration = configuration;
     }
 
+    @GZip
     @GET
     @Path("{user_id}/organization")
     @Authorized
