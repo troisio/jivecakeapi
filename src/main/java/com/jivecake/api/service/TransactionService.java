@@ -48,7 +48,7 @@ public class TransactionService {
     }
 
     private final Datastore datastore;
-    private final List<String> currencies = Arrays.asList("EUR", "USD");
+    public static final List<String> CURRENCIES = Arrays.asList("EUR", "USD");
     public final Predicate<Transaction> usedForCountFilter = transaction -> transaction.leaf &&
         (
             transaction.status == TransactionService.SETTLED ||
@@ -118,7 +118,7 @@ public class TransactionService {
 
     public boolean isValidTransaction(Transaction transaction) {
         return transaction.quantity > 0 &&
-            this.currencies.contains(transaction.currency) &&
+            TransactionService.CURRENCIES.contains(transaction.currency) &&
             (
                 transaction.status == TransactionService.PENDING ||
                 transaction.status == TransactionService.REFUNDED ||

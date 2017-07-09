@@ -33,6 +33,7 @@ import org.mongodb.morphia.query.Query;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
+import com.jivecake.api.filter.GZip;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Event;
@@ -175,6 +176,7 @@ public class ItemResource {
      * The resulting resource which retrieves user item data should only return the minimum amount
      * of information necessary to use for user interfaces
      * */
+    @GZip
     @GET
     @Path("/search")
     public Response search(
@@ -229,6 +231,7 @@ public class ItemResource {
         return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
     }
 
+    @GZip
     @GET
     @Authorized
     public Response search(
