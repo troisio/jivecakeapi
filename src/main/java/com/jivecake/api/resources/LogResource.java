@@ -26,6 +26,7 @@ import org.mongodb.morphia.query.Query;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
+import com.jivecake.api.filter.GZip;
 import com.jivecake.api.model.Application;
 import com.jivecake.api.model.Request;
 import com.jivecake.api.model.UserInterfaceEvent;
@@ -52,6 +53,7 @@ public class LogResource {
         this.datastore = datastore;
     }
 
+    @GZip
     @GET
     @Path("http")
     @Authorized
@@ -141,6 +143,7 @@ public class LogResource {
         return Response.ok().build();
     }
 
+    @GZip
     @GET
     @Path("ui")
     @Authorized

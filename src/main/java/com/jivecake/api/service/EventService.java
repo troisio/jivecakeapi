@@ -10,10 +10,13 @@ public class EventService {
         return event.name != null &&
                event.name.length() > 0 &&
                event.name.length() < 500 &&
-               (event.status == EventService.STATUS_INACTIVE || event.status == EventService.STATUS_ACTIVE) &&
                (
-                   (event.paymentProfileId == null && event.currency == null) ||
-                   (event.paymentProfileId != null && event.currency != null)
+                   event.status == EventService.STATUS_INACTIVE ||
+                   event.status == EventService.STATUS_ACTIVE
+               ) &&
+               (
+                   event.paymentProfileId == null ||
+                   TransactionService.CURRENCIES.contains(event.currency)
                );
     }
 }

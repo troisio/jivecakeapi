@@ -124,8 +124,6 @@ public class Auth0Resource {
             .path("/api/v2/users");
 
         parameters.putSingle("search_engine","v2");
-        parameters.putSingle("include_fields", "false");
-        parameters.putSingle("fields", "email,identities,last_ip");
 
         for (String key: parameters.keySet()) {
             target = target.queryParam(key, parameters.get(key).toArray());

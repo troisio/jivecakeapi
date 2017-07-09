@@ -37,6 +37,7 @@ import com.auth0.jwt.interfaces.DecodedJWT;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jivecake.api.APIConfiguration;
+import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.Log;
@@ -80,6 +81,7 @@ public class PaypalResource {
     private final ItemService itemService;
     private final EntityService entityService;
     private final NotificationService notificationService;
+    private final PermissionService permissionService;
     private final TransactionService transactionService;
     private final APIConfiguration configuration;
     private final APIContext context;
@@ -91,6 +93,7 @@ public class PaypalResource {
         ItemService itemService,
         EntityService entityService,
         NotificationService notificationService,
+        PermissionService permissionService,
         TransactionService transactionService,
         APIConfiguration configuration
     ) {
@@ -98,6 +101,7 @@ public class PaypalResource {
         this.itemService = itemService;
         this.entityService = entityService;
         this.notificationService = notificationService;
+        this.permissionService = permissionService;
         this.transactionService = transactionService;
         this.configuration = configuration;
 
@@ -238,7 +242,7 @@ public class PaypalResource {
             com.paypal.api.payments.Transaction paypalTransaction = complete.getTransactions().get(0);
             List<com.paypal.api.payments.Item> items = paypalTransaction.getItemList().getItems();
 
-            if ("created".equals(complete.getState()) || "approved".equals(complete.getState()) || complete.getState() == null) {
+            if ("created".equals(complete.getState()) || "approved".equals(complete.getState())) {
                 List<Transaction> transactions = new ArrayList<>();
 
                 Sale sale = paypalTransaction.getRelatedResources().stream()
@@ -274,7 +278,7 @@ public class PaypalResource {
                         PayerInfo info = payer.getPayerInfo();
 
                         transaction.given_name = info.getFirstName();
-                        transaction.family_name = info.getFirstName();
+                        transaction.family_name = info.getLastName();
                     } else {
                         transaction.user_id = jwt.getSubject();
                     }
@@ -430,25 +434,43 @@ public class PaypalResource {
     }
 
     @GET
-    @Path("{transactionId}/payment")
-    @HasPermission(clazz=Transaction.class, id="transactionId", permission=PermissionService.READ)
-    public Response getPayment(@PathObject("transactionId") Transaction transaction) {
-        PayPalRESTException exception = null;
-        Payment payment = null;
-
-        try {
-            payment = Payment.get(this.context, transaction.linkedId);
-        } catch (PayPalRESTException e) {
-            exception = e;
-        }
-
+    @Path("{id}/payment")
+    @Authorized
+    public Response getPayment(
+        @PathObject("id") Transaction transaction,
+        @Context DecodedJWT jwt
+    ) {
         ResponseBuilder builder;
 
-        if (exception == null) {
-            builder = Response.ok(payment.toJSON()).type(MediaType.APPLICATION_JSON);
+        if (transaction == null) {
+            builder = Response.status(Status.NOT_FOUND);
         } else {
-            exception.printStackTrace();
-            builder = Response.status(Status.SERVICE_UNAVAILABLE);
+            boolean hasPermission = jwt.getSubject().equals(transaction.user_id) ||
+                this.permissionService.has(
+                    jwt.getSubject(),
+                    Arrays.asList(transaction),
+                    PermissionService.READ
+                );
+
+            if (hasPermission) {
+                PayPalRESTException exception = null;
+                Payment payment = null;
+
+                try {
+                    payment = Payment.get(this.context, transaction.linkedId);
+                } catch (PayPalRESTException e) {
+                    exception = e;
+                }
+
+                if (exception == null) {
+                    builder = Response.ok(payment.toJSON()).type(MediaType.APPLICATION_JSON);
+                } else {
+                    exception.printStackTrace();
+                    builder = Response.status(Status.SERVICE_UNAVAILABLE);
+                }
+            } else {
+                builder = Response.status(Status.UNAUTHORIZED);
+            }
         }
 
         return builder.build();
@@ -497,6 +519,7 @@ public class PaypalResource {
 
                 if (jsonException == null) {
                     boolean isCompleteSale = "PAYMENT.SALE.COMPLETED".equals(node.get("event_type").asText());
+                    boolean isDeniedSale = "PAYMENT.SALE.DENIED".equals(node.get("event_type").asText());
 
                     if (isCompleteSale) {
                         String linkedId = node.get("resource").get("parent_payment").asText();
@@ -512,6 +535,17 @@ public class PaypalResource {
 
                         this.datastore.save(transactions);
                         this.notificationService.notify(new ArrayList<>(transactions), "transaction.update");
+                        this.entityService.cascadeLastActivity(new ArrayList<>(transactions), new Date());
+                    } else if (isDeniedSale) {
+                        String linkedId = node.get("resource").get("parent_payment").asText();
+
+                        List<Transaction> transactions = this.datastore.createQuery(Transaction.class)
+                            .field("linkedObjectClass").equal("PaypalPayment")
+                            .field("linkedId").equal(linkedId)
+                            .asList();
+
+                        this.datastore.delete(transactions);
+                        this.notificationService.notify(new ArrayList<>(transactions), "transaction.delete");
                         this.entityService.cascadeLastActivity(new ArrayList<>(transactions), new Date());
                     }
                 } else {

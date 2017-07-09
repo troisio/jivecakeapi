@@ -52,10 +52,9 @@ import com.jivecake.api.service.TransactionService;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Subscription;
 
-@Path("/event")
+@Path("event")
 @CORS
 @Singleton
-@GZip
 public class EventResource {
     private final EventService eventService;
     private final ItemService itemService;
@@ -87,6 +86,7 @@ public class EventResource {
         this.datastore = datastore;
     }
 
+    @GZip
     @GET
     @Path("/{eventId}/aggregated")
     public Response getAggregatedItemData(@PathObject("eventId") Event event, @Context DecodedJWT jwt) {
@@ -129,6 +129,7 @@ public class EventResource {
         return builder.build();
     }
 
+    @GZip
     @GET
     @Path("/search")
     public Response publicSearch(
@@ -343,6 +344,7 @@ public class EventResource {
 
     @GET
     @Authorized
+    @GZip
     public Response search(
         @QueryParam("id") List<ObjectId> ids,
         @QueryParam("organizationId") List<ObjectId> organizationIds,

@@ -19,6 +19,7 @@ import com.jivecake.api.serializer.ObjectIdSerializer;
 @Entity
 @Indexes({
     @Index(fields = @Field("user_id")),
+    @Index(fields = @Field("path")),
     @Index(fields = @Field("timeCreated")),
     @Index(fields={
         @Field("user_id"),
