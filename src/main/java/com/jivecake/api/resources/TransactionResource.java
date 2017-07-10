@@ -553,8 +553,7 @@ public class TransactionResource {
             .count() > 0;
 
         boolean canDelete = !hasChildTransaction && (
-            (isVendorTransaction && isUserRevoked) ||
-            (isSettled && !isVendorTransaction)
+            isUserRevoked || (isSettled && !isVendorTransaction)
         );
 
         if (canDelete) {
