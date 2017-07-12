@@ -12,7 +12,10 @@ import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 import javax.servlet.http.HttpServletRequest;
+import javax.ws.rs.NotFoundException;
 import javax.ws.rs.core.Response;
+import javax.ws.rs.core.Response.ResponseBuilder;
+import javax.ws.rs.core.Response.Status;
 import javax.ws.rs.ext.ExceptionMapper;
 
 import org.mongodb.morphia.Datastore;
@@ -49,51 +52,59 @@ public class GenericExceptionMapper implements ExceptionMapper<Exception> {
     public Response toResponse(Exception applicationException) {
         String authorization = this.request.getHeader("Authorization");
 
-        this.executor.execute(() -> {
-            long hour = 1000 * 60 * 60;
-            Date oneHourEarlier = new Date(new Date().getTime() - hour);
+        ResponseBuilder builder;
 
-            long errorsInLastHour = this.datastore.createQuery(com.jivecake.api.model.Exception.class)
-                .field("timeCreated").greaterThan(oneHourEarlier)
-                .count();
+        if (applicationException instanceof NotFoundException) {
+            builder = Response.status(Status.NOT_FOUND);
+        } else {
+            this.executor.execute(() -> {
+                long hour = 1000 * 60 * 60;
+                Date oneHourEarlier = new Date(new Date().getTime() - hour);
 
-            if (errorsInLastHour == 0) {
-                List<Map<String, String>> tos = this.apiConfiguration.errorRecipients.stream()
-                    .map(recipient -> {
-                        Map<String, String> to = new HashMap<>();
-                        to.put("email", recipient);
-                        to.put("type", "to");
-                        return to;
-                    })
-                    .collect(Collectors.toList());
+                long errorsInLastHour = this.datastore.createQuery(com.jivecake.api.model.Exception.class)
+                    .field("timeCreated").greaterThan(oneHourEarlier)
+                    .count();
 
-                Map<String, Object> message = new HashMap<>();
-                message.put("text", "An exception has been thrown");
-                message.put("subject", "JiveCake Exception");
-                message.put("from_email", "noreply@jivecake.com");
-                message.put("from_name", "JiveCake");
-                message.put("to", tos);
+                if (errorsInLastHour == 0) {
+                    List<Map<String, String>> tos = this.apiConfiguration.errorRecipients.stream()
+                        .map(recipient -> {
+                            Map<String, String> to = new HashMap<>();
+                            to.put("email", recipient);
+                            to.put("type", "to");
+                            return to;
+                        })
+                        .collect(Collectors.toList());
 
-                this.mandrillService.send(message);
-            }
+                    Map<String, Object> message = new HashMap<>();
+                    message.put("text", "An exception has been thrown");
+                    message.put("subject", "JiveCake Exception");
+                    message.put("from_email", "noreply@jivecake.com");
+                    message.put("from_name", "JiveCake");
+                    message.put("to", tos);
 
-            StringWriter writer = new StringWriter();
-            applicationException.printStackTrace(new PrintWriter(writer));
-            com.jivecake.api.model.Exception exception = new com.jivecake.api.model.Exception();
-            exception.stackTrace = writer.toString();
-            exception.timeCreated = new Date();
-
-            if (authorization != null && authorization.startsWith("Bearer ")) {
-                DecodedJWT jwt = this.auth0Service.getClaimsFromToken(authorization.substring("Bearer ".length()));
-
-                if (jwt != null) {
-                    exception.userId = jwt.getSubject();
+                    this.mandrillService.send(message);
                 }
-            }
 
-            this.datastore.save(exception);
-        });
+                StringWriter writer = new StringWriter();
+                applicationException.printStackTrace(new PrintWriter(writer));
+                com.jivecake.api.model.Exception exception = new com.jivecake.api.model.Exception();
+                exception.stackTrace = writer.toString();
+                exception.timeCreated = new Date();
 
-        return Response.status(500).build();
+                if (authorization != null && authorization.startsWith("Bearer ")) {
+                    DecodedJWT jwt = this.auth0Service.getClaimsFromToken(authorization.substring("Bearer ".length()));
+
+                    if (jwt != null) {
+                        exception.userId = jwt.getSubject();
+                    }
+                }
+
+                this.datastore.save(exception);
+            });
+
+            builder = Response.status(500);
+        }
+
+        return builder.build();
     }
 }
