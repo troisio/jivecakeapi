@@ -1,5 +1,7 @@
 rootOAuthIds:
   - ""
+errorRecipients:
+  - ""
 
 oauth:
   webClientId: "default"
@@ -12,6 +14,10 @@ paypal:
   clientId: "default"
   clientSecret: "default"
   mode: production
+
+mandrill:
+  mock: true
+  key: "default"
 
 stripe:
   secretKey: "default"

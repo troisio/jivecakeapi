@@ -29,6 +29,7 @@ import com.jivecake.api.filter.AuthorizedFilter;
 import com.jivecake.api.filter.CORSFilter;
 import com.jivecake.api.filter.ClaimsFactory;
 import com.jivecake.api.filter.GZIPWriterInterceptor;
+import com.jivecake.api.filter.GenericExceptionMapper;
 import com.jivecake.api.filter.HasPermissionFilter;
 import com.jivecake.api.filter.HashDateCount;
 import com.jivecake.api.filter.LimitUserRequestFilter;
@@ -64,6 +65,7 @@ import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.GoogleCloudPlatformService;
 import com.jivecake.api.service.HttpService;
 import com.jivecake.api.service.ItemService;
+import com.jivecake.api.service.MandrillService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PermissionService;
@@ -80,6 +82,7 @@ import io.dropwizard.setup.Environment;
 public class APIApplication extends Application<APIConfiguration> {
     private final List<Class<?>> filters = Arrays.asList(
         AuthorizedFilter.class,
+        GenericExceptionMapper.class,
         GZIPWriterInterceptor.class,
         HasPermissionFilter.class,
         LimitUserRequestFilter.class,
@@ -116,6 +119,7 @@ public class APIApplication extends Application<APIConfiguration> {
         GoogleCloudPlatformService.class,
         HttpService.class,
         ItemService.class,
+        MandrillService.class,
         NotificationService.class,
         OrganizationService.class,
         PermissionService.class,
