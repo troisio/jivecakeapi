@@ -11,7 +11,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -48,6 +47,7 @@ import com.jivecake.api.model.PaypalPaymentProfile;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.request.AggregatedEvent;
 import com.jivecake.api.request.EntityQuantity;
+import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.request.ItemData;
 import com.jivecake.api.request.PaypalAuthorization;
 import com.jivecake.api.request.PaypalOrder;
@@ -79,6 +79,7 @@ import com.paypal.base.rest.PayPalRESTException;
 public class PaypalResource {
     private final Datastore datastore;
     private final ItemService itemService;
+    private final EventService eventService;
     private final EntityService entityService;
     private final NotificationService notificationService;
     private final PermissionService permissionService;
@@ -91,6 +92,7 @@ public class PaypalResource {
     public PaypalResource(
         Datastore datastore,
         ItemService itemService,
+        EventService eventService,
         EntityService entityService,
         NotificationService notificationService,
         PermissionService permissionService,
@@ -99,6 +101,7 @@ public class PaypalResource {
     ) {
         this.datastore = datastore;
         this.itemService = itemService;
+        this.eventService = eventService;
         this.entityService = entityService;
         this.notificationService = notificationService;
         this.permissionService = permissionService;
@@ -149,8 +152,6 @@ public class PaypalResource {
                         Sale sale = sales.get(0);
                         RefundRequest request = new RefundRequest();
 
-                        RefundRequest refundRequest = new RefundRequest();
-
                         Amount amount = new Amount();
                         amount.setTotal(
                             TransactionService.DEFAULT_DECIMAL_FORMAT.format(
@@ -158,8 +159,6 @@ public class PaypalResource {
                             )
                         );
                         amount.setCurrency(currency);
-
-                        refundRequest.setAmount(amount);
 
                         PayPalRESTException refundException = null;
 
@@ -326,26 +325,30 @@ public class PaypalResource {
         } else {
             Date date = new Date();
 
-            Set<ObjectId> itemIds = order.itemData.stream()
-                .map(data -> data.entity)
-                .collect(Collectors.toSet());
+            String userId = jwt == null ? null : jwt.getSubject();
+            AggregatedEvent aggregated = this.itemService.getAggregatedaEventData(
+                event,
+                this.transactionService,
+                date
+            );
+            List<ErrorData> dataError = this.eventService.getErrorsFromOrderRequest(
+                userId,
+                order.itemData,
+                aggregated
+            );
 
-            AggregatedEvent group = this.itemService.getAggregatedaEventData(event, this.transactionService, date);
-            group.itemData = group.itemData.stream()
-                .filter(data -> itemIds.contains(data.item.id))
-                .collect(Collectors.toList());
+            if (!(aggregated.profile instanceof PaypalPaymentProfile)) {
+                ErrorData error = new ErrorData();
+                error.error = "profile";
+                dataError.add(error);
+            }
 
-            Map<ObjectId, ItemData> idToItemData = group.itemData.stream()
+            Map<ObjectId, ItemData> idToItemData = aggregated.itemData.stream()
                 .collect(
                     Collectors.toMap(data -> data.item.id, Function.identity())
                 );
 
-            boolean activeEvent = event.status == EventService.STATUS_ACTIVE;
-            boolean validPaypalProfile = group.profile instanceof PaypalPaymentProfile;
-            boolean uniqueItemsData = order.itemData.size() == group.itemData.size();
-            boolean validRequest = activeEvent && validPaypalProfile && uniqueItemsData;
-
-            if (validRequest) {
+            if (dataError.isEmpty()) {
                 List<com.paypal.api.payments.Item> items = new ArrayList<>();
 
                 double total = 0;
@@ -360,7 +363,7 @@ public class PaypalResource {
                     paypalItem.setQuantity(Integer.toString(entityQuantity.quantity));
                     paypalItem.setName(item.name);
                     paypalItem.setSku(item.id.toString());
-                    paypalItem.setCurrency(group.event.currency);
+                    paypalItem.setCurrency(aggregated.event.currency);
 
                     items.add(paypalItem);
 
@@ -376,11 +379,11 @@ public class PaypalResource {
                 details.setTax("0");
 
                 Amount amount = new Amount();
-                amount.setCurrency(group.event.currency);
+                amount.setCurrency(aggregated.event.currency);
                 amount.setTotal(TransactionService.DEFAULT_DECIMAL_FORMAT.format(total));
                 amount.setDetails(details);
 
-                PaypalPaymentProfile paypalProfile = (PaypalPaymentProfile)group.profile;
+                PaypalPaymentProfile paypalProfile = (PaypalPaymentProfile)aggregated.profile;
 
                 Payee payee = new Payee();
                 payee.setEmail(paypalProfile.email);

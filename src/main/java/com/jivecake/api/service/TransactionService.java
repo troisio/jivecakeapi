@@ -49,7 +49,7 @@ public class TransactionService {
 
     private final Datastore datastore;
     public static final List<String> CURRENCIES = Arrays.asList("EUR", "USD");
-    public final Predicate<Transaction> usedForCountFilter = transaction -> transaction.leaf &&
+    public static final Predicate<Transaction> usedForCountFilter = transaction -> transaction.leaf &&
         (
             transaction.status == TransactionService.SETTLED ||
             transaction.status == TransactionService.PENDING

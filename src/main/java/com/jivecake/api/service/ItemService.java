@@ -14,6 +14,7 @@ import org.mongodb.morphia.Datastore;
 
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
+import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.PaymentProfile;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.request.AggregatedEvent;
@@ -80,7 +81,7 @@ public class ItemService {
 
             if (item.countAmounts != null) {
                 long count = result.transactions.stream()
-                    .filter(transactionService.usedForCountFilter)
+                    .filter(TransactionService.usedForCountFilter)
                     .map(transaction -> transaction.quantity)
                      .reduce(0L, Long::sum);
 
@@ -97,6 +98,7 @@ public class ItemService {
         }).collect(Collectors.toList());
 
         AggregatedEvent group = new AggregatedEvent();
+        group.organization = this.datastore.get(Organization.class, event.organizationId);
         group.event = event;
         group.itemData = itemData;
 

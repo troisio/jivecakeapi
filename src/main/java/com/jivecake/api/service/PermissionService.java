@@ -105,6 +105,7 @@ public class PermissionService {
         CriteriaContainer[] criterium = permissions.stream()
             .map(permission -> {
                 return query.and(
+                    query.criteria("objectClass").equal(permission.objectClass),
                     query.criteria("objectId").equal(permission.objectId),
                     query.criteria("user_id").equal(permission.user_id)
                 );
