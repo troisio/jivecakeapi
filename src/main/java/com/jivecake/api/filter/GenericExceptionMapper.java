@@ -12,7 +12,13 @@ import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 import javax.servlet.http.HttpServletRequest;
+import javax.ws.rs.BadRequestException;
+import javax.ws.rs.ForbiddenException;
+import javax.ws.rs.NotAcceptableException;
+import javax.ws.rs.NotAllowedException;
+import javax.ws.rs.NotAuthorizedException;
 import javax.ws.rs.NotFoundException;
+import javax.ws.rs.NotSupportedException;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
@@ -50,12 +56,26 @@ public class GenericExceptionMapper implements ExceptionMapper<Exception> {
 
     @Override
     public Response toResponse(Exception applicationException) {
+        applicationException.printStackTrace();
+
         String authorization = this.request.getHeader("Authorization");
 
         ResponseBuilder builder;
 
         if (applicationException instanceof NotFoundException) {
             builder = Response.status(Status.NOT_FOUND);
+        } else if (applicationException instanceof NotAllowedException) {
+            builder = Response.status(Status.METHOD_NOT_ALLOWED);
+        } else if (applicationException instanceof BadRequestException) {
+            builder = Response.status(Status.BAD_REQUEST);
+        } else if (applicationException instanceof ForbiddenException) {
+            builder = Response.status(Status.FORBIDDEN);
+        } else if (applicationException instanceof NotAuthorizedException) {
+            builder = Response.status(Status.UNAUTHORIZED);
+        } else if (applicationException instanceof NotSupportedException) {
+            builder = Response.status(Status.UNSUPPORTED_MEDIA_TYPE);
+        } else if (applicationException instanceof NotAcceptableException) {
+            builder = Response.status(Status.NOT_ACCEPTABLE);
         } else {
             this.executor.execute(() -> {
                 long hour = 1000 * 60 * 60;

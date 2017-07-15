@@ -225,7 +225,11 @@ public class StripeResource {
     ) {
         ResponseBuilder builder = null;
 
-        if (event == null) {
+        if (TransactionService.CURRENCIES.contains(payload.currency)) {
+            builder = Response.status(Status.BAD_REQUEST)
+                .entity("{\"error\": \"currency\"}")
+                .type(MediaType.APPLICATION_JSON);
+        } else if (event == null) {
             builder = Response.status(Status.BAD_REQUEST)
                 .entity("{\"error\": \"event\"}")
                 .type(MediaType.APPLICATION_JSON);
@@ -240,7 +244,7 @@ public class StripeResource {
                 .field("status").equal(ItemService.STATUS_ACTIVE)
                 .asList();
 
-            if (items.size() == itemIds.size()) {
+            if (!items.isEmpty() && items.size() == itemIds.size()) {
                 Date date = new Date();
 
                 List<Transaction> transactions = this.transactionService.getTransactionQueryForCounting()
