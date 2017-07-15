@@ -40,6 +40,7 @@ import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.Transaction;
+import com.jivecake.api.request.Error;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.Auth0Service;
@@ -317,7 +318,6 @@ public class ItemResource {
         boolean isValid = this.transactionService.isValidTransaction(transaction) && transaction.amount >= 0;
 
         if (isValid) {
-            Event event = this.datastore.get(Event.class, item.eventId);
             boolean totalAvailibleViolation;
 
             if (item.totalAvailible == null) {
@@ -333,36 +333,14 @@ public class ItemResource {
                 totalAvailibleViolation = count > item.totalAvailible;
             }
 
-            boolean eventActiveViolation = event.status != EventService.STATUS_ACTIVE;
-            boolean hasParentTransactionPermissionViolation = false;
+            if (totalAvailibleViolation) {
+                Error error = new Error();
+                error.error = "totalAvailible";
+                error.data = item.totalAvailible;
 
-            if (transaction.parentTransactionId != null) {
-                Transaction parentTransaction = this.datastore.get(Transaction.class, transaction.parentTransactionId);
-
-                if (parentTransaction == null) {
-                    hasParentTransactionPermissionViolation = !this.permissionService.has(
-                        jwt.getSubject(),
-                        Arrays.asList(parentTransaction),
-                        PermissionService.WRITE
-                    );
-                } else {
-                    hasParentTransactionPermissionViolation = true;
-                }
-            }
-
-            if (hasParentTransactionPermissionViolation) {
-                promise.resume(Response.status(Status.UNAUTHORIZED).build());
-            } else if (eventActiveViolation) {
                 promise.resume(
                     Response.status(Status.BAD_REQUEST)
-                        .entity("{\"error\": \"inactive\"}")
-                        .type(MediaType.APPLICATION_JSON)
-                        .build()
-                );
-            } else if (totalAvailibleViolation) {
-                promise.resume(
-                    Response.status(Status.BAD_REQUEST)
-                        .entity("{\"error\": \"totalAvailible\"}")
+                        .entity(error)
                         .type(MediaType.APPLICATION_JSON).build()
                 );
             } else {

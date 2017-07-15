@@ -31,6 +31,7 @@ public class MandrillService {
             CompletableFuture<Response> completeable = new CompletableFuture<>();
             completeable.complete(Response.ok().build());
             future = completeable;
+            System.out.println(message);
         } else {
             future = ClientBuilder.newClient()
                 .target("https://mandrillapp.com/api/1.0/messages/send.json")

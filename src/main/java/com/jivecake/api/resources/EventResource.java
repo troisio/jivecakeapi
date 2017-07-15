@@ -297,6 +297,15 @@ public class EventResource {
         if (isValid) {
             Date currentTime = new Date();
 
+            if (item.countAmounts != null && item.countAmounts.isEmpty()) {
+                item.countAmounts = null;
+            }
+
+            if (item.timeAmounts != null && item.timeAmounts.isEmpty()) {
+                item.timeAmounts = null;
+            }
+
+            item.id = null;
             item.eventId = event.id;
             item.organizationId = event.organizationId;
             item.timeCreated = currentTime;
