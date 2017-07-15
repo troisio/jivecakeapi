@@ -6,6 +6,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -35,11 +36,16 @@ import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.Log;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Event;
-import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
+import com.jivecake.api.model.StripePaymentProfile;
 import com.jivecake.api.model.Transaction;
+import com.jivecake.api.request.AggregatedEvent;
+import com.jivecake.api.request.EntityQuantity;
+import com.jivecake.api.request.ErrorData;
+import com.jivecake.api.request.ItemData;
 import com.jivecake.api.request.StripeOrderPayload;
 import com.jivecake.api.service.EntityService;
+import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.ItemService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.PermissionService;
@@ -65,6 +71,7 @@ public class StripeResource {
     private final PermissionService permissionService;
     private final Datastore datastore;
     private final ItemService itemService;
+    private final EventService eventService;
     private final NotificationService notificationService;
     private final EntityService entityService;
 
@@ -76,6 +83,7 @@ public class StripeResource {
         PermissionService permissionService,
         EntityService entityService,
         ItemService itemService,
+        EventService eventService,
         NotificationService notificationService,
         Datastore datastore
     ) {
@@ -85,6 +93,7 @@ public class StripeResource {
         this.permissionService = permissionService;
         this.entityService = entityService;
         this.itemService = itemService;
+        this.eventService = eventService;
         this.notificationService = notificationService;
         this.datastore = datastore;
     }
@@ -217,55 +226,47 @@ public class StripeResource {
     @POST
     @Path("{eventId}/order")
     @Consumes(MediaType.APPLICATION_JSON)
-    @Authorized
     public Response order(
         @PathObject("eventId") Event event,
         StripeOrderPayload payload,
         @Context DecodedJWT jwt
     ) {
-        ResponseBuilder builder = null;
+        ResponseBuilder builder;
 
-        if (TransactionService.CURRENCIES.contains(payload.currency)) {
-            builder = Response.status(Status.BAD_REQUEST)
-                .entity("{\"error\": \"currency\"}")
-                .type(MediaType.APPLICATION_JSON);
-        } else if (event == null) {
-            builder = Response.status(Status.BAD_REQUEST)
-                .entity("{\"error\": \"event\"}")
-                .type(MediaType.APPLICATION_JSON);
+        if (event == null) {
+            builder = Response.status(Status.NOT_FOUND);
         } else {
-            List<ObjectId> itemIds = payload.itemData.stream()
-                .map(data -> data.entity)
-                .collect(Collectors.toList());
+            Date date = new Date();
 
-            List<Item> items = this.datastore.createQuery(Item.class)
-                 .field("eventId").equal(event.id)
-                .field("id").in(itemIds)
-                .field("status").equal(ItemService.STATUS_ACTIVE)
-                .asList();
+            String userId = jwt == null ? null : jwt.getSubject();
+            AggregatedEvent aggregated = this.itemService.getAggregatedaEventData(
+                event,
+                this.transactionService,
+                date
+            );
+            List<ErrorData> dataError = this.eventService.getErrorsFromOrderRequest(
+                userId,
+                payload.itemData,
+                aggregated
+            );
 
-            if (!items.isEmpty() && items.size() == itemIds.size()) {
-                Date date = new Date();
+            if (!(aggregated.profile instanceof StripePaymentProfile)) {
+                ErrorData error = new ErrorData();
+                error.error = "profile";
+                dataError.add(error);
+            }
 
-                List<Transaction> transactions = this.transactionService.getTransactionQueryForCounting()
-                    .field("itemId").in(itemIds)
-                    .asList();
-
-                Map<ObjectId, Integer> quantities = payload.itemData.stream()
+            if (dataError.isEmpty()) {
+                Map<ObjectId, ItemData> itemIdToItemData = aggregated.itemData.stream()
                     .collect(
-                        Collectors.toMap(data -> data.entity, data -> data.quantity)
+                        Collectors.toMap(data -> data.item.id, Function.identity())
                     );
 
                 double total = 0;
 
-                double[] amounts = this.itemService.getAmounts(items, date, transactions);
-
-                for (int index = 0; index < items.size(); index++) {
-                    Item item = items.get(index);
-                    double amount = amounts[index];
-
-                    int quantity = quantities.get(item.id).intValue();
-                    total += quantity * amount;
+                for (EntityQuantity<ObjectId> entityQuantity: payload.itemData) {
+                    ItemData itemData = itemIdToItemData.get(entityQuantity.entity);
+                    total += entityQuantity.quantity * itemData.amount;
                 }
 
                 String string = TransactionService.DEFAULT_DECIMAL_FORMAT.format(total);
@@ -274,8 +275,8 @@ public class StripeResource {
 
                 Map<String, Object> params = new HashMap<>();
                 params.put("amount", amount);
-                params.put("currency", payload.currency);
-                params.put("description", "JiveCake");
+                params.put("currency", event.currency);
+                params.put("description", event.name + " / JiveCake");
                 params.put("source", payload.token.id);
 
                 StripeException exception = null;
@@ -285,7 +286,6 @@ public class StripeResource {
                     charge = Charge.create(params, this.stripeService.getRequestOptions());
                 } catch (StripeException e) {
                     exception = e;
-                    e.printStackTrace();
                     charge = null;
                 }
 
@@ -294,21 +294,20 @@ public class StripeResource {
 
                     List<Transaction> completedTransactions = new ArrayList<>();
 
-                    for (int index = 0; index < items.size(); index++) {
-                        Item item = items.get(index);
+                    for (EntityQuantity<ObjectId> entityQuantity: payload.itemData) {
+                        ItemData itemData = itemIdToItemData.get(entityQuantity.entity);
 
                         Transaction transaction = new Transaction();
-                        transaction.organizationId = item.organizationId;
-                        transaction.eventId = item.eventId;
-                        transaction.itemId = item.id;
-                        transaction.quantity = quantities.get(item.id);
-                        transaction.amount = amounts[index] * transaction.quantity;
-                        transaction.user_id = jwt.getSubject();
+                        transaction.organizationId = itemData.item.organizationId;
+                        transaction.eventId = itemData.item.eventId;
+                        transaction.itemId = itemData.item.id;
+                        transaction.quantity = entityQuantity.quantity;
+                        transaction.amount = itemData.amount * transaction.quantity;
+                        transaction.user_id = userId;
                         transaction.status = TransactionService.SETTLED;
                         transaction.paymentStatus = TransactionService.PAYMENT_EQUAL;
                         transaction.linkedId = finalCharge.getId();
                         transaction.linkedObjectClass = "StripeCharge";
-                        transaction.eventId = item.eventId;
                         transaction.email = finalCharge.getReceiptEmail();
                         transaction.currency = finalCharge.getCurrency().toUpperCase();
                         transaction.leaf = true;
@@ -326,12 +325,12 @@ public class StripeResource {
 
                     builder = Response.ok();
                 } else {
-                    builder = Response.status(Status.SERVICE_UNAVAILABLE)
-                        .entity(exception);
+                    exception.printStackTrace();
+                    builder = Response.status(Status.SERVICE_UNAVAILABLE);
                 }
             } else {
                 builder = Response.status(Status.BAD_REQUEST)
-                    .entity("{\"error\": \"item\"}")
+                    .entity(dataError)
                     .type(MediaType.APPLICATION_JSON);
             }
         }
@@ -359,7 +358,8 @@ public class StripeResource {
         }
 
         if (stripeException != null) {
-            builder = Response.status(Status.SERVICE_UNAVAILABLE).entity(stripeException);
+            stripeException.printStackTrace();
+            builder = Response.status(Status.SERVICE_UNAVAILABLE);
         } else if (subscription == null) {
             builder = Response.status(Status.NOT_FOUND);
         } else {
@@ -369,7 +369,7 @@ public class StripeResource {
             boolean hasPermission = this.permissionService.has(
                 jwt.getSubject(),
                 Arrays.asList(organization),
-                PermissionService.READ
+                PermissionService.WRITE
             );
 
             if (hasPermission) {
@@ -386,7 +386,8 @@ public class StripeResource {
                     this.entityService.cascadeLastActivity(Arrays.asList(organization), new Date());
                     builder = Response.ok();
                 } else {
-                    builder = Response.status(Status.SERVICE_UNAVAILABLE).entity(exception);
+                    exception.printStackTrace();
+                    builder = Response.status(Status.SERVICE_UNAVAILABLE);
                 }
             } else {
                 builder = Response.status(Status.UNAUTHORIZED);
@@ -400,14 +401,26 @@ public class StripeResource {
     @Path("{organizationId}/subscription")
     @Authorized
     @HasPermission(clazz=Organization.class, id="organizationId", permission=PermissionService.READ)
-    public Response subscribe(@PathObject("organizationId") Organization organization) {
+    public Response subscribe(
+        @PathObject("organizationId") Organization organization,
+        @Context DecodedJWT jwt
+    ) {
         ResponseBuilder builder;
 
+        List<Subscription> subscriptions = null;
+        StripeException exception = null;
+
         try {
-            List<Subscription> subscriptions = this.stripeService.getCurrentSubscriptions(organization.id);
-            builder = Response.ok(subscriptions).type(MediaType.APPLICATION_JSON);
+            subscriptions = this.stripeService.getCurrentSubscriptions(organization.id);
         } catch (StripeException e) {
-            builder = Response.status(Status.SERVICE_UNAVAILABLE).entity(e);
+            exception = e;
+        }
+
+        if (exception == null) {
+            builder = Response.ok(subscriptions).type(MediaType.APPLICATION_JSON);
+        } else {
+            exception.printStackTrace();
+            builder = Response.status(Status.SERVICE_UNAVAILABLE);
         }
 
         return builder.build();

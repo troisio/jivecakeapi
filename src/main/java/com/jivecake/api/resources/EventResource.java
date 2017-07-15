@@ -39,6 +39,7 @@ import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.PaymentProfile;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.request.AggregatedEvent;
+import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.request.ItemData;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.ApplicationService;
@@ -89,7 +90,10 @@ public class EventResource {
     @GZip
     @GET
     @Path("/{eventId}/aggregated")
-    public Response getAggregatedItemData(@PathObject("eventId") Event event, @Context DecodedJWT jwt) {
+    public Response getAggregatedItemData(
+        @PathObject("eventId") Event event,
+        @Context DecodedJWT jwt
+    ) {
         ResponseBuilder builder;
 
         if (event == null) {
@@ -121,8 +125,11 @@ public class EventResource {
 
             builder = Response.ok(group).type(MediaType.APPLICATION_JSON);
         } else {
+            ErrorData error = new ErrorData();
+            error.error = "status";
+
             builder = Response.status(Status.BAD_REQUEST)
-                .encoding("{\"error\": \"status\"}")
+                .entity(error)
                 .type(MediaType.APPLICATION_JSON);
         }
 
@@ -134,10 +141,6 @@ public class EventResource {
     @Path("/search")
     public Response publicSearch(
         @QueryParam("id") List<ObjectId> ids,
-        @QueryParam("timeStartGreaterThan") Long timeStartGreaterThan,
-        @QueryParam("timeStartLessThan") Long timeStartLessThan,
-        @QueryParam("timeEndLessThan") Long timeEndLessThan,
-        @QueryParam("timeEndGreaterThan") Long timeEndGreaterThan,
         @QueryParam("timeCreatedLessThan") Long timeCreatedLessThan,
         @QueryParam("timeCreatedGreaterThan") Long timeCreatedGreaterThan,
         @QueryParam("order") String order,
@@ -165,22 +168,6 @@ public class EventResource {
 
         if (!ids.isEmpty()) {
             query.field("id").in(ids);
-        }
-
-        if (timeStartLessThan != null) {
-            query.field("timeStart").lessThan(new Date(timeStartLessThan));
-        }
-
-        if (timeStartGreaterThan != null) {
-            query.field("timeStart").greaterThan(new Date(timeStartGreaterThan));
-        }
-
-        if (timeEndLessThan != null) {
-            query.field("timeEnd").lessThan(new Date(timeEndLessThan));
-        }
-
-        if (timeEndGreaterThan != null) {
-            query.field("timeEnd").greaterThan(new Date(timeEndGreaterThan));
         }
 
         if (timeCreatedGreaterThan != null) {

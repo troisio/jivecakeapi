@@ -174,7 +174,7 @@ public class APIApplication extends Application<APIConfiguration> {
             e.printStackTrace();
         }
 
-        ApplicationService applicationService = new ApplicationService(application);
+        ApplicationService applicationService = new ApplicationService(application, datastore);
         OrganizationService organizationService = new OrganizationService(datastore);
 
         PermissionService permissionService = new PermissionService(
@@ -199,7 +199,7 @@ public class APIApplication extends Application<APIConfiguration> {
                 this.bind(verifiers).to(new TypeLiteral<List<JWTVerifier>>() {});
                 this.bind(new HashDateCount()).to(HashDateCount.class);
 
-                this.bind(new ApplicationService(application)).to(ApplicationService.class);
+                this.bind(applicationService).to(ApplicationService.class);
                 this.bind(datastore).to(Datastore.class);
                 this.bind(configuration.oauth).to(OAuthConfiguration.class);
                 this.bind(configuration.stripe).to(StripeConfiguration.class);

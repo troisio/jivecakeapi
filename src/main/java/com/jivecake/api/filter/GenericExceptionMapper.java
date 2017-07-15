@@ -1,7 +1,5 @@
 package com.jivecake.api.filter;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -28,6 +26,7 @@ import org.mongodb.morphia.Datastore;
 
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.APIConfiguration;
+import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.MandrillService;
 
@@ -37,6 +36,7 @@ public class GenericExceptionMapper implements ExceptionMapper<Exception> {
     private final Auth0Service auth0Service;
     private final MandrillService mandrillService;
     private final HttpServletRequest request;
+    private final ApplicationService applicationService;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     @Inject
@@ -45,13 +45,15 @@ public class GenericExceptionMapper implements ExceptionMapper<Exception> {
         APIConfiguration apiConfiguration,
         Auth0Service auth0Service,
         MandrillService mandrillService,
-        HttpServletRequest request
+        HttpServletRequest request,
+        ApplicationService applicationService
     ) {
         this.datastore = datastore;
         this.apiConfiguration = apiConfiguration;
         this.auth0Service = auth0Service;
         this.mandrillService = mandrillService;
         this.request = request;
+        this.applicationService = applicationService;
     }
 
     @Override
@@ -105,21 +107,17 @@ public class GenericExceptionMapper implements ExceptionMapper<Exception> {
                     this.mandrillService.send(message);
                 }
 
-                StringWriter writer = new StringWriter();
-                applicationException.printStackTrace(new PrintWriter(writer));
-                com.jivecake.api.model.Exception exception = new com.jivecake.api.model.Exception();
-                exception.stackTrace = writer.toString();
-                exception.timeCreated = new Date();
+                String userId = null;
 
                 if (authorization != null && authorization.startsWith("Bearer ")) {
                     DecodedJWT jwt = this.auth0Service.getClaimsFromToken(authorization.substring("Bearer ".length()));
 
                     if (jwt != null) {
-                        exception.userId = jwt.getSubject();
+                        userId = jwt.getSubject();
                     }
                 }
 
-                this.datastore.save(exception);
+                this.applicationService.saveException(applicationException, userId);
             });
 
             builder = Response.status(500);

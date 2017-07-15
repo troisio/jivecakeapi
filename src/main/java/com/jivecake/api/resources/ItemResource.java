@@ -40,7 +40,7 @@ import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.Transaction;
-import com.jivecake.api.request.Error;
+import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.Auth0Service;
@@ -334,7 +334,7 @@ public class ItemResource {
             }
 
             if (totalAvailibleViolation) {
-                Error error = new Error();
+                ErrorData error = new ErrorData();
                 error.error = "totalAvailible";
                 error.data = item.totalAvailible;
 
