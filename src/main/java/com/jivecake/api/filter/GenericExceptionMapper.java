@@ -58,8 +58,6 @@ public class GenericExceptionMapper implements ExceptionMapper<Exception> {
 
     @Override
     public Response toResponse(Exception applicationException) {
-        applicationException.printStackTrace();
-
         String authorization = this.request.getHeader("Authorization");
 
         ResponseBuilder builder;
@@ -79,6 +77,8 @@ public class GenericExceptionMapper implements ExceptionMapper<Exception> {
         } else if (applicationException instanceof NotAcceptableException) {
             builder = Response.status(Status.NOT_ACCEPTABLE);
         } else {
+            applicationException.printStackTrace();
+
             this.executor.execute(() -> {
                 long hour = 1000 * 60 * 60;
                 Date oneHourEarlier = new Date(new Date().getTime() - hour);
