@@ -297,6 +297,7 @@ public class EventResource {
             item.organizationId = event.organizationId;
             item.timeCreated = currentTime;
             item.timeUpdated = null;
+            item.countAmounts = null;
             item.lastActivity = currentTime;
 
             Key<Item> key = this.datastore.save(item);

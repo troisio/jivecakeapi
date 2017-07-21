@@ -194,14 +194,20 @@ public class PaypalResource {
                             builder = Response.status(Status.SERVICE_UNAVAILABLE);
                         }
                     } else {
-                        String entity = String.format("{\"error\": \"saleCount\", \"data\": %s}", sales.size());
+                        ErrorData data = new ErrorData();
+                        data.error = "saleCount";
+                        data.data = sales.size();
+
                         builder = Response.status(Status.BAD_REQUEST)
-                            .entity(entity)
+                            .entity(data)
                             .type(MediaType.APPLICATION_JSON);
                     }
                 } else {
+                    ErrorData data = new ErrorData();
+                    data.error = "multiplePaypalTransactions";
+
                     builder = Response.status(Status.BAD_REQUEST)
-                        .entity("{\"error\": \"multiplePaypalTransactions\"}")
+                        .entity(data)
                         .type(MediaType.APPLICATION_JSON);
                 }
             } else {
