@@ -115,49 +115,6 @@ public class StripeResource {
         }
 
         if (exception == null) {
-            if ("charge.refunded".equals(event.getType())) {
-                Charge charge = (Charge)event.getData().getObject();
-
-                long amount = charge.getAmountRefunded();
-
-                Transaction transaction = this.datastore.createQuery(Transaction.class)
-                    .field("linkedId").equal(charge.getId())
-                    .field("leaf").equal(true)
-                    .get();
-
-                if (transaction == null) {
-                    this.logger.info("Unable to find transaction for StripeCharge " + charge.getId());
-                } else if (transaction.status == TransactionService.REFUNDED) {
-                    String message = String.format("Stripe Webhook: transaction %s has already been refunded", transaction.id);
-                    this.logger.info(message);
-                } else {
-                    Transaction refundedTransaction = new Transaction(transaction);
-                    refundedTransaction.id = null;
-                    refundedTransaction.parentTransactionId = transaction.id;
-                    refundedTransaction.status = TransactionService.REFUNDED;
-                    refundedTransaction.paymentStatus = TransactionService.PAYMENT_EQUAL;
-                    refundedTransaction.amount = amount / 100;
-                    refundedTransaction.leaf = true;
-                    refundedTransaction.timeCreated = new Date();
-
-                    transaction.leaf = false;
-
-                    this.datastore.save(Arrays.asList(refundedTransaction, transaction));
-
-                    this.entityService.cascadeLastActivity(
-                        Arrays.asList(refundedTransaction, transaction),
-                        new Date()
-                    );
-                    this.notificationService.notify(
-                        Arrays.asList(refundedTransaction),
-                        "transaction.create"
-                    );
-                    this.notificationService.notify(
-                        Arrays.asList(transaction),
-                        "transaction.update"
-                    );
-                }
-            }
         } else {
             this.logger.info(exception);
         }
@@ -198,7 +155,7 @@ public class StripeResource {
                 refundTransaction.id = null;
                 refundTransaction.parentTransactionId = transaction.id;
                 refundTransaction.leaf = true;
-                refundTransaction.amount = new Double(TransactionService.DEFAULT_DECIMAL_FORMAT.format(amount / -100));
+                refundTransaction.amount = new Double(TransactionService.DEFAULT_DECIMAL_FORMAT.format(amount / 100));
                 refundTransaction.status = TransactionService.REFUNDED;
                 refundTransaction.paymentStatus = TransactionService.PAYMENT_EQUAL;
                 refundTransaction.timeCreated = new Date();

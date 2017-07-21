@@ -447,6 +447,7 @@ public class ItemResource {
             item.id = searchedItem.id;
             item.eventId = searchedItem.eventId;
             item.organizationId = searchedItem.organizationId;
+            item.countAmounts = null;
             item.timeCreated = searchedItem.timeCreated;
             item.lastActivity = currentDate;
             item.timeUpdated = currentDate;
