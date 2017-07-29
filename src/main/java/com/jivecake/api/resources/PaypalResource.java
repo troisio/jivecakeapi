@@ -153,22 +153,20 @@ public class PaypalResource {
 
                         PayPalRESTException refundException = null;
 
-                        if (!"refunded".equals(sale.getState())) {
-                            RefundRequest request = new RefundRequest();
+                        RefundRequest request = new RefundRequest();
 
-                            Amount amount = new Amount();
-                            amount.setCurrency(currency);
-                            amount.setTotal(
-                                TransactionService.DEFAULT_DECIMAL_FORMAT.format(
-                                    transaction.amount * transaction.quantity
-                                )
-                            );
+                        Amount amount = new Amount();
+                        amount.setCurrency(currency);
+                        amount.setTotal(
+                            TransactionService.DEFAULT_DECIMAL_FORMAT.format(
+                                transaction.amount * transaction.quantity
+                            )
+                        );
 
-                            try {
-                                sale.refund(this.context, request);
-                            } catch (PayPalRESTException e) {
-                                refundException = e;
-                            }
+                        try {
+                            sale.refund(this.context, request);
+                        } catch (PayPalRESTException e) {
+                            refundException = e;
                         }
 
                         if (refundException == null) {

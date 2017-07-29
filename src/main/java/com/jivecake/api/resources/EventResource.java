@@ -141,8 +141,6 @@ public class EventResource {
     @Path("/search")
     public Response publicSearch(
         @QueryParam("id") List<ObjectId> ids,
-        @QueryParam("timeCreatedLessThan") Long timeCreatedLessThan,
-        @QueryParam("timeCreatedGreaterThan") Long timeCreatedGreaterThan,
         @QueryParam("order") String order,
         @QueryParam("text") String text
     ) {
@@ -170,13 +168,6 @@ public class EventResource {
             query.field("id").in(ids);
         }
 
-        if (timeCreatedGreaterThan != null) {
-            query.field("timeCreated").greaterThan(new Date(timeCreatedGreaterThan));
-        }
-
-        if (timeCreatedLessThan != null) {
-            query.field("timeCreated").lessThan(new Date(timeCreatedLessThan));
-        }
 
         if (order != null) {
             query.order(order);

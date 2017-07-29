@@ -395,7 +395,6 @@ public class TransactionResource {
         @QueryParam("organizationId") List<ObjectId> organizationIds,
         @QueryParam("eventId") List<ObjectId> eventIds,
         @QueryParam("itemId") List<ObjectId> itemIds,
-        @QueryParam("id") List<ObjectId> ids,
         @QueryParam("Authorization") String authorization,
         @Suspended AsyncResponse promise
     ) {
@@ -405,7 +404,8 @@ public class TransactionResource {
             String token = authorization.substring("Bearer ".length());
             DecodedJWT jwt = this.auth0Service.getClaimsFromToken(token);
 
-            Query<Transaction> query = this.datastore.createQuery(Transaction.class);
+            Query<Transaction> query = this.datastore.createQuery(Transaction.class)
+                .field("leaf").equal(true);
 
             if (!organizationIds.isEmpty()) {
                 query.field("organizationId").in(organizationIds);
@@ -417,10 +417,6 @@ public class TransactionResource {
 
             if (!itemIds.isEmpty()) {
                 query.field("itemId").in(itemIds);
-            }
-
-            if (!ids.isEmpty()) {
-                query.field("id").in(ids);
             }
 
             List<Transaction> transactions = query.asList();
