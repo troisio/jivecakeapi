@@ -155,7 +155,7 @@ public class StripeResource {
                 refundTransaction.id = null;
                 refundTransaction.parentTransactionId = transaction.id;
                 refundTransaction.leaf = true;
-                refundTransaction.amount = new Double(TransactionService.DEFAULT_DECIMAL_FORMAT.format(amount / 100));
+                refundTransaction.amount = new Double(TransactionService.DEFAULT_DECIMAL_FORMAT.format(amount / -100));
                 refundTransaction.status = TransactionService.REFUNDED;
                 refundTransaction.paymentStatus = TransactionService.PAYMENT_EQUAL;
                 refundTransaction.timeCreated = new Date();
