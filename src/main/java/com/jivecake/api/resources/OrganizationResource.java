@@ -2,10 +2,13 @@ package com.jivecake.api.resources;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.Collection;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -40,11 +43,13 @@ import com.jivecake.api.filter.GZip;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Event;
+import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.PaymentProfile;
 import com.jivecake.api.model.PaypalPaymentProfile;
 import com.jivecake.api.model.Permission;
 import com.jivecake.api.model.StripePaymentProfile;
+import com.jivecake.api.model.Transaction;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.request.StripeAccountCredentials;
 import com.jivecake.api.request.StripeOAuthCode;
@@ -89,6 +94,45 @@ public class OrganizationResource {
         this.notificationService = notificationService;
         this.entityService = entityService;
         this.datastore = datastore;
+    }
+
+    @GET
+    @Path("{id}/tree")
+    @Authorized
+    @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.READ)
+    public Response getOrganizationTree(
+        @PathObject("id") Organization organization
+    ) {
+        Calendar calendar = Calendar.getInstance();
+        calendar.add(Calendar.YEAR, -1);
+        Date oneYearPrevious = calendar.getTime();
+
+        List<PaymentProfile> profiles = this.datastore.createQuery(PaymentProfile.class)
+            .field("organizationId").equal(organization.id)
+            .asList();
+
+        List<Event> events = this.datastore.createQuery(Event.class)
+            .field("organizationId").equal(organization.id)
+            .field("lastActivity").greaterThan(oneYearPrevious)
+            .asList();
+
+        List<Item> items = this.datastore.createQuery(Item.class)
+            .field("organizationId").equal(organization.id)
+            .field("lastActivity").greaterThan(oneYearPrevious)
+            .asList();
+
+        List<Transaction> transactions = this.datastore.createQuery(Transaction.class)
+            .field("organizationId").equal(organization.id)
+            .field("timeCreated").greaterThan(oneYearPrevious)
+            .asList();
+
+        Map<String, Object> entity = new HashMap<>();
+        entity.put("paymentProfile", profiles);
+        entity.put("event", events);
+        entity.put("item", items);
+        entity.put("transaction", transactions);
+
+        return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
     }
 
     @POST
