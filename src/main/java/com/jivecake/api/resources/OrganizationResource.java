@@ -98,6 +98,7 @@ public class OrganizationResource {
 
     @GET
     @Path("{id}/tree")
+    @GZip
     @Authorized
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.READ)
     public Response getOrganizationTree(
