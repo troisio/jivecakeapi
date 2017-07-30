@@ -1,11 +1,5 @@
 #!/bin/bash
 
-if [ -n "$PORT_FORWARD_URL" ] && [ -n "$PORT_FORWARD_USER" ]; then
-  mkdir -p ~/.ssh
-  ssh-keyscan $PORT_FORWARD_URL >> ~/.ssh/known_hosts
-  ssh -f -N -L 27017:127.0.0.1:27017 $PORT_FORWARD_USER@$PORT_FORWARD_URL
-fi
-
 if [ ! -d $SOURCE_DIRECTORY ]; then
   git clone -b $BRANCH --single-branch $REPOSITORY $SOURCE_DIRECTORY
 
