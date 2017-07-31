@@ -128,6 +128,7 @@ public class OrganizationResource {
             .asList();
 
         Map<String, Object> entity = new HashMap<>();
+        entity.put("organization", organization);
         entity.put("paymentProfile", profiles);
         entity.put("event", events);
         entity.put("item", items);
