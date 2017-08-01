@@ -30,6 +30,10 @@ public class OrganizationService {
         return Organization.class.getSimpleName();
     }
 
+    public boolean isValid(Organization organization) {
+        return organization != null && organization.email != null && organization.email.contains("@");
+    }
+
     public void reindex() {
         Map<Organization, List<Organization>> organizationToDescendants = this.getDescendants();
 
