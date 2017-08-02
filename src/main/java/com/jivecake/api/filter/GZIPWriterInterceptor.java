@@ -20,9 +20,8 @@ public class GZIPWriterInterceptor implements WriterInterceptor {
 
     @Override
     public void aroundWriteTo(WriterInterceptorContext context) throws IOException {
-        boolean acceptsGZIP = this.request.getHeader("Accept-Encoding")
-            .toLowerCase()
-            .contains("gzip");
+        String acceptEncoding = this.request.getHeader("Accept-Encoding");
+        boolean acceptsGZIP = acceptEncoding != null && acceptEncoding.toLowerCase().contains("gzip");
 
         if (acceptsGZIP) {
             context.getHeaders().add("Content-Encoding", "gzip");
