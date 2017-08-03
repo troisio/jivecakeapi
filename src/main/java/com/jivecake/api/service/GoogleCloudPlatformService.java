@@ -8,8 +8,6 @@ import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 
-import org.threeten.bp.Duration;
-
 import com.google.cloud.storage.Bucket;
 import com.google.cloud.storage.BucketInfo;
 import com.google.cloud.storage.Cors;
@@ -60,11 +58,7 @@ public class GoogleCloudPlatformService {
     public List<AnnotateImageResponse> getAnnotations(Feature.Type featureType, String path) throws IOException {
         List<AnnotateImageRequest> requests = new ArrayList<>();
 
-        ImageAnnotatorSettings.Builder imageAnnotatorSettingsBuilder = ImageAnnotatorSettings.defaultBuilder();
-        imageAnnotatorSettingsBuilder.batchAnnotateImagesSettings()
-            .getRetrySettingsBuilder()
-            .setTotalTimeout(Duration.ofSeconds(30));
-        ImageAnnotatorSettings settings = imageAnnotatorSettingsBuilder.build();
+        ImageAnnotatorSettings settings = ImageAnnotatorSettings.defaultBuilder().build();
 
         ImageSource imgSource = ImageSource.newBuilder()
             .setGcsImageUri(path)
@@ -81,7 +75,6 @@ public class GoogleCloudPlatformService {
             .setImage(img)
             .build();
         requests.add(request);
-
         ImageAnnotatorClient client = ImageAnnotatorClient.create(settings);
         BatchAnnotateImagesResponse response = client.batchAnnotateImages(requests);
         return response.getResponsesList();
