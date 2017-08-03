@@ -183,12 +183,14 @@ public class APIApplication extends Application<APIConfiguration> {
             organizationService
         );
 
-        this.establishRootUsers(
-            permissionService,
-            application,
-            rootOrganization,
-            configuration.rootOAuthIds
-        );
+        if (configuration.rootOAuthIds != null) {
+            this.establishRootUsers(
+                permissionService,
+                application,
+                rootOrganization,
+                configuration.rootOAuthIds
+            );
+        }
 
         JerseyEnvironment jersey = environment.jersey();
         DropwizardResourceConfig resourceConfiguration = jersey.getResourceConfig();

@@ -384,9 +384,30 @@ public class TransactionResource {
     @GET
     @Path("{id}")
     @Authorized
-    @HasPermission(id="id", clazz=Transaction.class, permission=PermissionService.READ)
-    public Response read(@PathObject("id") Transaction transaction) {
-        return Response.ok(transaction).type(MediaType.APPLICATION_JSON).build();
+    public Response read(
+        @PathObject("id") Transaction transaction,
+        @Context DecodedJWT jwt
+    ) {
+        ResponseBuilder builder;
+
+        if (transaction == null) {
+            builder = Response.status(Status.NOT_FOUND);
+        } else {
+            boolean hasPermission = jwt.getSubject().equals(transaction.user_id) ||
+                this.permissionService.has(
+                    jwt.getSubject(),
+                    Arrays.asList(transaction),
+                    PermissionService.READ
+                );
+
+            if (hasPermission) {
+                builder = Response.ok(transaction).type(MediaType.APPLICATION_JSON);
+            } else {
+                builder = Response.status(Status.UNAUTHORIZED);
+            }
+        }
+
+        return builder.build();
     }
 
     @GET
