@@ -7,6 +7,7 @@ import org.mongodb.morphia.annotations.Entity;
 import org.mongodb.morphia.annotations.Field;
 import org.mongodb.morphia.annotations.Id;
 import org.mongodb.morphia.annotations.Index;
+import org.mongodb.morphia.annotations.IndexOptions;
 import org.mongodb.morphia.annotations.Indexes;
 import org.mongodb.morphia.utils.IndexType;
 
@@ -16,6 +17,7 @@ import com.jivecake.api.serializer.ObjectIdSerializer;
 @Entity
 @Indexes({
     @Index(fields = @Field(value = "organizationId")),
+    @Index(fields = @Field(value = "hash"), options=@IndexOptions(unique=true)),
     @Index(fields = @Field(value = "name", type = IndexType.TEXT))
 })
 public class Event {
@@ -27,8 +29,12 @@ public class Event {
     public ObjectId organizationId;
 
     @JsonSerialize(using=ObjectIdSerializer.class)
+    public ObjectId entityAssetConsentId;
+
+    @JsonSerialize(using=ObjectIdSerializer.class)
     public ObjectId paymentProfileId;
     public String currency;
+    public String hash;
     public String description;
     public String name;
     public int status;

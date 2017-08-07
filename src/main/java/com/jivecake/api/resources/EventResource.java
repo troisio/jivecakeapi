@@ -33,6 +33,8 @@ import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.GZip;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
+import com.jivecake.api.model.EntityAsset;
+import com.jivecake.api.model.EntityType;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
@@ -127,7 +129,6 @@ public class EventResource {
         } else {
             ErrorData error = new ErrorData();
             error.error = "status";
-
             builder = Response.status(Status.BAD_REQUEST)
                 .entity(error)
                 .type(MediaType.APPLICATION_JSON);
@@ -140,7 +141,8 @@ public class EventResource {
     @GET
     @Path("/search")
     public Response publicSearch(
-        @QueryParam("id") List<ObjectId> ids,
+        @QueryParam("id") ObjectId id,
+        @QueryParam("hash") String hash,
         @QueryParam("order") String order,
         @QueryParam("text") String text
     ) {
@@ -164,10 +166,13 @@ public class EventResource {
             );
         }
 
-        if (!ids.isEmpty()) {
-            query.field("id").in(ids);
+        if (id != null) {
+            query.field("id").equal(id);
         }
 
+        if (hash != null) {
+            query.field("hash").equal(hash);
+        }
 
         if (order != null) {
             query.order(order);
@@ -200,6 +205,13 @@ public class EventResource {
                 .field("organizationId").equal(original.organizationId)
                 .count();
 
+            boolean hasValidEntityAssetConsentId = event.entityAssetConsentId == null ||
+            this.datastore.createQuery(EntityAsset.class)
+                .field("entityId").equal(original.organizationId.toString())
+                .field("entityType").equal(EntityType.ORGANIZATION)
+                .field("id").equal(event.entityAssetConsentId)
+                .count() == 1;
+
             boolean hasSubscriptionViolation;
             StripeException stripeException = null;
             List<Subscription> currentSubscriptions = null;
@@ -223,7 +235,13 @@ public class EventResource {
                 hasSubscriptionViolation = false;
             }
 
-            if (!hasValidPaymentProfile) {
+            if (!hasValidEntityAssetConsentId) {
+                ErrorData errorData =  new ErrorData();
+                errorData.error = "entityAssetConsentId";
+                builder = Response.status(Status.BAD_REQUEST)
+                        .entity(errorData)
+                        .type(MediaType.APPLICATION_JSON);
+            } else if (!hasValidPaymentProfile) {
                 builder = Response.status(Status.BAD_REQUEST)
                     .entity("{\"error\": \"paymentProfileId\"}")
                     .type(MediaType.APPLICATION_JSON);
@@ -242,6 +260,7 @@ public class EventResource {
                 Date currentTime = new Date();
 
                 event.id = original.id;
+                event.hash = original.hash;
                 event.organizationId = original.organizationId;
                 event.timeCreated = original.timeCreated;
                 event.timeUpdated = currentTime;

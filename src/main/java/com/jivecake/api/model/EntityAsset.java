@@ -28,5 +28,6 @@ public class EntityAsset {
     public String assetId;
     public int assetType;
     public byte[] data;
+    public String name;
     public Date timeCreated;
 }

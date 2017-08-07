@@ -48,7 +48,6 @@ import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.GZip;
 import com.jivecake.api.filter.LimitUserRequest;
-import com.jivecake.api.filter.Log;
 import com.jivecake.api.model.AssetType;
 import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.EntityType;
@@ -135,7 +134,6 @@ public class UserResource {
     @POST
     @Consumes({"image/jpeg", "image/png"})
     @Path("{user_id}/selfie")
-    @Log(body = false)
     @Authorized
     @LimitUserRequest(count=5, per=1000 * 60)
     public Response uploadSelfie(
@@ -206,8 +204,9 @@ public class UserResource {
                 EntityAsset asset = new EntityAsset();
                 asset.entityType = EntityType.USER;
                 asset.entityId = jwt.getSubject();
-                asset.assetId = String.format("%s/%s", blob.getBucket(), blob.getName());
+                asset.assetId = blob.getBucket() + "/" + blob.getName();
                 asset.assetType = AssetType.GOOGLE_CLOUD_STORAGE_BLOB_FACE;
+                asset.name = "";
                 asset.timeCreated = new Date();
 
                 this.datastore.save(asset);
