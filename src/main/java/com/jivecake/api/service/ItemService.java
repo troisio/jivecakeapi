@@ -12,6 +12,7 @@ import javax.inject.Inject;
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 
+import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
@@ -97,10 +98,15 @@ public class ItemService {
             return result;
         }).collect(Collectors.toList());
 
+        List<EntityAsset> assets = this.datastore.createQuery(EntityAsset.class)
+            .field("id").equal(event.entityAssetConsentId)
+            .asList();
+
         AggregatedEvent group = new AggregatedEvent();
         group.organization = this.datastore.get(Organization.class, event.organizationId);
         group.event = event;
         group.itemData = itemData;
+        group.assets = assets;
 
         if (profiles.size() == 1) {
             group.profile = profiles.get(0);

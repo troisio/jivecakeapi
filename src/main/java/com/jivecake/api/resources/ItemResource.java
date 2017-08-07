@@ -318,11 +318,9 @@ public class ItemResource {
         boolean isValid = this.transactionService.isValidTransaction(transaction) && transaction.amount >= 0;
 
         if (isValid) {
-            boolean totalAvailibleViolation;
+            boolean totalAvailibleViolation = false;
 
-            if (item.totalAvailible == null) {
-                totalAvailibleViolation = false;
-            } else {
+            if (item.totalAvailible != null) {
                 long count = this.transactionService.getTransactionQueryForCounting()
                     .field("itemId").equal(item.id)
                     .asList()
@@ -330,7 +328,7 @@ public class ItemResource {
                     .map(subject -> subject.quantity)
                     .reduce(0L, Long::sum);
 
-                totalAvailibleViolation = count > item.totalAvailible;
+                totalAvailibleViolation = count + transaction.quantity > item.totalAvailible;
             }
 
             if (totalAvailibleViolation) {

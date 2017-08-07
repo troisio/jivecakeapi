@@ -1,8 +1,10 @@
 package com.jivecake.api.service;
 
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -18,6 +20,20 @@ import com.jivecake.api.request.ItemData;
 public class EventService {
     public static final int STATUS_ACTIVE = 1;
     public static final int STATUS_INACTIVE = 0;
+    private final Random random = new SecureRandom();
+    private final String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890_-";
+    private final int maximumHashCharacters = 8;
+
+    public String getHash() {
+        String result = "";
+
+        for (int index = 0; index < this.maximumHashCharacters; index++) {
+            int i = this.random.nextInt(this.alphabet.length());
+            result += this.alphabet.charAt(i);
+        }
+
+        return result;
+    }
 
     public List<ErrorData> getErrorsFromOrderRequest(String userId, List<EntityQuantity<ObjectId>> entityQuantities, AggregatedEvent aggregated) {
         List<ErrorData> errors = new ArrayList<>();
@@ -66,7 +82,7 @@ public class EventService {
                             .map(transaction -> transaction.quantity)
                             .reduce(0L, Long::sum);
 
-                        orderWouldExceedTotalAvailible = entity.quantity + count > itemData.item.totalAvailible;
+                        orderWouldExceedTotalAvailible = entity.quantity + count > itemData.item.maximumPerUser;
                     }
                 }
             }

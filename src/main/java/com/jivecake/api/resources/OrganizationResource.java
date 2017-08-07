@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -18,6 +19,7 @@ import javax.inject.Singleton;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
+import javax.ws.rs.HeaderParam;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.QueryParam;
@@ -37,11 +39,24 @@ import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
 import com.auth0.jwt.interfaces.DecodedJWT;
+import com.google.cloud.storage.Acl;
+import com.google.cloud.storage.Acl.Role;
+import com.google.cloud.storage.Acl.User;
+import com.google.cloud.storage.Blob;
+import com.google.cloud.storage.BlobId;
+import com.google.cloud.storage.BlobInfo;
+import com.google.cloud.storage.Storage;
+import com.google.cloud.storage.StorageClass;
+import com.google.cloud.storage.StorageOptions;
+import com.jivecake.api.APIConfiguration;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.GZip;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
+import com.jivecake.api.model.AssetType;
+import com.jivecake.api.model.EntityAsset;
+import com.jivecake.api.model.EntityType;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
@@ -50,6 +65,7 @@ import com.jivecake.api.model.PaypalPaymentProfile;
 import com.jivecake.api.model.Permission;
 import com.jivecake.api.model.StripePaymentProfile;
 import com.jivecake.api.model.Transaction;
+import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.request.StripeAccountCredentials;
 import com.jivecake.api.request.StripeOAuthCode;
@@ -67,6 +83,7 @@ import com.stripe.model.Subscription;
 @Path("organization")
 @Singleton
 public class OrganizationResource {
+    private final APIConfiguration configuration;
     private final OrganizationService organizationService;
     private final EventService eventService;
     private final PermissionService permissionService;
@@ -79,6 +96,7 @@ public class OrganizationResource {
 
     @Inject
     public OrganizationResource(
+        APIConfiguration configuration,
         OrganizationService organizationService,
         EventService eventService,
         PermissionService permissionService,
@@ -87,6 +105,7 @@ public class OrganizationResource {
         EntityService entityService,
         Datastore datastore
     ) {
+        this.configuration = configuration;
         this.organizationService = organizationService;
         this.eventService = eventService;
         this.permissionService = permissionService;
@@ -135,6 +154,94 @@ public class OrganizationResource {
         entity.put("transaction", transactions);
 
         return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    @POST
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Path("{id}/consent")
+    @Authorized
+    @HasPermission(id="id", clazz=Organization.class, permission=PermissionService.WRITE)
+    public Response createConsent(
+        @PathObject("id") Organization organization,
+        @HeaderParam("Content-Type") String contentType,
+        @Context DecodedJWT jwt,
+        EntityAsset asset
+    ) {
+        ResponseBuilder builder;
+
+        long count = this.datastore.createQuery(EntityAsset.class)
+            .field("entityType").equal(EntityType.ORGANIZATION)
+            .field("entityId").equal(organization.id.toString())
+            .field("assetType").in(
+                Arrays.asList(
+                    AssetType.GOOGLE_CLOUD_STORAGE_CONSENT_PDF,
+                    AssetType.ORGANIZATION_CONSENT_TEXT
+                )
+            ).count();
+
+        boolean isValid = asset.name != null && asset.data != null;
+
+        if (!isValid) {
+            builder = Response.status(Status.BAD_REQUEST);
+        } else if (count > 50) {
+            ErrorData data = new ErrorData();
+            data.error = "limit";
+            data.data = 50;
+            builder = Response.status(Status.BAD_REQUEST)
+                .entity(data)
+                .type(MediaType.APPLICATION_JSON);
+        } else {
+            if (asset.assetType == AssetType.ORGANIZATION_CONSENT_TEXT) {
+                asset.id = null;
+                asset.entityType = EntityType.ORGANIZATION;
+                asset.entityId = organization.id.toString();
+                asset.assetId = UUID.randomUUID().toString();
+                asset.assetType = AssetType.ORGANIZATION_CONSENT_TEXT;
+                asset.timeCreated = new Date();
+
+                long byteLimit = 100000;
+
+                if (asset.data.length > byteLimit) {
+                    ErrorData data = new ErrorData();
+                    data.error = "bytelimit";
+                    data.data = byteLimit;
+                    builder = Response.status(Status.BAD_REQUEST)
+                        .entity(data)
+                        .type(MediaType.APPLICATION_JSON);
+                } else {
+                    this.datastore.save(asset);
+                    this.notificationService.notify(Arrays.asList(asset), "asset.create");
+                    builder = Response.ok(asset).type(MediaType.APPLICATION_JSON);
+                }
+            } else if (asset.assetType == AssetType.GOOGLE_CLOUD_STORAGE_CONSENT_PDF) {
+                Storage storage = StorageOptions.getDefaultInstance().getService();
+                String name = UUID.randomUUID().toString();
+                BlobInfo info = BlobInfo.newBuilder(BlobId.of(this.configuration.gcp.bucket, name))
+                    .setContentType("application/pdf")
+                    .setAcl(Arrays.asList(Acl.of(User.ofAllUsers(), Role.READER)))
+                    .setStorageClass(StorageClass.REGIONAL)
+                    .build();
+
+                Blob blob = storage.create(info, asset.data);
+
+                asset.id = null;
+                asset.data = null;
+                asset.entityType = EntityType.ORGANIZATION;
+                asset.entityId = organization.id.toString();
+                asset.assetId = blob.getBucket() + "/" + blob.getName();
+                asset.assetType = AssetType.GOOGLE_CLOUD_STORAGE_CONSENT_PDF;
+                asset.timeCreated = new Date();
+
+                this.datastore.save(asset);
+                this.notificationService.notify(Arrays.asList(asset), "asset.create");
+
+                builder = Response.ok(asset).type(MediaType.APPLICATION_JSON);
+            } else {
+                builder = Response.status(Status.BAD_REQUEST);
+            }
+        }
+
+        return builder.build();
     }
 
     @POST
@@ -326,6 +433,13 @@ public class OrganizationResource {
                 hasFeatureViolation = false;
             }
 
+            boolean hasValidEntityAssetConsentId = event.entityAssetConsentId == null ||
+                this.datastore.createQuery(EntityAsset.class)
+                    .field("entityId").equal(event.organizationId.toString())
+                    .field("entityType").equal(EntityType.ORGANIZATION)
+                    .field("id").equal(event.entityAssetConsentId)
+                    .count() == 1;
+
             boolean hasValidPaymentProfile = event.paymentProfileId == null ||
                 this.datastore.createQuery(PaymentProfile.class)
                     .field("id").equal(event.paymentProfileId)
@@ -335,23 +449,37 @@ public class OrganizationResource {
                 .field("organizationId").equal(organization.id)
                 .count();
 
-            if (!hasValidPaymentProfile) {
+            if (!hasValidEntityAssetConsentId) {
+                ErrorData errorData =  new ErrorData();
+                errorData.error = "entityAssetConsentId";
                 builder = Response.status(Status.BAD_REQUEST)
-                    .entity("{\"error\": \"paymentProfileId\"}")
+                    .entity(errorData)
+                    .type(MediaType.APPLICATION_JSON);
+            } else if (!hasValidPaymentProfile) {
+                ErrorData errorData =  new ErrorData();
+                errorData.error = "paymentProfileId";
+                builder = Response.status(Status.BAD_REQUEST)
+                    .entity(errorData)
                     .type(MediaType.APPLICATION_JSON);
             } else if (stripeException != null) {
-                builder = Response.status(Status.SERVICE_UNAVAILABLE)
-                    .entity(stripeException);
+                builder = Response.status(Status.SERVICE_UNAVAILABLE);
             } else if (eventCount > 100) {
-                builder = Response.status(Status.BAD_REQUEST).entity("{\"error\": \"limit\"}").type(MediaType.APPLICATION_JSON);
-            } else if (hasFeatureViolation) {
+                ErrorData errorData =  new ErrorData();
+                errorData.error = "limit";
                 builder = Response.status(Status.BAD_REQUEST)
-                    .entity("{\"error\": \"subscription\"}")
+                    .entity(errorData)
+                    .type(MediaType.APPLICATION_JSON);
+            } else if (hasFeatureViolation) {
+                ErrorData errorData =  new ErrorData();
+                errorData.error = "subscription";
+                builder = Response.status(Status.BAD_REQUEST)
+                    .entity(errorData)
                     .type(MediaType.APPLICATION_JSON);
             } else {
                 Date currentTime = new Date();
 
                 event.id = null;
+                event.hash = this.eventService.getHash();
                 event.organizationId = organization.id;
                 event.timeCreated = currentTime;
                 event.lastActivity = currentTime;
@@ -389,65 +517,56 @@ public class OrganizationResource {
                 .count();
 
             if (sameEmailCount == 0) {
-                if (organization.parentId == null) {
-                    builder = Response.status(Status.BAD_REQUEST);
+                long userOrganizationPermissions = this.datastore.createQuery(Permission.class)
+                    .field("user_id").equal(jwt.getSubject())
+                    .field("objectClass").equal(Organization.class.getSimpleName())
+                    .field("include").equal(PermissionService.ALL)
+                    .count();
+
+                if (userOrganizationPermissions > this.maximumOrganizationsPerUser) {
+                    ErrorData entity = new ErrorData();
+                    entity.error = "limit";
+                    builder = Response.status(Status.BAD_REQUEST)
+                        .entity(entity)
+                        .type(MediaType.APPLICATION_JSON);
                 } else {
-
                     Organization rootOrganization = this.organizationService.getRootOrganization();
+                    Date currentTime = new Date();
 
-                    boolean parentIdOrganizationViolation = !rootOrganization.id.equals(organization.parentId);
+                    organization.id = null;
+                    organization.parentId = rootOrganization.id;
+                    organization.children = new ArrayList<>();
+                    organization.timeCreated = currentTime;
+                    organization.timeUpdated = null;
+                    organization.lastActivity = currentTime;
 
-                    long userOrganizationPermissions = this.datastore.createQuery(Permission.class)
-                        .field("user_id").equal(jwt.getSubject())
-                        .field("objectClass").equal(Organization.class.getSimpleName())
-                        .field("include").equal(PermissionService.ALL)
-                        .count();
+                    Key<Organization> key = this.datastore.save(organization);
 
-                    if (userOrganizationPermissions > this.maximumOrganizationsPerUser) {
-                        builder = Response.status(Status.BAD_REQUEST)
-                            .entity("{\"error\": \"limit\"}")
-                            .type(MediaType.APPLICATION_JSON);
-                    } else if (parentIdOrganizationViolation) {
-                        builder = Response.status(Status.BAD_REQUEST)
-                            .entity("{\"error\": \"parentId\"}")
-                            .type(MediaType.APPLICATION_JSON);
-                    } else {
-                        Date currentTime = new Date();
+                    Permission permission = new Permission();
+                    permission.user_id = jwt.getSubject();
+                    permission.include = PermissionService.ALL;
+                    permission.permissions = new HashSet<>();
+                    permission.objectClass = this.organizationService.getPermissionObjectClass();
+                    permission.objectId = (ObjectId)key.getId();
+                    permission.timeCreated = currentTime;
 
-                        organization.id = null;
-                        organization.children = new ArrayList<>();
-                        organization.timeCreated = currentTime;
-                        organization.timeUpdated = null;
-                        organization.lastActivity = currentTime;
+                    this.permissionService.write(Arrays.asList(permission));
 
-                        Key<Organization> key = this.datastore.save(organization);
+                    List<Object> entities = new ArrayList<>();
+                    entities.add(organization);
+                    entities.add(permission);
 
-                        Permission permission = new Permission();
-                        permission.user_id = jwt.getSubject();
-                        permission.include = PermissionService.ALL;
-                        permission.permissions = new HashSet<>();
-                        permission.objectClass = this.organizationService.getPermissionObjectClass();
-                        permission.objectId = (ObjectId)key.getId();
-                        permission.timeCreated = currentTime;
+                    this.notificationService.notify(entities, "organization.create");
 
-                        this.permissionService.write(Arrays.asList(permission));
+                    Organization entity = this.datastore.get(Organization.class, key.getId());
+                    builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
 
-                        List<Object> entities = new ArrayList<>();
-                        entities.add(organization);
-                        entities.add(permission);
-
-                        this.notificationService.notify(entities, "organization.create");
-
-                        Organization entity = this.datastore.get(Organization.class, key.getId());
-                        builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-
-                        this.reindexExecutor.submit(new Runnable() {
-                            @Override
-                            public void run() {
-                                OrganizationResource.this.organizationService.reindex();
-                            }
-                        });
-                    }
+                    this.reindexExecutor.submit(new Runnable() {
+                        @Override
+                        public void run() {
+                            OrganizationResource.this.organizationService.reindex();
+                        }
+                    });
                 }
             } else {
                 builder = Response.status(Status.CONFLICT);
@@ -603,7 +722,11 @@ public class OrganizationResource {
                 boolean parentIdChangeViolation = !Objects.equals(searchedOrganization.parentId, organization.parentId);
 
                 if (parentIdChangeViolation) {
-                    builder = Response.status(Status.BAD_REQUEST);
+                    ErrorData entity = new ErrorData();
+                    entity.error = "parentId";
+                    builder = Response.status(Status.BAD_REQUEST)
+                        .entity(entity)
+                        .type(MediaType.APPLICATION_JSON);
                 } else {
                     organization.children = searchedOrganization.children;
                     organization.id = searchedOrganization.id;
