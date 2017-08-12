@@ -158,6 +158,7 @@ public class APIApplication extends Application<APIConfiguration> {
             rootOrganization.children = new ArrayList<>();
             rootOrganization.name = "JiveCake";
             rootOrganization.email = "luis@trois.io";
+            rootOrganization.lastActivity = new Date();
             rootOrganization.timeCreated = new Date();
             datastore.save(rootOrganization);
         }

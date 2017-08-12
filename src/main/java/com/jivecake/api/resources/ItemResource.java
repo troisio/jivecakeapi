@@ -145,6 +145,7 @@ public class ItemResource {
                 userTransaction.organizationId = organization.id;
                 userTransaction.currency = event.currency;
                 userTransaction.amount = 0;
+                userTransaction.linkedFee = 0;
                 userTransaction.leaf = true;
                 userTransaction.timeCreated = currentTime;
 

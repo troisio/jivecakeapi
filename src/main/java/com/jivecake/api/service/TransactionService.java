@@ -157,7 +157,8 @@ public class TransactionService {
             "amount",
             "currency",
             "timeCreated",
-            "system"
+            "linkedFee",
+            "linkedObjectClass"
         };
 
         CellStyle dateStyle = workbook.createCellStyle();
@@ -200,15 +201,17 @@ public class TransactionService {
         Cell amount = row.createCell(5);
         Cell currency = row.createCell(6);
         Cell timeCreated = row.createCell(7);
-        Cell system = row.createCell(8);
+        Cell linkedFee = row.createCell(8);
+        Cell linkedObjectClass = row.createCell(9);
 
         amount.setCellValue(subject.amount);
         currency.setCellValue(subject.currency);
+        linkedFee.setCellValue(subject.linkedFee);
 
         if ("PaypalPayment".equals(subject.linkedObjectClass)) {
-            system.setCellValue("paypal");
+            linkedObjectClass.setCellValue("paypal");
         } else if ("StripeCharge".equals(subject.linkedObjectClass)) {
-            system.setCellValue("stripe");
+            linkedObjectClass.setCellValue("stripe");
         }
 
         if (subject.timeCreated != null) {

@@ -40,7 +40,6 @@ public class Auth0Service {
                 result = verifier.verify(token);
                 break;
             } catch (JWTVerificationException e) {
-                e.printStackTrace();
             }
         }
 
