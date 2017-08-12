@@ -51,9 +51,9 @@ import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.request.ItemData;
 import com.jivecake.api.request.PaypalAuthorization;
 import com.jivecake.api.request.PaypalOrder;
+import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
-import com.jivecake.api.service.ItemService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.TransactionService;
@@ -78,7 +78,7 @@ import com.paypal.base.rest.PayPalRESTException;
 @Singleton
 public class PaypalResource {
     private final Datastore datastore;
-    private final ItemService itemService;
+    private final ApplicationService applicationService;
     private final EventService eventService;
     private final EntityService entityService;
     private final NotificationService notificationService;
@@ -91,7 +91,7 @@ public class PaypalResource {
     @Inject
     public PaypalResource(
         Datastore datastore,
-        ItemService itemService,
+        ApplicationService applicationService,
         EventService eventService,
         EntityService entityService,
         NotificationService notificationService,
@@ -100,7 +100,7 @@ public class PaypalResource {
         APIConfiguration configuration
     ) {
         this.datastore = datastore;
-        this.itemService = itemService;
+        this.applicationService = applicationService;
         this.eventService = eventService;
         this.entityService = entityService;
         this.notificationService = notificationService;
@@ -333,7 +333,7 @@ public class PaypalResource {
             Date date = new Date();
 
             String userId = jwt == null ? null : jwt.getSubject();
-            AggregatedEvent aggregated = this.itemService.getAggregatedaEventData(
+            AggregatedEvent aggregated = this.eventService.getAggregatedaEventData(
                 event,
                 this.transactionService,
                 date
@@ -372,9 +372,9 @@ public class PaypalResource {
                     paypalItem.setSku(item.id.toString());
                     paypalItem.setCurrency(aggregated.event.currency);
 
-                    items.add(paypalItem);
-
                     total += itemData.amount * entityQuantity.quantity;
+
+                    items.add(paypalItem);
                 }
 
                 ItemList itemList = new ItemList();
@@ -432,7 +432,7 @@ public class PaypalResource {
 
                     builder = Response.ok(body).type(MediaType.APPLICATION_JSON);
                 } else {
-                    exception.printStackTrace();
+                    this.applicationService.saveException(exception, userId);
                     builder = Response.status(Status.SERVICE_UNAVAILABLE);
                 }
             } else {

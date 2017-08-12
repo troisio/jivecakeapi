@@ -91,7 +91,7 @@ public class OrganizationResource {
     private final NotificationService notificationService;
     private final EntityService entityService;
     private final Datastore datastore;
-    private final long maximumOrganizationsPerUser = 50;
+    private final long maximumOrganizationsPerUser = 10;
     private final ExecutorService reindexExecutor = Executors.newSingleThreadExecutor();
 
     @Inject

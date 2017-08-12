@@ -12,8 +12,8 @@ import org.mongodb.morphia.Key;
 import com.jivecake.api.model.Application;
 
 public class ApplicationService {
-    private final Application application;
     public static final int LIMIT_DEFAULT = 100;
+    private final Application application;
     private final Datastore datastore;
 
     @Inject

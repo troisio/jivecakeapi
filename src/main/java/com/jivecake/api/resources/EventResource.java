@@ -101,22 +101,21 @@ public class EventResource {
         if (event == null) {
             builder = Response.status(Status.NOT_FOUND);
         } else if (event.status == EventService.STATUS_ACTIVE) {
-            AggregatedEvent group = this.itemService.getAggregatedaEventData(
+            AggregatedEvent group = this.eventService.getAggregatedaEventData(
                 event,
                 this.transactionService,
                 new Date()
             );
 
+            group.organization.children = null;
             group.itemData = group.itemData.stream()
                 .filter(itemData -> itemData.item.status == ItemService.STATUS_ACTIVE)
                 .collect(Collectors.toList());
 
             for (ItemData datum: group.itemData) {
                 for (Transaction transaction: datum.transactions) {
-                    if (jwt != null) {
-                        if (!jwt.getSubject().equals(transaction.user_id)) {
-                            transaction.user_id = null;
-                        }
+                    if (jwt == null || !jwt.getSubject().equals(transaction.user_id)) {
+                        transaction.user_id = null;
                     }
 
                     transaction.given_name = null;
