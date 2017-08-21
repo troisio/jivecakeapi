@@ -44,6 +44,7 @@ import com.jivecake.api.filter.QueryRestrict;
 import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.EntityType;
 import com.jivecake.api.model.Transaction;
+import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.EntityService;
@@ -538,16 +539,23 @@ public class TransactionResource {
 
                 transaction.leaf = false;
 
-                Iterable<Key<Transaction>> keys = this.datastore.save(Arrays.asList(revokedTransaction, transaction));
+                Iterable<Key<Transaction>> keys = this.datastore.save(
+                    Arrays.asList(revokedTransaction, transaction)
+                );
                 List<Transaction> transactions = this.datastore.getByKeys(keys);
 
                 this.entityService.cascadeLastActivity(transactions, currentTime);
-                this.notificationService.notify(new ArrayList<Object>(transactions), "transaction.revoke");
+                this.notificationService.notify(
+                    Arrays.asList(revokedTransaction, transaction),
+                    "transaction.update"
+                );
 
                 builder = Response.ok(transactions.get(0)).type(MediaType.APPLICATION_JSON);
             } else {
+                ErrorData entity = new ErrorData();
+                entity.error = "complete";
                 builder = Response.status(Status.BAD_REQUEST)
-                    .entity("{\"error\": \"complete\"}")
+                    .entity(entity)
                     .type(MediaType.APPLICATION_JSON);
             }
         }
