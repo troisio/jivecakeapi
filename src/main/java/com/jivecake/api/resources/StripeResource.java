@@ -312,7 +312,7 @@ public class StripeResource {
                             Map<String, Object> message = new HashMap<>();
                             message.put(
                                 "text",
-                                "Your payment for " + event.name + "has been received. Your Stripe transaction ID is "
+                                "Your payment for " + event.name + " has been received. Your Stripe transaction ID is "
                                 + charge.getId()
                             );
                             message.put("subject", event.name);
@@ -357,15 +357,12 @@ public class StripeResource {
         try {
             subscription = Subscription.retrieve(subscriptionId, this.stripeService.getRequestOptions());
         } catch (StripeException e) {
-            subscription = null;
             stripeException = e;
         }
 
         if (stripeException != null) {
-            stripeException.printStackTrace();
+            this.applicationService.saveException(stripeException, jwt.getSubject());
             builder = Response.status(Status.SERVICE_UNAVAILABLE);
-        } else if (subscription == null) {
-            builder = Response.status(Status.NOT_FOUND);
         } else {
             String organizationId = subscription.getMetadata().get("organizationId");
             Organization organization = this.datastore.get(Organization.class, new ObjectId(organizationId));
@@ -390,7 +387,7 @@ public class StripeResource {
                     this.entityService.cascadeLastActivity(Arrays.asList(organization), new Date());
                     builder = Response.ok();
                 } else {
-                    exception.printStackTrace();
+                    this.applicationService.saveException(exception, jwt.getSubject());
                     builder = Response.status(Status.SERVICE_UNAVAILABLE);
                 }
             } else {
