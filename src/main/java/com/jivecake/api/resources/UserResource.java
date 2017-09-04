@@ -25,6 +25,7 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
+import org.apache.poi.util.IOUtils;
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.query.Query;
@@ -53,6 +54,7 @@ import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.EntityType;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.Permission;
+import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.GoogleCloudPlatformService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.OrganizationService;
@@ -62,6 +64,7 @@ import com.jivecake.api.service.OrganizationService;
 @Singleton
 public class UserResource {
     private final Datastore datastore;
+    private final ApplicationService applicationService;
     private final OrganizationService organizationService;
     private final GoogleCloudPlatformService googleCloudPlatformService;
     private final NotificationService notificationService;
@@ -70,12 +73,14 @@ public class UserResource {
     @Inject
     public UserResource(
         Datastore datastore,
+        ApplicationService applicationService,
         OrganizationService organizationService,
         GoogleCloudPlatformService googleCloudPlatformService,
         NotificationService notificationService,
         APIConfiguration configuration
     ) {
         this.datastore = datastore;
+        this.applicationService = applicationService;
         this.organizationService = organizationService;
         this.googleCloudPlatformService = googleCloudPlatformService;
         this.notificationService = notificationService;
@@ -141,7 +146,7 @@ public class UserResource {
         @HeaderParam("Content-Type") String contentType,
         @Context DecodedJWT jwt,
         InputStream stream
-    ) {
+    ) throws IOException {
         Storage storage = StorageOptions.getDefaultInstance().getService();
         String name = UUID.randomUUID().toString();
         BlobInfo info = BlobInfo.newBuilder(BlobId.of(this.configuration.gcp.bucket, name))
@@ -150,7 +155,8 @@ public class UserResource {
             .setStorageClass(StorageClass.REGIONAL)
             .build();
 
-        Blob blob = storage.create(info, stream);
+        byte[] bytes = IOUtils.toByteArray(stream);
+        Blob blob = storage.create(info, bytes);
 
         IOException exception = null;
         List<AnnotateImageResponse> responses = null;
@@ -197,10 +203,6 @@ public class UserResource {
                     this.datastore.delete(asset);
                 }
 
-                Map<String, Object> entity = new HashMap<>();
-                entity.put("bucket", blob.getBucket());
-                entity.put("name", blob.getName());
-
                 EntityAsset asset = new EntityAsset();
                 asset.entityType = EntityType.USER;
                 asset.entityId = jwt.getSubject();
@@ -238,6 +240,7 @@ public class UserResource {
                     .type(MediaType.APPLICATION_JSON);
             }
         } else {
+            this.applicationService.saveException(exception, jwt.getSubject());
             builder = Response.status(Status.SERVICE_UNAVAILABLE);
         }
 

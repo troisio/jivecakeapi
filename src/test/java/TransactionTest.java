@@ -20,7 +20,6 @@ public class TransactionTest {
         transaction.user_id = "user_id";
         transaction.linkedObjectClass = "objectclass";
         transaction.linkedId = "id";
-        transaction.linkedFee = 0;
         transaction.status = 1;
         transaction.paymentStatus = 2;
         transaction.quantity = 3;

@@ -1,6 +1,7 @@
 package com.jivecake.api.model;
 
 import java.util.Date;
+import java.util.List;
 
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.annotations.Entity;
@@ -33,11 +34,20 @@ public class Event {
 
     @JsonSerialize(using=ObjectIdSerializer.class)
     public ObjectId paymentProfileId;
+
+    public List<UserData> userData;
     public String currency;
     public String hash;
     public String description;
     public String name;
     public int status;
+    public boolean requireName;
+    public boolean assignIntegerToRegistrant;
+    public boolean requirePhoto;
+    public String facebookEventId;
+    public String twitterUrl;
+    public String websiteUrl;
+    public String previewImageUrl;
     public Date timeStart;
     public Date timeEnd;
     public Date timeUpdated;
