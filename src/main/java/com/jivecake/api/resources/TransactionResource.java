@@ -1,7 +1,5 @@
 package com.jivecake.api.resources;
 
-import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
@@ -33,8 +31,6 @@ import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
 import com.auth0.jwt.interfaces.DecodedJWT;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.GZip;
@@ -62,7 +58,6 @@ public class TransactionResource {
     private final EntityService entityService;
     private final Auth0Service auth0Service;
     private final Datastore datastore;
-    private final ObjectMapper mapper = new ObjectMapper();
 
     @Inject
     public TransactionResource(
@@ -394,14 +389,14 @@ public class TransactionResource {
         if (transaction == null) {
             builder = Response.status(Status.NOT_FOUND);
         } else {
-            boolean hasPermission = jwt.getSubject().equals(transaction.user_id) ||
-                this.permissionService.has(
-                    jwt.getSubject(),
-                    Arrays.asList(transaction),
-                    PermissionService.READ
-                );
+            boolean hasPermission = jwt.getSubject().equals(transaction.user_id);
+            boolean hasOrganizationPermission = this.permissionService.has(
+                jwt.getSubject(),
+                Arrays.asList(transaction),
+                PermissionService.READ
+            );
 
-            if (hasPermission) {
+            if (hasPermission || hasOrganizationPermission) {
                 builder = Response.ok(transaction).type(MediaType.APPLICATION_JSON);
             } else {
                 builder = Response.status(Status.UNAUTHORIZED);
@@ -409,105 +404,6 @@ public class TransactionResource {
         }
 
         return builder.build();
-    }
-
-    @GET
-    @Path("excel")
-    public void downloadExcel(
-        @QueryParam("organizationId") List<ObjectId> organizationIds,
-        @QueryParam("eventId") List<ObjectId> eventIds,
-        @QueryParam("itemId") List<ObjectId> itemIds,
-        @QueryParam("Authorization") String authorization,
-        @Suspended AsyncResponse promise
-    ) {
-        if (authorization == null || !authorization.startsWith("Bearer ")) {
-            promise.resume(Response.status(Status.BAD_REQUEST).build());
-        } else {
-            String token = authorization.substring("Bearer ".length());
-            DecodedJWT jwt = this.auth0Service.getClaimsFromToken(token);
-
-            Query<Transaction> query = this.datastore.createQuery(Transaction.class)
-                .field("leaf").equal(true);
-
-            if (!organizationIds.isEmpty()) {
-                query.field("organizationId").in(organizationIds);
-            }
-
-            if (!eventIds.isEmpty()) {
-                query.field("eventId").in(eventIds);
-            }
-
-            if (!itemIds.isEmpty()) {
-                query.field("itemId").in(itemIds);
-            }
-
-            List<Transaction> transactions = query.asList();
-
-            boolean hasPermission = this.permissionService.has(jwt.getSubject(), transactions, PermissionService.READ);
-
-            if (hasPermission) {
-                File file;
-
-                try {
-                    file = File.createTempFile("transactions", ".xlsx");
-                } catch (IOException e) {
-                    promise.resume(e);
-                    file = null;
-                }
-
-                File writeFile = file;
-
-                if (file != null) {
-                    String userQuery = transactions.stream()
-                        .filter(transaction -> transaction.user_id != null)
-                        .map(transaction -> String.format("user_id: \"%s\"", transaction.user_id))
-                        .collect(Collectors.joining(" OR "));
-
-                    this.auth0Service.queryUsers(userQuery, new InvocationCallback<Response>() {
-                        @Override
-                        public void completed(Response response) {
-                            List<JsonNode> users = null;
-                            Exception exception = null;
-
-                            try {
-                                users = Arrays.asList(
-                                    TransactionResource.this.mapper.readValue(
-                                        response.readEntity(String.class),
-                                        JsonNode[].class
-                                     )
-                                );
-                            } catch (IOException e) {
-                                exception = e;
-                            }
-
-                            if (exception == null) {
-                                try {
-                                    TransactionResource.this.transactionService.writeToExcel(transactions, users, writeFile);
-                                    Response result = Response.ok(writeFile)
-                                        .type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                                        .header("Content-Disposition", "attachment; filename=transactions.xlsx")
-                                        .build();
-
-                                    promise.resume(result);
-                                } catch (IOException e) {
-                                    promise.resume(e);
-                                }
-                            } else {
-                                promise.resume(Response.serverError().entity(exception).build());
-                            }
-                        }
-
-                        @Override
-                        public void failed(Throwable throwable) {
-                            promise.resume(throwable);
-                        }
-                    });
-
-                }
-            } else {
-                promise.resume(Response.status(Status.UNAUTHORIZED).build());
-            }
-        }
     }
 
     @POST

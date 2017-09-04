@@ -3,6 +3,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.List;
 
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.bson.types.ObjectId;
@@ -12,8 +13,8 @@ import org.junit.Test;
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Morphia;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.auth0.json.mgmt.users.User;
+import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.service.TransactionService;
@@ -47,25 +48,15 @@ public class ExcelTest {
         Transaction transaction = new Transaction();
         this.datastore.save(transaction);
 
-        this.transactionService.writeToExcel(Arrays.asList(transaction), new ArrayList<>(),file);
-    }
+        Event event = new Event();
+        event.userData = new ArrayList<>();
 
-    @Test
-    public void excelWriteDoesNotFailWhenTransactionHasUser() throws IOException, InvalidFormatException {
-        File file = File.createTempFile("excel", ".xlsx");
-        file.deleteOnExit();
-
-        Transaction transaction = new Transaction();
-        transaction.user_id = "identity-provider|105223432348009656993";
-
-        this.datastore.save(transaction);
-
-        ObjectNode node = new ObjectMapper().createObjectNode()
-            .put("user_id", "identity-provider|105223432348009656993")
-            .put("family_name", "family")
-            .put("given_name", "given");
-
-        this.transactionService.writeToExcel(Arrays.asList(transaction), Arrays.asList(node), file);
+        this.transactionService.writeToExcel(
+            event,
+            new ArrayList<>(),
+            Arrays.asList(transaction),
+            file
+        );
     }
 
     @Test
@@ -91,6 +82,11 @@ public class ExcelTest {
 
         this.datastore.save(Arrays.asList(item, transaction));
 
-        this.transactionService.writeToExcel(Arrays.asList(transaction), new ArrayList<>(),file);
+        Event event = new Event();
+        event.userData = new ArrayList<>();
+
+        List<User> users  = new ArrayList<>();
+
+        this.transactionService.writeToExcel(event, users, Arrays.asList(transaction), file);
     }
 }

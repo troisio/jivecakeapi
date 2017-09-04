@@ -324,7 +324,7 @@ public class OrganizationResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
-    public Response update(
+    public Response updatePermission(
         @PathObject("id") Organization organization,
         List<Permission> permissions
     ) {
@@ -479,6 +479,7 @@ public class OrganizationResource {
                 Date currentTime = new Date();
 
                 event.id = null;
+                event.userData = new ArrayList<>();
                 event.hash = this.eventService.getHash();
                 event.organizationId = organization.id;
                 event.timeCreated = currentTime;
@@ -536,6 +537,7 @@ public class OrganizationResource {
                     organization.id = null;
                     organization.parentId = rootOrganization.id;
                     organization.children = new ArrayList<>();
+                    organization.emailConfirmed = false;
                     organization.timeCreated = currentTime;
                     organization.timeUpdated = null;
                     organization.lastActivity = currentTime;
@@ -728,8 +730,10 @@ public class OrganizationResource {
                         .entity(entity)
                         .type(MediaType.APPLICATION_JSON);
                 } else {
-                    organization.children = searchedOrganization.children;
+
                     organization.id = searchedOrganization.id;
+                    organization.emailConfirmed = searchedOrganization.emailConfirmed;
+                    organization.children = searchedOrganization.children;
                     organization.timeCreated = searchedOrganization.timeCreated;
                     organization.timeUpdated = new Date();
 

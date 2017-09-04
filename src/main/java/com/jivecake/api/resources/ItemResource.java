@@ -57,6 +57,7 @@ import com.jivecake.api.service.TransactionService;
 public class ItemResource {
     private final Auth0Service auth0Service;
     private final ItemService itemService;
+    private final EventService eventService;
     private final PermissionService permissionService;
     private final TransactionService transactionService;
     private final NotificationService notificationService;
@@ -67,6 +68,7 @@ public class ItemResource {
     public ItemResource(
         Auth0Service auth0Service,
         ItemService itemService,
+        EventService eventService,
         PermissionService permissionService,
         TransactionService transactionService,
         NotificationService notificationService,
@@ -75,6 +77,7 @@ public class ItemResource {
     ) {
         this.auth0Service = auth0Service;
         this.itemService = itemService;
+        this.eventService = eventService;
         this.permissionService = permissionService;
         this.transactionService = transactionService;
         this.notificationService = notificationService;
@@ -145,13 +148,15 @@ public class ItemResource {
                 userTransaction.organizationId = organization.id;
                 userTransaction.currency = event.currency;
                 userTransaction.amount = 0;
-                userTransaction.linkedFee = 0;
                 userTransaction.leaf = true;
                 userTransaction.timeCreated = currentTime;
 
                 this.datastore.save(userTransaction);
 
-                this.notificationService.notify(Arrays.asList(userTransaction), "transaction.create");
+                this.eventService.assignNumberToUserSafely(jwt.getSubject(), event).thenAcceptAsync((updatedEvent) -> {
+                    this.notificationService.notify(Arrays.asList(updatedEvent), "event.update");
+                });
+
                 this.entityService.cascadeLastActivity(Arrays.asList(userTransaction), currentTime);
 
                 builder = Response.ok(userTransaction).type(MediaType.APPLICATION_JSON);

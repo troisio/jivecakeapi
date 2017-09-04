@@ -55,7 +55,6 @@ public class Transaction {
 
     public String linkedId;
     public String linkedObjectClass;
-    public double linkedFee;
     public int status;
     public int paymentStatus;
     public long quantity;
@@ -80,7 +79,6 @@ public class Transaction {
         this.user_id = transaction.user_id;
         this.linkedId = transaction.linkedId;
         this.linkedObjectClass = transaction.linkedObjectClass;
-        this.linkedFee = transaction.linkedFee;
         this.status = transaction.status;
         this.paymentStatus = transaction.paymentStatus;
         this.quantity = transaction.quantity;

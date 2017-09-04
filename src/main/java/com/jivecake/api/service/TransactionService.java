@@ -26,7 +26,7 @@ import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.Query;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.auth0.json.mgmt.users.User;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Transaction;
@@ -130,7 +130,12 @@ public class TransactionService {
             );
     }
 
-    public void writeToExcel(List<Transaction> transactions, List<JsonNode> users, File file) throws IOException {
+    public void writeToExcel(
+        Event event,
+        List<User> users,
+        List<Transaction> transactions,
+        File file
+    ) throws IOException {
         Workbook workbook = new XSSFWorkbook();
         Sheet sheet = workbook.createSheet("Transactions");
         sheet.createFreezePane(0, 1);
@@ -145,8 +150,8 @@ public class TransactionService {
             .stream()
             .collect(Collectors.groupingBy(item -> item.id));
 
-        Map<String, List<JsonNode>> userById = users.stream()
-            .collect(Collectors.groupingBy(user -> user.get("user_id").asText()));
+        Map<String, List<User>> userById = users.stream()
+            .collect(Collectors.groupingBy(user -> user.getId()));
 
         String[] headers = {
             "givenName",
@@ -157,7 +162,6 @@ public class TransactionService {
             "amount",
             "currency",
             "timeCreated",
-            "linkedFee",
             "linkedObjectClass"
         };
 
@@ -177,7 +181,7 @@ public class TransactionService {
 
             Transaction transaction = transactions.get(index);
             Item item = itemById.containsKey(transaction.itemId) ? itemById.get(transaction.itemId).get(0) : null;
-            JsonNode user = userById.containsKey(transaction.user_id) ? userById.get(transaction.user_id).get(0) : null;
+            User user = userById.containsKey(transaction.user_id) ? userById.get(transaction.user_id).get(0) : null;
 
             this.writeRow(transaction, item, user, row, dateStyle);
         }
@@ -192,7 +196,7 @@ public class TransactionService {
         workbook.close();
     }
 
-    public void writeRow(Transaction subject, Item item, JsonNode user, Row row, CellStyle dateStyle) {
+    public void writeRow(Transaction subject, Item item, User user, Row row, CellStyle dateStyle) {
         Cell givenName = row.createCell(0);
         Cell middleName = row.createCell(1);
         Cell familyName = row.createCell(2);
@@ -201,12 +205,10 @@ public class TransactionService {
         Cell amount = row.createCell(5);
         Cell currency = row.createCell(6);
         Cell timeCreated = row.createCell(7);
-        Cell linkedFee = row.createCell(8);
-        Cell linkedObjectClass = row.createCell(9);
+        Cell linkedObjectClass = row.createCell(8);
 
         amount.setCellValue(subject.amount);
         currency.setCellValue(subject.currency);
-        linkedFee.setCellValue(subject.linkedFee);
 
         if ("PaypalPayment".equals(subject.linkedObjectClass)) {
             linkedObjectClass.setCellValue("paypal");
@@ -230,27 +232,20 @@ public class TransactionService {
             familyName.setCellValue(subject.family_name);
             email.setCellValue(subject.email);
         } else {
-            if (user.has("email")) {
-                email.setCellValue(user.get("email").asText());
-            }
+            email.setCellValue(user.getEmail());
 
-            if (user.has("user_metadata")) {
-                JsonNode meta = user.get("user_metadata");
+            Map<String, Object> metadata = user.getUserMetadata();
 
-                if (meta.has("given_name")) {
-                    givenName.setCellValue(meta.get("given_name").asText());
-                }
-
-                if (meta.has("family_name")) {
-                    familyName.setCellValue(meta.get("family_name").asText());
-                }
+            if (metadata == null) {
+                givenName.setCellValue(user.getGivenName());
+                familyName.setCellValue(user.getFamilyName());
             } else {
-                if (user.has("given_name")) {
-                    givenName.setCellValue(user.get("given_name").asText());
+                if (metadata.containsKey("given_name")) {
+                    givenName.setCellValue(metadata.get("given_name").toString());
                 }
 
-                if (user.has("family_name")) {
-                    familyName.setCellValue(user.get("family_name").asText());
+                if (metadata.containsKey("family_name")) {
+                    familyName.setCellValue(metadata.get("family_name").toString());
                 }
             }
         }

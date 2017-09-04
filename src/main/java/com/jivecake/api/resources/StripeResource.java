@@ -6,6 +6,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -54,7 +55,6 @@ import com.jivecake.api.service.StripeService;
 import com.jivecake.api.service.TransactionService;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
-import com.stripe.model.ApplicationFee;
 import com.stripe.model.Charge;
 import com.stripe.model.Customer;
 import com.stripe.model.Refund;
@@ -150,10 +150,9 @@ public class StripeResource {
             parameters.put("amount", amount);
 
             StripeException exception = null;
-            Refund refund = null;
 
             try {
-                refund = Refund.create(parameters, options);
+                Refund.create(parameters, options);
             } catch (StripeException e) {
                 exception = e;
             }
@@ -210,7 +209,7 @@ public class StripeResource {
             );
             List<ErrorData> dataError = this.eventService.getErrorsFromOrderRequest(
                 userId,
-                payload.itemData,
+                payload.data,
                 aggregated
             );
 
@@ -228,7 +227,7 @@ public class StripeResource {
 
                 double total = 0;
 
-                for (EntityQuantity<ObjectId> entityQuantity: payload.itemData) {
+                for (EntityQuantity<ObjectId> entityQuantity: payload.data.order) {
                     ItemData itemData = itemIdToItemData.get(entityQuantity.entity);
                     total += entityQuantity.quantity * itemData.amount;
                 }
@@ -266,7 +265,7 @@ public class StripeResource {
                     if (exception == null) {
                         List<Transaction> completedTransactions = new ArrayList<>();
 
-                        for (EntityQuantity<ObjectId> entityQuantity: payload.itemData) {
+                        for (EntityQuantity<ObjectId> entityQuantity: payload.data.order) {
                             ItemData itemData = itemIdToItemData.get(entityQuantity.entity);
 
                             Transaction transaction = new Transaction();
@@ -283,14 +282,10 @@ public class StripeResource {
                             transaction.leaf = true;
                             transaction.timeCreated = date;
 
-                            ApplicationFee fee = charge.getApplicationFeeObject();
-
-                            if (fee != null) {
-                                transaction.linkedFee = fee.getAmount() / 100;
-                            }
-
                             if (userId == null) {
                                 transaction.email = token.getEmail();
+                                transaction.given_name = payload.data.firstName;
+                                transaction.family_name = payload.data.lastName;
                             } else {
                                 transaction.user_id = userId;
                             }
@@ -321,6 +316,16 @@ public class StripeResource {
                             message.put("to", Arrays.asList(to));
 
                             this.mandrillService.send(message);
+                        } else {
+                            try {
+                                Event updatedEvent = this.eventService.assignNumberToUserSafely(userId, event).get();
+                                this.notificationService.notify(
+                                    Arrays.asList(updatedEvent),
+                                    "event.update"
+                                );
+                            } catch (InterruptedException | ExecutionException e) {
+                                this.applicationService.saveException(e, userId);
+                            }
                         }
 
                         builder = Response.ok();

@@ -31,6 +31,7 @@ public class Organization {
     @JsonSerialize(using=ObjectIdCollectionSerializer.class)
     public List<ObjectId> children;
     public String email;
+    public boolean emailConfirmed;
     public String name;
     public Date timeCreated;
     public Date timeUpdated;

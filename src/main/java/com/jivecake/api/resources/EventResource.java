@@ -1,10 +1,15 @@
 package com.jivecake.api.resources;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -14,6 +19,7 @@ import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
 import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
@@ -27,12 +33,27 @@ import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
+import com.auth0.client.mgmt.ManagementAPI;
+import com.auth0.client.mgmt.filter.UserFilter;
+import com.auth0.json.mgmt.users.UsersPage;
 import com.auth0.jwt.interfaces.DecodedJWT;
+import com.auth0.net.Request;
+import com.google.cloud.storage.Acl;
+import com.google.cloud.storage.Acl.Role;
+import com.google.cloud.storage.Acl.User;
+import com.google.cloud.storage.Blob;
+import com.google.cloud.storage.BlobId;
+import com.google.cloud.storage.BlobInfo;
+import com.google.cloud.storage.Storage;
+import com.google.cloud.storage.StorageClass;
+import com.google.cloud.storage.StorageOptions;
+import com.jivecake.api.APIConfiguration;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.GZip;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
+import com.jivecake.api.model.AssetType;
 import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.EntityType;
 import com.jivecake.api.model.Event;
@@ -40,6 +61,7 @@ import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.PaymentProfile;
 import com.jivecake.api.model.Transaction;
+import com.jivecake.api.model.UserData;
 import com.jivecake.api.request.AggregatedEvent;
 import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.request.ItemData;
@@ -61,32 +83,32 @@ import com.stripe.model.Subscription;
 public class EventResource {
     private final EventService eventService;
     private final ItemService itemService;
-    private final PermissionService permissionService;
     private final TransactionService transactionService;
     private final StripeService stripeService;
     private final EntityService entityService;
     private final NotificationService notificationService;
     private final Datastore datastore;
+    private final APIConfiguration configuration;
 
     @Inject
     public EventResource(
         EventService eventService,
         ItemService itemService,
-        PermissionService permissionService,
         TransactionService transactionService,
         StripeService stripeService,
         EntityService entityService,
         NotificationService notificationService,
-        Datastore datastore
+        Datastore datastore,
+        APIConfiguration configuration
     ) {
         this.itemService = itemService;
         this.eventService = eventService;
-        this.permissionService = permissionService;
         this.transactionService = transactionService;
         this.stripeService = stripeService;
         this.entityService = entityService;
         this.notificationService = notificationService;
         this.datastore = datastore;
+        this.configuration = configuration;
     }
 
     @GZip
@@ -107,6 +129,7 @@ public class EventResource {
                 new Date()
             );
 
+            group.event.userData = null;
             group.organization.children = null;
             group.itemData = group.itemData.stream()
                 .filter(itemData -> itemData.item.status == ItemService.STATUS_ACTIVE)
@@ -136,9 +159,41 @@ public class EventResource {
         return builder.build();
     }
 
+    @GET
+    @Path("{id}/userData/{userId}")
+    @Authorized
+    public Response getUserData(
+        @PathObject("id") Event event,
+        @PathParam("userId") String userId,
+        @Context DecodedJWT jwt
+    ) {
+        ResponseBuilder builder;
+
+        if (event == null) {
+            builder = Response.status(Status.NOT_FOUND);
+        } else {
+            if (jwt.getSubject().equals(userId)) {
+                Optional<UserData> optional = event.userData
+                    .stream()
+                    .filter(userData -> jwt.getSubject().equals(userData.userId))
+                    .findFirst();
+
+                if (optional.isPresent()) {
+                    builder = Response.ok(optional.get(), MediaType.APPLICATION_JSON);
+                } else {
+                    builder = Response.status(Status.NOT_FOUND);
+                }
+            } else {
+                builder = Response.status(Status.UNAUTHORIZED);
+            }
+        }
+
+        return builder.build();
+    }
+
     @GZip
     @GET
-    @Path("/search")
+    @Path("search")
     public Response publicSearch(
         @QueryParam("id") ObjectId id,
         @QueryParam("hash") String hash,
@@ -260,6 +315,7 @@ public class EventResource {
 
                 event.id = original.id;
                 event.hash = original.hash;
+                event.userData = original.userData;
                 event.organizationId = original.organizationId;
                 event.timeCreated = original.timeCreated;
                 event.timeUpdated = currentTime;
@@ -349,103 +405,72 @@ public class EventResource {
     }
 
     @GET
+    @Path("/{id}")
     @Authorized
-    @GZip
-    public Response search(
-        @QueryParam("id") List<ObjectId> ids,
-        @QueryParam("organizationId") List<ObjectId> organizationIds,
-        @QueryParam("eventId") List<ObjectId> eventIds,
-        @QueryParam("status") List<Integer> statuses,
-        @QueryParam("name") String name,
-        @QueryParam("timeStartBefore") Long timeStartBefore,
-        @QueryParam("timeStartAfter") Long timeStartAfter,
-        @QueryParam("timeEndBefore") Long timeEndBefore,
-        @QueryParam("timeEndAfter") Long timeEndAfter,
-        @QueryParam("limit") Integer limit,
-        @QueryParam("offset") Integer offset,
-        @QueryParam("order") String order,
-        @Context DecodedJWT jwt
-    ) {
-        ResponseBuilder builder;
-
-        Query<Event> query = this.datastore.createQuery(Event.class);
-
-        if (!ids.isEmpty()) {
-            query.field("id").in(ids);
-        }
-
-        if (!organizationIds.isEmpty()) {
-            query.field("organizationId").in(organizationIds);
-        }
-
-        if (name != null) {
-            query.field("name").startsWithIgnoreCase(name);
-        }
-
-        if (!statuses.isEmpty()) {
-            query.field("status").in(statuses);
-        }
-
-        if (timeStartBefore != null) {
-            query.field("timeStart").lessThan(new Date(timeStartBefore));
-        }
-
-        if (timeStartAfter != null) {
-            query.field("timeStart").greaterThan(new Date(timeStartAfter));
-        }
-
-        if (timeEndBefore != null) {
-            query.field("timeEnd").lessThan(new Date(timeEndBefore));
-        }
-
-        if (timeEndAfter != null) {
-            query.field("timeEnd").greaterThan(new Date(timeEndAfter));
-        }
-
-        FindOptions options = new FindOptions();
-
-        if (limit != null && limit > -1) {
-            options.limit(limit);
-        }
-
-        if (offset != null && offset > -1) {
-            options.skip(offset);
-        }
-
-        if (order != null) {
-            query.order(order);
-        }
-
-        List<Event> entities = query.asList(options);
-
-        boolean hasPermission = this.permissionService.has(
-            jwt.getSubject(),
-            entities,
-            PermissionService.READ
-        );
-
-        if (hasPermission) {
-            Paging<Event> entity = new Paging<>(entities, query.count());
-            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-        } else {
-            builder = Response.status(Status.UNAUTHORIZED);
-        }
-
-        return builder.build();
+    @HasPermission(id="id", clazz=Event.class, permission=PermissionService.READ)
+    public Response read(@PathObject("id") Event event) {
+        return Response.ok(event).type(MediaType.APPLICATION_JSON).build();
     }
 
     @GET
-    @Path("/{id}")
-    @Authorized
-    public Response read(@PathObject("id") Event event) {
-        ResponseBuilder builder;
+    @Path("{id}/excel")
+    @HasPermission(id="id", clazz=Event.class, permission=PermissionService.READ)
+    public Response requestExcel(
+        @PathObject("id") Event event,
+        @Context DecodedJWT jwt
+    ) throws IOException {
+        File file = File.createTempFile("transactions", ".xlsx");
 
-        if (event == null) {
-            builder = Response.status(Status.NOT_FOUND);
-        } else {
-            builder = Response.ok(event).type(MediaType.APPLICATION_JSON);
-        }
+        Query<Transaction> query = this.datastore.createQuery(Transaction.class)
+            .field("eventId").equal(event.id)
+            .field("leaf").equal(true);
 
-        return builder.build();
+        List<Transaction> transactions = query.asList();
+
+        String userQuery = transactions.stream()
+            .filter(transaction -> transaction.user_id != null)
+            .map(transaction -> String.format("user_id: \"%s\"", transaction.user_id))
+            .collect(Collectors.joining(" OR "));
+
+        File writeFile = file;
+
+        ManagementAPI managementApi = new ManagementAPI(
+            this.configuration.oauth.domain,
+            this.configuration.oauth.apiToken
+        );
+        UserFilter filter = new UserFilter();
+        filter.withQuery(userQuery);
+        Request<UsersPage> request = managementApi.users().list(filter);
+        List<com.auth0.json.mgmt.users.User> users = request.execute().getItems();
+
+        EventResource.this.transactionService.writeToExcel(
+            event,
+            users,
+            transactions,
+            file
+        );
+
+        Storage storage = StorageOptions.getDefaultInstance().getService();
+        String name = UUID.randomUUID().toString();
+        BlobInfo info = BlobInfo.newBuilder(BlobId.of(EventResource.this.configuration.gcp.bucket, name))
+            .setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            .setAcl(Arrays.asList(Acl.of(User.ofAllUsers(), Role.READER)))
+            .setStorageClass(StorageClass.REGIONAL)
+            .build();
+
+        byte[] bytes = Files.readAllBytes(writeFile.toPath());
+        Blob blob = storage.create(info, bytes);
+
+        EntityAsset asset = new EntityAsset();
+        asset.assetId = blob.getBucket() + "/" + blob.getName();
+        asset.assetType = AssetType.ORGANIZATION_EXCEL;
+        asset.entityId = event.organizationId.toString();
+        asset.entityType = EntityType.ORGANIZATION;
+        asset.timeCreated = new Date();
+
+        EventResource.this.datastore.save(asset);
+        EventResource.this.notificationService.notify(Arrays.asList(asset), "asset.create");
+
+        return Response.ok(asset).type(MediaType.APPLICATION_JSON).build();
     }
 }

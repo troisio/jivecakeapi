@@ -49,8 +49,8 @@ import com.jivecake.api.request.AggregatedEvent;
 import com.jivecake.api.request.EntityQuantity;
 import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.request.ItemData;
-import com.jivecake.api.request.PaypalAuthorization;
-import com.jivecake.api.request.PaypalOrder;
+import com.jivecake.api.request.OrderData;
+import com.jivecake.api.request.PaypalAuthorizationPayload;
 import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
@@ -224,17 +224,17 @@ public class PaypalResource {
     @Consumes(MediaType.APPLICATION_JSON)
     public Response execute(
         @Context DecodedJWT jwt,
-        PaypalAuthorization authorization
+        PaypalAuthorizationPayload payload
     ) {
         ResponseBuilder builder;
 
         PaymentExecution execution = new PaymentExecution();
-        execution.setPayerId(authorization.payerID);
+        execution.setPayerId(payload.payerID);
 
         PayPalRESTException exception = null;
         Payment complete = null;
         Payment payment = new Payment();
-        payment.setId(authorization.paymentID);
+        payment.setId(payload.paymentID);
 
         try {
             complete = payment.execute(this.context, execution);
@@ -283,8 +283,19 @@ public class PaypalResource {
                         Payer payer = complete.getPayer();
                         PayerInfo info = payer.getPayerInfo();
 
-                        transaction.given_name = info.getFirstName();
-                        transaction.family_name = info.getLastName();
+                        transaction.email = payload.email;
+
+                        if (payload.firstName == null) {
+                            transaction.given_name = info.getFirstName();
+                        } else {
+                            transaction.given_name = payload.firstName;
+                        }
+
+                        if (payload.lastName == null) {
+                            transaction.family_name = info.getLastName();
+                        } else {
+                            transaction.family_name = payload.lastName;
+                        }
                     } else {
                         transaction.user_id = jwt.getSubject();
                     }
@@ -323,7 +334,7 @@ public class PaypalResource {
         @HeaderParam("Origin") String origin,
         @PathObject("eventId") Event event,
         @Context DecodedJWT jwt,
-        PaypalOrder order
+        OrderData order
     ) {
         ResponseBuilder builder;
 
@@ -340,7 +351,7 @@ public class PaypalResource {
             );
             List<ErrorData> dataError = this.eventService.getErrorsFromOrderRequest(
                 userId,
-                order.itemData,
+                order,
                 aggregated
             );
 
@@ -350,17 +361,17 @@ public class PaypalResource {
                 dataError.add(error);
             }
 
-            Map<ObjectId, ItemData> idToItemData = aggregated.itemData.stream()
-                .collect(
-                    Collectors.toMap(data -> data.item.id, Function.identity())
-                );
-
             if (dataError.isEmpty()) {
+                Map<ObjectId, ItemData> idToItemData = aggregated.itemData.stream()
+                    .collect(
+                        Collectors.toMap(data -> data.item.id, Function.identity())
+                    );
+
                 List<com.paypal.api.payments.Item> items = new ArrayList<>();
 
                 double total = 0;
 
-                for (EntityQuantity<ObjectId> entityQuantity: order.itemData) {
+                for (EntityQuantity<ObjectId> entityQuantity: order.order) {
                     ItemData itemData = idToItemData.get(entityQuantity.entity);
 
                     com.paypal.api.payments.Item paypalItem = new com.paypal.api.payments.Item();
@@ -430,13 +441,24 @@ public class PaypalResource {
                     Map<String, Object> body = new HashMap<>();
                     body.put("id", newPayment.getId());
 
+                    if (userId != null) {
+                        this.eventService.assignNumberToUserSafely(userId, event).thenAcceptAsync((updatedEvent) -> {
+                            this.notificationService.notify(
+                                Arrays.asList(updatedEvent),
+                                "event.update"
+                            );
+                        });
+                    }
+
                     builder = Response.ok(body).type(MediaType.APPLICATION_JSON);
                 } else {
                     this.applicationService.saveException(exception, userId);
                     builder = Response.status(Status.SERVICE_UNAVAILABLE);
                 }
             } else {
-                builder = Response.status(Status.BAD_REQUEST);
+                builder = Response.status(Status.BAD_REQUEST)
+                    .entity(dataError)
+                    .type(MediaType.APPLICATION_JSON);
             }
         }
 
