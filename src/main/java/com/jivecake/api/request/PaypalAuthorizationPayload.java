@@ -10,4 +10,5 @@ public class PaypalAuthorizationPayload {
     public String email;
     public String firstName;
     public String lastName;
+    public String organizationName;
 }

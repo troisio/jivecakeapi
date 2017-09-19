@@ -21,6 +21,7 @@ import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Morphia;
 import org.mongodb.morphia.mapping.MapperOptions;
 
+import com.auth0.client.mgmt.ManagementAPI;
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.JWTVerifier;
 import com.auth0.jwt.algorithms.Algorithm;
@@ -201,6 +202,8 @@ public class APIApplication extends Application<APIConfiguration> {
             protected void configure() {
                 this.bind(verifiers).to(new TypeLiteral<List<JWTVerifier>>() {});
                 this.bind(new HashDateCount()).to(HashDateCount.class);
+                this.bind(new ManagementAPI(configuration.oauth.domain, configuration.oauth.apiToken))
+                    .to(ManagementAPI.class);
 
                 this.bind(applicationService).to(ApplicationService.class);
                 this.bind(datastore).to(Datastore.class);

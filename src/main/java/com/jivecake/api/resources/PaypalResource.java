@@ -266,6 +266,7 @@ public class PaypalResource {
                     transaction.organizationId = item.organizationId;
                     transaction.linkedId = payment.getId();
                     transaction.linkedObjectClass = "PaypalPayment";
+                    transaction.organizationName = payload.organizationName;
                     transaction.paymentStatus = TransactionService.PAYMENT_EQUAL;
                     transaction.quantity = new Long(paypalItem.getQuantity());
                     transaction.amount = new Double(paypalItem.getPrice()) * transaction.quantity;

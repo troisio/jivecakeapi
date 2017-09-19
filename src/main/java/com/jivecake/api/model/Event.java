@@ -42,6 +42,7 @@ public class Event {
     public String name;
     public int status;
     public boolean requireName;
+    public boolean requireOrganizationName;
     public boolean assignIntegerToRegistrant;
     public boolean requirePhoto;
     public String facebookEventId;

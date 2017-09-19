@@ -166,6 +166,8 @@ public class EventService {
             )
         );
 
+        boolean organizationNameViolation = aggregated.event.requireOrganizationName &&
+            (order.organizationName == null || order.organizationName.isEmpty());
         boolean emailViolation = userId == null && (order.email == null || order.email.isEmpty());
         boolean eventIsActive = aggregated.event.status == EventService.STATUS_ACTIVE;
         boolean userIdViolation = false;
@@ -215,6 +217,12 @@ public class EventService {
                     }
                 }
             }
+        }
+
+        if (organizationNameViolation) {
+            ErrorData error = new ErrorData();
+            error.error = "organizationNameRequired";
+            errors.add(error);
         }
 
         if (nameViolation) {

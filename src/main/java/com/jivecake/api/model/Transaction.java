@@ -62,6 +62,7 @@ public class Transaction {
     public String given_name;
     public String middleName;
     public String family_name;
+    public String organizationName;
     public String currency;
     public String email;
     public boolean leaf;
@@ -86,6 +87,7 @@ public class Transaction {
         this.given_name = transaction.given_name;
         this.middleName = transaction.middleName;
         this.family_name = transaction.family_name;
+        this.organizationName = transaction.organizationName;
         this.currency = transaction.currency;
         this.email = transaction.email;
         this.leaf = transaction.leaf;
