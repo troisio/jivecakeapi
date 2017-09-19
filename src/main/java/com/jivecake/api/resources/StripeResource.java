@@ -277,6 +277,7 @@ public class StripeResource {
                             transaction.status = TransactionService.SETTLED;
                             transaction.paymentStatus = TransactionService.PAYMENT_EQUAL;
                             transaction.linkedId = charge.getId();
+                            transaction.organizationName = payload.data.organizationName;
                             transaction.linkedObjectClass = "StripeCharge";
                             transaction.currency = charge.getCurrency().toUpperCase();
                             transaction.leaf = true;

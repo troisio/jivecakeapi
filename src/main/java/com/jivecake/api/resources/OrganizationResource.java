@@ -1,5 +1,6 @@
 package com.jivecake.api.resources;
 
+import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
@@ -10,9 +11,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -38,7 +41,12 @@ import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
+import com.auth0.client.mgmt.ManagementAPI;
+import com.auth0.client.mgmt.filter.UserFilter;
+import com.auth0.exception.Auth0Exception;
+import com.auth0.json.mgmt.users.UsersPage;
 import com.auth0.jwt.interfaces.DecodedJWT;
+import com.auth0.net.Request;
 import com.google.cloud.storage.Acl;
 import com.google.cloud.storage.Acl.Role;
 import com.google.cloud.storage.Acl.User;
@@ -60,6 +68,7 @@ import com.jivecake.api.model.EntityType;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
+import com.jivecake.api.model.OrganizationInvitation;
 import com.jivecake.api.model.PaymentProfile;
 import com.jivecake.api.model.PaypalPaymentProfile;
 import com.jivecake.api.model.Permission;
@@ -93,6 +102,7 @@ public class OrganizationResource {
     private final Datastore datastore;
     private final long maximumOrganizationsPerUser = 10;
     private final ExecutorService reindexExecutor = Executors.newSingleThreadExecutor();
+    private final ManagementAPI managementApi;
 
     @Inject
     public OrganizationResource(
@@ -103,7 +113,8 @@ public class OrganizationResource {
         StripeService stripeService,
         NotificationService notificationService,
         EntityService entityService,
-        Datastore datastore
+        Datastore datastore,
+        ManagementAPI managementApi
     ) {
         this.configuration = configuration;
         this.organizationService = organizationService;
@@ -113,6 +124,7 @@ public class OrganizationResource {
         this.notificationService = notificationService;
         this.entityService = entityService;
         this.datastore = datastore;
+        this.managementApi = managementApi;
     }
 
     @GET
@@ -154,6 +166,92 @@ public class OrganizationResource {
         entity.put("transaction", transactions);
 
         return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    @POST
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Path("{id}/invite/{id}/accept")
+    @Authorized
+    public Response acceptInvite(
+        @Context DecodedJWT jwt,
+        @PathObject("id") OrganizationInvitation invitation
+    ) {
+        ResponseBuilder builder;
+
+        if (invitation == null) {
+            builder = Response.status(Status.NOT_FOUND);
+        } else {
+            long userIdsMatched = invitation.userIds.stream()
+                .filter(userId -> jwt.getSubject().equals(userId))
+                .count();
+
+            if (userIdsMatched == 0) {
+                builder = Response.status(Status.UNAUTHORIZED);
+            } else {
+                long days7 = 1000 * 60 * 60 * 24 * 7;
+                Date weekAfterInvitation = new Date(invitation.timeCreated.getTime() + days7);
+                Date now = new Date();
+
+                if (now.getTime() > weekAfterInvitation.getTime()) {
+                    builder = Response.status(Status.BAD_REQUEST);
+                } else {
+                    Permission permission = new Permission();
+                    permission.permissions = invitation.permissions;
+                    permission.include = invitation.include;
+                    permission.user_id = jwt.getSubject();
+                    permission.objectClass = Organization.class.getSimpleName();
+                    permission.timeCreated = new Date();
+
+                    this.datastore.save(permission);
+                    this.notificationService.notify(Arrays.asList(permission), "permission.create");
+
+                    builder = Response.ok(permission);
+                }
+            }
+        }
+
+
+        return builder.build();
+    }
+
+    @POST
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Path("{id}/invite")
+    @Authorized
+    @HasPermission(id="id", clazz=Organization.class, permission=PermissionService.WRITE)
+    public Response inviteUser(OrganizationInvitation invitation) throws UnsupportedEncodingException, Auth0Exception {
+        Set<Integer> permissions = new HashSet<>(invitation.permissions);
+        permissions.remove(PermissionService.READ);
+        permissions.remove(PermissionService.WRITE);
+
+        boolean validPermissions = permissions.isEmpty();
+        boolean validIncludeField = invitation.include == PermissionService.ALL ||
+            invitation.include == PermissionService.EXCLUDE ||
+            invitation.include == PermissionService.INCLUDE;
+
+        ResponseBuilder builder;
+
+        if (validPermissions && validIncludeField) {
+            UserFilter filter = new UserFilter();
+            filter.withQuery(String.format("email:\"%s\"", invitation.email));
+
+            Request<UsersPage> request = this.managementApi.users().list(filter);
+            List<com.auth0.json.mgmt.users.User> users = request.execute().getItems();
+
+            invitation.id = null;
+            invitation.timeCreated = new Date();
+            invitation.userIds = users.stream()
+                .map((user) -> user.getEmail())
+                .collect(Collectors.toList());
+
+            this.datastore.save(invitation);
+
+            builder = Response.ok();
+        } else {
+            builder = Response.status(Status.BAD_REQUEST);
+        }
+
+        return builder.build();
     }
 
     @POST

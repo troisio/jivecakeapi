@@ -28,6 +28,7 @@ import javax.ws.rs.core.Response.Status;
 import org.apache.poi.util.IOUtils;
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
+import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
 import com.auth0.jwt.interfaces.DecodedJWT;
@@ -53,6 +54,7 @@ import com.jivecake.api.model.AssetType;
 import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.EntityType;
 import com.jivecake.api.model.Organization;
+import com.jivecake.api.model.OrganizationInvitation;
 import com.jivecake.api.model.Permission;
 import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.GoogleCloudPlatformService;
@@ -85,6 +87,32 @@ public class UserResource {
         this.googleCloudPlatformService = googleCloudPlatformService;
         this.notificationService = notificationService;
         this.configuration = configuration;
+    }
+
+    @GZip
+    @GET
+    @Path("{id}/invite")
+    @Authorized
+    public Response getOrganizations(
+        @Context DecodedJWT jwt,
+        @PathParam("id") String userId
+    ) {
+        ResponseBuilder builder;
+
+        if (jwt.getSubject().equals(userId)) {
+            Query<OrganizationInvitation> query = this.datastore.createQuery(OrganizationInvitation.class)
+                .field("userIds").equal(userId)
+                .order("-timeCreated");
+
+            FindOptions options = new FindOptions();
+            options.limit(ApplicationService.LIMIT_DEFAULT);
+
+            builder = Response.ok(query.asList(options)).type(MediaType.APPLICATION_JSON);
+        } else {
+            builder = Response.status(Status.BAD_REQUEST);
+        }
+
+        return builder.build();
     }
 
     @GZip

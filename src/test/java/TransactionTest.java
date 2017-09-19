@@ -27,6 +27,7 @@ public class TransactionTest {
         transaction.given_name = "given name";
         transaction.middleName = "middle name";
         transaction.family_name = "family name";
+        transaction.organizationName = "org";
         transaction.currency = "currency";
         transaction.email = "email@email.com";
         transaction.leaf = false;
