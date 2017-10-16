@@ -58,7 +58,7 @@ public class GoogleCloudPlatformService {
     public List<AnnotateImageResponse> getAnnotations(Feature.Type featureType, String path) throws IOException {
         List<AnnotateImageRequest> requests = new ArrayList<>();
 
-        ImageAnnotatorSettings settings = ImageAnnotatorSettings.defaultBuilder().build();
+        ImageAnnotatorSettings settings = ImageAnnotatorSettings.newBuilder().build();
 
         ImageSource imgSource = ImageSource.newBuilder()
             .setGcsImageUri(path)

@@ -21,7 +21,6 @@ import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Morphia;
 import org.mongodb.morphia.mapping.MapperOptions;
 
-import com.auth0.client.mgmt.ManagementAPI;
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.JWTVerifier;
 import com.auth0.jwt.algorithms.Algorithm;
@@ -50,6 +49,7 @@ import com.jivecake.api.resources.EventResource;
 import com.jivecake.api.resources.ItemResource;
 import com.jivecake.api.resources.LogResource;
 import com.jivecake.api.resources.NotificationsResource;
+import com.jivecake.api.resources.OrganizationInvitationResource;
 import com.jivecake.api.resources.OrganizationResource;
 import com.jivecake.api.resources.PaymentProfileResource;
 import com.jivecake.api.resources.PaypalResource;
@@ -101,6 +101,7 @@ public class APIApplication extends Application<APIConfiguration> {
         ItemResource.class,
         LogResource.class,
         NotificationsResource.class,
+        OrganizationInvitationResource.class,
         OrganizationResource.class,
         PaymentProfileResource.class,
         PaypalResource.class,
@@ -202,8 +203,6 @@ public class APIApplication extends Application<APIConfiguration> {
             protected void configure() {
                 this.bind(verifiers).to(new TypeLiteral<List<JWTVerifier>>() {});
                 this.bind(new HashDateCount()).to(HashDateCount.class);
-                this.bind(new ManagementAPI(configuration.oauth.domain, configuration.oauth.apiToken))
-                    .to(ManagementAPI.class);
 
                 this.bind(applicationService).to(ApplicationService.class);
                 this.bind(datastore).to(Datastore.class);

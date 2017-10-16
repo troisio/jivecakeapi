@@ -1,6 +1,6 @@
 package com.jivecake.api.resources;
 
-import java.io.UnsupportedEncodingException;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
@@ -41,12 +41,7 @@ import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
-import com.auth0.client.mgmt.ManagementAPI;
-import com.auth0.client.mgmt.filter.UserFilter;
-import com.auth0.exception.Auth0Exception;
-import com.auth0.json.mgmt.users.UsersPage;
 import com.auth0.jwt.interfaces.DecodedJWT;
-import com.auth0.net.Request;
 import com.google.cloud.storage.Acl;
 import com.google.cloud.storage.Acl.Role;
 import com.google.cloud.storage.Acl.User;
@@ -78,6 +73,8 @@ import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.request.StripeAccountCredentials;
 import com.jivecake.api.request.StripeOAuthCode;
+import com.jivecake.api.service.ApplicationService;
+import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.NotificationService;
@@ -92,6 +89,7 @@ import com.stripe.model.Subscription;
 @Path("organization")
 @Singleton
 public class OrganizationResource {
+    private final Auth0Service auth0Service;
     private final APIConfiguration configuration;
     private final OrganizationService organizationService;
     private final EventService eventService;
@@ -102,10 +100,10 @@ public class OrganizationResource {
     private final Datastore datastore;
     private final long maximumOrganizationsPerUser = 10;
     private final ExecutorService reindexExecutor = Executors.newSingleThreadExecutor();
-    private final ManagementAPI managementApi;
 
     @Inject
     public OrganizationResource(
+        Auth0Service auth0Service,
         APIConfiguration configuration,
         OrganizationService organizationService,
         EventService eventService,
@@ -113,9 +111,9 @@ public class OrganizationResource {
         StripeService stripeService,
         NotificationService notificationService,
         EntityService entityService,
-        Datastore datastore,
-        ManagementAPI managementApi
+        Datastore datastore
     ) {
+        this.auth0Service = auth0Service;
         this.configuration = configuration;
         this.organizationService = organizationService;
         this.eventService = eventService;
@@ -124,7 +122,6 @@ public class OrganizationResource {
         this.notificationService = notificationService;
         this.entityService = entityService;
         this.datastore = datastore;
-        this.managementApi = managementApi;
     }
 
     @GET
@@ -168,87 +165,86 @@ public class OrganizationResource {
         return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
     }
 
-    @POST
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Path("{id}/invite/{id}/accept")
+    @GET
+    @Path("{id}/invitation")
     @Authorized
-    public Response acceptInvite(
-        @Context DecodedJWT jwt,
-        @PathObject("id") OrganizationInvitation invitation
+    @HasPermission(id="id", clazz=Organization.class, permission=PermissionService.READ)
+    public Response getInvitations(
+        @PathObject("id") Organization organization
     ) {
-        ResponseBuilder builder;
+        Calendar calendar = Calendar.getInstance();
+        calendar.add(Calendar.DATE, -7);
 
-        if (invitation == null) {
-            builder = Response.status(Status.NOT_FOUND);
-        } else {
-            long userIdsMatched = invitation.userIds.stream()
-                .filter(userId -> jwt.getSubject().equals(userId))
-                .count();
+        FindOptions options = new FindOptions();
+        options.limit(ApplicationService.LIMIT_DEFAULT);
 
-            if (userIdsMatched == 0) {
-                builder = Response.status(Status.UNAUTHORIZED);
-            } else {
-                long days7 = 1000 * 60 * 60 * 24 * 7;
-                Date weekAfterInvitation = new Date(invitation.timeCreated.getTime() + days7);
-                Date now = new Date();
-
-                if (now.getTime() > weekAfterInvitation.getTime()) {
-                    builder = Response.status(Status.BAD_REQUEST);
-                } else {
-                    Permission permission = new Permission();
-                    permission.permissions = invitation.permissions;
-                    permission.include = invitation.include;
-                    permission.user_id = jwt.getSubject();
-                    permission.objectClass = Organization.class.getSimpleName();
-                    permission.timeCreated = new Date();
-
-                    this.datastore.save(permission);
-                    this.notificationService.notify(Arrays.asList(permission), "permission.create");
-
-                    builder = Response.ok(permission);
-                }
-            }
-        }
-
-
-        return builder.build();
+        List<OrganizationInvitation> invitations = this.datastore.createQuery(OrganizationInvitation.class)
+            .field("organizationId").equal(organization.id)
+            .field("timeCreated").greaterThan(calendar.getTime())
+            .field("timeAccepted").doesNotExist()
+            .order("-timeCreated")
+            .asList(options);
+        return Response.ok(invitations, MediaType.APPLICATION_JSON).build();
     }
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
-    @Path("{id}/invite")
+    @Path("{id}/invitation")
     @Authorized
     @HasPermission(id="id", clazz=Organization.class, permission=PermissionService.WRITE)
-    public Response inviteUser(OrganizationInvitation invitation) throws UnsupportedEncodingException, Auth0Exception {
-        Set<Integer> permissions = new HashSet<>(invitation.permissions);
-        permissions.remove(PermissionService.READ);
-        permissions.remove(PermissionService.WRITE);
-
-        boolean validPermissions = permissions.isEmpty();
-        boolean validIncludeField = invitation.include == PermissionService.ALL ||
-            invitation.include == PermissionService.EXCLUDE ||
-            invitation.include == PermissionService.INCLUDE;
-
+    public Response inviteUser(
+        @PathObject("id") Organization organization,
+        OrganizationInvitation invitation
+    ) throws IOException {
         ResponseBuilder builder;
 
-        if (validPermissions && validIncludeField) {
-            UserFilter filter = new UserFilter();
-            filter.withQuery(String.format("email:\"%s\"", invitation.email));
-
-            Request<UsersPage> request = this.managementApi.users().list(filter);
-            List<com.auth0.json.mgmt.users.User> users = request.execute().getItems();
-
-            invitation.id = null;
-            invitation.timeCreated = new Date();
-            invitation.userIds = users.stream()
-                .map((user) -> user.getEmail())
-                .collect(Collectors.toList());
-
-            this.datastore.save(invitation);
-
-            builder = Response.ok();
-        } else {
+        if (invitation.permissions == null) {
             builder = Response.status(Status.BAD_REQUEST);
+        } else {
+            Set<Integer> permissions = new HashSet<>(invitation.permissions);
+            permissions.remove(PermissionService.READ);
+            permissions.remove(PermissionService.WRITE);
+
+            boolean validPermissions = permissions.isEmpty();
+            boolean validIncludeField = invitation.include == PermissionService.ALL ||
+                invitation.include == PermissionService.EXCLUDE ||
+                invitation.include == PermissionService.INCLUDE;
+
+            if (validPermissions && validIncludeField) {
+                String emailSearch = invitation.email.replaceAll("\"", "\\\"");
+                String query = String.format("email:\"%s\"", emailSearch);
+                com.auth0.json.mgmt.users.User[] users = this.auth0Service.queryUsers(query);
+
+                invitation.id = null;
+                invitation.organizationId = organization.id;
+                invitation.timeCreated = new Date();
+                invitation.timeAccepted = null;
+                invitation.userIds = Arrays.asList(users).stream()
+                    .map(user -> user.getId())
+                    .collect(Collectors.toList());
+
+                long permissionsWithEmail = this.datastore.createQuery(Permission.class)
+                    .field("objectId").equal(organization.id)
+                    .field("objectClass").equal("Organization")
+                    .field("user_id").in(invitation.userIds)
+                    .count();
+
+                if (permissionsWithEmail == 0) {
+                    if (!invitation.userIds.isEmpty()) {
+                        this.datastore.save(invitation);
+                        this.notificationService.notify(
+                            Arrays.asList(invitation),
+                            "organizationInvitation.create"
+                        );
+                    }
+
+                    builder = Response.ok();
+                } else {
+                    builder = Response.status(Status.CONFLICT);
+                }
+            } else {
+                builder = Response.status(Status.BAD_REQUEST);
+            }
         }
 
         return builder.build();
@@ -360,12 +356,10 @@ public class OrganizationResource {
                     .field("stripe_user_id").equal(token.stripe_user_id)
                     .asList();
 
-                StripePaymentProfile profile;
-
                 ResponseBuilder builder;
 
                 if (profiles.isEmpty()) {
-                    profile = new StripePaymentProfile();
+                    StripePaymentProfile profile = new StripePaymentProfile();
                     profile.organizationId = organization.id;
                     profile.stripe_publishable_key = token.stripe_publishable_key;
                     profile.stripe_user_id = token.stripe_user_id;
@@ -395,15 +389,13 @@ public class OrganizationResource {
                             .entity(profile)
                             .type(MediaType.APPLICATION_JSON);
                     } else {
-                        builder = Response.status(Status.SERVICE_UNAVAILABLE).entity(exception);
+                        builder = Response.status(Status.SERVICE_UNAVAILABLE);
                     }
 
                     asyncResponse.resume(builder.build());
                 } else {
-                    profile = profiles.get(0);
-
                     builder = Response.status(Status.OK)
-                        .entity(profile)
+                        .entity(profiles.get(0))
                         .type(MediaType.APPLICATION_JSON);
                 }
 
@@ -501,7 +493,7 @@ public class OrganizationResource {
     public Response createEvent(
         @PathObject("id") Organization organization,
         Event event
-     ) {
+    ) {
         ResponseBuilder builder;
 
         boolean isValid = this.eventService.isValidEvent(event);
@@ -680,7 +672,7 @@ public class OrganizationResource {
 
     @GZip
     @GET
-    @Path("/search")
+    @Path("search")
     public Response search(
         @QueryParam("id") List<ObjectId> organizationIds,
         @QueryParam("parentId") List<ObjectId> parentIds,
@@ -800,7 +792,7 @@ public class OrganizationResource {
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
-    @Path("/{id}")
+    @Path("{id}")
     @Authorized
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
     public Response update(
@@ -852,16 +844,41 @@ public class OrganizationResource {
         return builder.build();
     }
 
+    @GZip
     @GET
-    @Path("/{id}")
-    @Authorized
-    @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.READ)
+    @Path("{id}")
     public Response read(@PathObject("id") Organization organization) {
-        return Response.ok(organization).type(MediaType.APPLICATION_JSON).build();
+        ResponseBuilder builder;
+
+        if (organization == null) {
+            builder = Response.status(Status.NOT_FOUND);
+        } else {
+            builder = Response.ok(organization, MediaType.APPLICATION_JSON);
+        }
+
+        return builder.build();
+    }
+
+    @GZip
+    @GET
+    @Path("{id}/user")
+    @Authorized
+    @HasPermission(id="id", clazz=Organization.class, permission=PermissionService.READ)
+    public Response getUsers(@PathObject("id") Organization organization) throws IOException {
+        String query = this.datastore.createQuery(Permission.class)
+            .field("objectClass").equal("Organization")
+            .field("objectId").equal(organization.id)
+            .asList()
+            .stream()
+            .map(permission -> "user_id: \"" + permission.user_id + "\"")
+            .collect(Collectors.joining(" OR "));
+
+        com.auth0.json.mgmt.users.User[] users = this.auth0Service.queryUsers(query);
+        return Response.ok(users, MediaType.APPLICATION_JSON).build();
     }
 
     @DELETE
-    @Path("/{id}")
+    @Path("{id}")
     @Authorized
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
     public Response delete(@PathObject("id") Organization searchedOrganization) {

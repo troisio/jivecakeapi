@@ -4,11 +4,9 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.text.DecimalFormat;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -23,7 +21,6 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
-import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.Query;
 
 import com.auth0.json.mgmt.users.User;
@@ -60,48 +57,6 @@ public class TransactionService {
         this.datastore = datastore;
     }
 
-    public CompletableFuture<List<Transaction>> searchTransactionsFromText(String text, Auth0Service auth0Service) {
-        CompletableFuture<List<Transaction>> future = new CompletableFuture<>();
-
-        List<Object> itemIds = this.datastore.createQuery(Item.class)
-            .field("name").containsIgnoreCase(text)
-            .asKeyList()
-            .stream()
-            .map(Key::getId)
-            .collect(Collectors.toList());
-
-        List<Object> eventIds = this.datastore.createQuery(Event.class)
-            .field("name").containsIgnoreCase(text)
-            .asKeyList()
-            .stream()
-            .map(Key::getId)
-            .collect(Collectors.toList());
-
-        auth0Service.searchEmailOrNames(text).thenAcceptAsync(auth0Users -> {
-            Query<Transaction> query = TransactionService.this.datastore.createQuery(Transaction.class);
-
-            List<String> auth0UserIds = new ArrayList<>();
-            auth0Users.forEach(node -> auth0UserIds.add(node.get("user_id").asText()));
-
-            query.or(
-                query.criteria("user_id").in(auth0UserIds),
-                query.criteria("email").startsWithIgnoreCase(text),
-                query.criteria("given_name").startsWithIgnoreCase(text),
-                query.criteria("family_name").startsWithIgnoreCase(text),
-                query.criteria("itemId").in(itemIds),
-                query.criteria("eventId").in(eventIds)
-            );
-
-            List<Transaction> transactions = query.asList();
-            future.complete(transactions);
-        }).exceptionally((exception) -> {
-            future.completeExceptionally(exception);
-            return null;
-        });
-
-        return future;
-    }
-
     public Query<Transaction> getTransactionQueryForCounting() {
         Query<Transaction> query = this.datastore.createQuery(Transaction.class);
 
@@ -132,7 +87,7 @@ public class TransactionService {
 
     public void writeToExcel(
         Event event,
-        List<User> users,
+        User[] users,
         List<Transaction> transactions,
         File file
     ) throws IOException {
@@ -150,7 +105,7 @@ public class TransactionService {
             .stream()
             .collect(Collectors.groupingBy(item -> item.id));
 
-        Map<String, List<User>> userById = users.stream()
+        Map<String, List<User>> userById = Arrays.asList(users).stream()
             .collect(Collectors.groupingBy(user -> user.getId()));
 
         String[] headers = {

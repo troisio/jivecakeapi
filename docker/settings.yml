@@ -6,6 +6,8 @@ errorRecipients:
 oauth:
   webClientId: "default"
   webClientSecret: "default"
+  nonInteractiveClientId: "default"
+  nonInteractiveSecret: "default"
   domain: "default"
   apiToken: "default"
 

@@ -4,7 +4,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -15,9 +14,6 @@ import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.QueryParam;
-import javax.ws.rs.client.InvocationCallback;
-import javax.ws.rs.container.AsyncResponse;
-import javax.ws.rs.container.Suspended;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
@@ -30,7 +26,13 @@ import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
+import com.auth0.client.mgmt.ManagementAPI;
+import com.auth0.client.mgmt.filter.UserFilter;
+import com.auth0.exception.Auth0Exception;
+import com.auth0.json.mgmt.users.User;
 import com.auth0.jwt.interfaces.DecodedJWT;
+import com.auth0.net.Request;
+import com.jivecake.api.APIConfiguration;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.GZip;
@@ -63,6 +65,7 @@ public class ItemResource {
     private final NotificationService notificationService;
     private final EntityService entityService;
     private final Datastore datastore;
+    private final APIConfiguration apiConfiguration;
 
     @Inject
     public ItemResource(
@@ -73,7 +76,8 @@ public class ItemResource {
         TransactionService transactionService,
         NotificationService notificationService,
         EntityService entityService,
-        Datastore datastore
+        Datastore datastore,
+        APIConfiguration apiConfiguration
     ) {
         this.auth0Service = auth0Service;
         this.itemService = itemService;
@@ -83,6 +87,7 @@ public class ItemResource {
         this.notificationService = notificationService;
         this.entityService = entityService;
         this.datastore = datastore;
+        this.apiConfiguration = apiConfiguration;
     }
 
     @POST
@@ -313,15 +318,16 @@ public class ItemResource {
     @Authorized
     @Path("/{id}/transaction")
     @HasPermission(id="id", clazz=Item.class, permission=PermissionService.WRITE)
-    public void createTransaction(
+    public Response createTransaction(
         @PathObject("id") Item item,
         @Context DecodedJWT jwt,
-        Transaction transaction,
-        @Suspended AsyncResponse promise
+        Transaction transaction
     ) {
         transaction.status = TransactionService.PAYMENT_EQUAL;
         transaction.paymentStatus = TransactionService.SETTLED;
         boolean isValid = this.transactionService.isValidTransaction(transaction) && transaction.amount >= 0;
+
+        ResponseBuilder builder;
 
         if (isValid) {
             boolean totalAvailibleViolation = false;
@@ -342,63 +348,62 @@ public class ItemResource {
                 error.error = "totalAvailible";
                 error.data = item.totalAvailible;
 
-                promise.resume(
-                    Response.status(Status.BAD_REQUEST)
-                        .entity(error)
-                        .type(MediaType.APPLICATION_JSON).build()
-                );
+                builder = Response.status(Status.BAD_REQUEST)
+                    .entity(error)
+                    .type(MediaType.APPLICATION_JSON);
             } else {
-                CompletableFuture<Boolean> hasValidUserIdPromise = new CompletableFuture<>();
+                boolean validUser = true;
 
-                if (transaction.user_id == null) {
-                    hasValidUserIdPromise.complete(true);
-                } else {
-                    this.auth0Service.getUser(transaction.user_id).submit(new InvocationCallback<Response>(){
-                        @Override
-                        public void completed(Response response) {
-                            hasValidUserIdPromise.complete(response.getStatus() == 200);
-                        }
+                if (transaction.user_id != null) {
+                    ManagementAPI api = new ManagementAPI(
+                        this.apiConfiguration.oauth.domain,
+                        this.auth0Service.getToken().get("access_token").asText()
+                    );
 
-                        @Override
-                        public void failed(Throwable throwable) {
-                            hasValidUserIdPromise.completeExceptionally(throwable);
-                        }
-                    });
+                    Request<User> request = api.users().get(transaction.user_id, new UserFilter());
+
+                    try {
+                        request.execute();
+                    } catch (Auth0Exception e) {
+                        validUser = false;
+                    }
                 }
 
-                hasValidUserIdPromise.thenAcceptAsync(hasValidUserId -> {
-                    if (hasValidUserId) {
-                        Date currentTime = new Date();
+                if (validUser) {
+                    Date currentTime = new Date();
 
-                        transaction.leaf = true;
-                        transaction.linkedId = null;
-                        transaction.linkedObjectClass = null;
-                        transaction.itemId = item.id;
-                        transaction.eventId = item.eventId;
-                        transaction.organizationId = item.organizationId;
-                        transaction.timeCreated = currentTime;
+                    transaction.leaf = true;
+                    transaction.linkedId = null;
+                    transaction.linkedObjectClass = null;
+                    transaction.itemId = item.id;
+                    transaction.eventId = item.eventId;
+                    transaction.organizationId = item.organizationId;
+                    transaction.timeCreated = currentTime;
 
-                        Key<Transaction> key = ItemResource.this.datastore.save(transaction);
-                        Transaction entity = ItemResource.this.datastore.get(Transaction.class, key.getId());
-                        this.entityService.cascadeLastActivity(Arrays.asList(entity), currentTime);
-                        ItemResource.this.notificationService.notify(Arrays.asList(entity), "transaction.create");
+                    Key<Transaction> key = ItemResource.this.datastore.save(transaction);
+                    Transaction entity = ItemResource.this.datastore.get(Transaction.class, key.getId());
 
-                        promise.resume(
-                            Response.ok(entity).type(MediaType.APPLICATION_JSON).build()
-                        );
-                    } else {
-                        promise.resume(Response.status(Status.BAD_REQUEST)
-                            .entity("{\"error\": \"user\"}")
-                            .type(MediaType.APPLICATION_JSON).build());
-                    }
-                }).exceptionally(e -> {
-                    promise.resume(e);
-                    return null;
-                });
+                    this.entityService.cascadeLastActivity(Arrays.asList(entity), currentTime);
+                    ItemResource.this.notificationService.notify(
+                        Arrays.asList(entity),
+                        "transaction.create"
+                    );
+
+                    builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+                } else {
+                    ErrorData error = new ErrorData();
+                    error.error = "user";
+
+                    builder = Response.status(Status.BAD_REQUEST)
+                        .entity(error)
+                        .type(MediaType.APPLICATION_JSON);
+                }
             }
         } else {
-            promise.resume(Response.status(Status.BAD_REQUEST).build());
+            builder = Response.status(Status.BAD_REQUEST);
         }
+
+        return builder.build();
     }
 
     @GET
