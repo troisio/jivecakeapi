@@ -1,68 +1,67 @@
 package com.jivecake.api.resources;
 
-import java.io.IOException;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import javax.ws.rs.Consumes;
-import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
-import javax.ws.rs.client.ClientBuilder;
-import javax.ws.rs.client.Entity;
-import javax.ws.rs.client.InvocationCallback;
-import javax.ws.rs.client.WebTarget;
-import javax.ws.rs.container.AsyncResponse;
-import javax.ws.rs.container.Suspended;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.MultivaluedHashMap;
-import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.Response;
+import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
-import javax.ws.rs.core.UriInfo;
 
-import org.glassfish.jersey.client.HttpUrlConnectorProvider;
-
+import com.auth0.client.mgmt.ManagementAPI;
+import com.auth0.client.mgmt.filter.UserFilter;
+import com.auth0.exception.Auth0Exception;
+import com.auth0.json.mgmt.tickets.EmailVerificationTicket;
+import com.auth0.json.mgmt.users.User;
 import com.auth0.jwt.interfaces.DecodedJWT;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jivecake.api.OAuthConfiguration;
+import com.jivecake.api.APIConfiguration;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.request.Auth0UserUpdateEntity;
+import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.request.UserEmailVerificationBody;
+import com.jivecake.api.service.Auth0Service;
 
 import io.dropwizard.jersey.PATCH;
 
 @CORS
-@Path("/auth0")
+@Path("auth0")
 @Singleton
 public class Auth0Resource {
-    private final OAuthConfiguration oAuthConfiguration;
-    private final ObjectMapper mapper = new ObjectMapper();
+    private final APIConfiguration configuration;
     private final Map<String, Date> lastEmailTime = new HashMap<>();
     private final long emailLimitTime = 1000 * 60 * 5;
+    private final Auth0Service auth0Service;
 
     @Inject
-    public Auth0Resource(OAuthConfiguration oAuthConfiguration) {
-        this.oAuthConfiguration = oAuthConfiguration;
+    public Auth0Resource(
+            APIConfiguration configuration,
+        Auth0Service auth0Service
+    ) {
+        this.configuration = configuration;
+        this.auth0Service = auth0Service;
     }
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
-    @Path("/api/v2/jobs/verification-email")
+    @Path("api/v2/jobs/verification-email")
     @Authorized
-    public void sendVerifyEmailAddress(
+    public Response sendVerifyEmailAddress(
         @Context DecodedJWT jwt,
-        @Suspended AsyncResponse promise,
         UserEmailVerificationBody body
-    ) {
+    ) throws Auth0Exception {
         String user_id = jwt.getSubject();
+
+        ResponseBuilder builder;
 
         if (user_id.equals(body.user_id)) {
             boolean emailTimeViolation;
@@ -77,197 +76,78 @@ public class Auth0Resource {
             }
 
             if (emailTimeViolation) {
-                String responseBody = String.format("{\"error\": \"emailLimitTime\", \"data\": %d}", lastEmailTime.getTime() + this.emailLimitTime);
-                Response response = Response.status(Status.BAD_REQUEST)
-                    .entity(responseBody)
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
-
-                promise.resume(response);
+                ErrorData entity = new ErrorData();
+                entity.error = "emailLimitTime";
+                entity.data = this.emailLimitTime;
+                builder = Response.status(Status.BAD_REQUEST)
+                    .entity(entity)
+                    .type(MediaType.APPLICATION_JSON);
             } else {
-                ClientBuilder.newClient()
-                    .target("https://" + this.oAuthConfiguration.domain)
-                    .path("/api/v2/jobs/verification-email")
-                    .request()
-                    .header("Authorization", "Bearer " + this.oAuthConfiguration.apiToken)
-                    .buildPost(Entity.json(body))
-                    .submit(new InvocationCallback<Response>() {
-                        @Override
-                        public void completed(Response response) {
-                            if (response.getStatus() == 201) {
-                                Auth0Resource.this.lastEmailTime.put(user_id, new Date());
-                            }
+                ManagementAPI managementApi = new ManagementAPI(
+                    configuration.oauth.domain,
+                    this.auth0Service.getToken().get("access_token").asText()
+                );
 
-                            promise.resume(response);
-                        }
+                EmailVerificationTicket ticket = new EmailVerificationTicket(body.user_id);
+                managementApi.tickets().requestEmailVerification(ticket).execute();
 
-                        @Override
-                        public void failed(Throwable throwable) {
-                            promise.resume(throwable);
-                        }
-                    });
-                }
+                this.lastEmailTime.put(body.user_id, new Date());
+
+                builder = Response.ok();
+            }
         } else {
-            promise.resume(Response.status(Status.UNAUTHORIZED).build());
-        }
-    }
-
-    @GET
-    @Path("/api/v2/users")
-    @Authorized
-    public void searchUsers(@Context UriInfo info, @Suspended AsyncResponse promise) {
-        MultivaluedMap<String, String> parameters = new MultivaluedHashMap<>();
-        parameters.putAll(info.getQueryParameters());
-
-        WebTarget target = ClientBuilder.newClient()
-            .target("https://" + this.oAuthConfiguration.domain)
-            .path("/api/v2/users");
-
-        parameters.putSingle("search_engine","v2");
-
-        for (String key: parameters.keySet()) {
-            target = target.queryParam(key, parameters.get(key).toArray());
+            builder = Response.status(Status.UNAUTHORIZED);
         }
 
-        target.request()
-            .header("Authorization", "Bearer " + this.oAuthConfiguration.apiToken)
-            .buildGet()
-            .submit(new InvocationCallback<Response>() {
-                @Override
-                public void completed(Response response) {
-                    promise.resume(response);
-                }
-
-                @Override
-                public void failed(Throwable throwable) {
-                    promise.resume(throwable);
-                }
-            });
-    }
-
-    @GET
-    @Path("/api/v2/users/{id}")
-    @Authorized
-    public void getUser(
-        @PathParam("id") String id,
-        @Context UriInfo uriInfo,
-        @Context DecodedJWT jwt,
-        @Suspended AsyncResponse promise
-    ) {
-        String sub = jwt.getSubject();
-
-        if (sub.equals(id)) {
-            ClientBuilder.newClient()
-                .target("https://" + this.oAuthConfiguration.domain)
-                .path("/api/v2/users/" + sub)
-                .request()
-                .header("Authorization", "Bearer " + this.oAuthConfiguration.apiToken)
-                .buildGet()
-                .submit(new InvocationCallback<Response>() {
-                    @Override
-                    public void completed(Response response) {
-                        promise.resume(response);
-                    }
-
-                    @Override
-                    public void failed(Throwable throwable) {
-                        promise.resume(throwable);
-                    }
-                });
-        } else {
-            promise.resume(Response.status(Status.UNAUTHORIZED).build());
-        }
-    }
-
-    @POST
-    @Path("/api/v2/users/{id}")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Authorized
-    public void searchUsers(@PathParam("id") String id, @Context DecodedJWT jwt, @Suspended AsyncResponse promise, String body) {
-        String sub = jwt.getSubject();
-
-        if (sub.equals(id)) {
-            ClientBuilder.newClient()
-                .target("https://" + this.oAuthConfiguration.domain)
-                .path("/api/v2/users/" + sub)
-                .request()
-                .header("Authorization", "Bearer " + this.oAuthConfiguration.apiToken)
-                .buildPost(Entity.json(body))
-                .submit(new InvocationCallback<Response>() {
-                    @Override
-                    public void completed(Response response) {
-                        promise.resume(response);
-                    }
-
-                    @Override
-                    public void failed(Throwable throwable) {
-                        promise.resume(throwable);
-                    }
-                });
-        } else {
-            promise.resume(Response.status(Status.UNAUTHORIZED).build());
-        }
+        return builder.build();
     }
 
     @PATCH
-    @Path("/api/v2/users/{id}")
+    @Path("api/v2/users/{id}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
-    public void updateUser(@PathParam("id") String id, @Context DecodedJWT jwt, @Suspended AsyncResponse promise, Auth0UserUpdateEntity entity) {
+    public Response updateUser(
+        @PathParam("id") String id,
+        @Context DecodedJWT jwt,
+        Auth0UserUpdateEntity entity
+    ) throws Auth0Exception {
         String userId = jwt.getSubject();
 
+        ResponseBuilder builder;
+
         if (userId.equals(id)) {
-            ClientBuilder.newClient()
-            .target("https://" + this.oAuthConfiguration.domain)
-            .path("/api/v2/users/" + id)
-            .request()
-            .header("Authorization", "Bearer " + this.oAuthConfiguration.apiToken)
-            .buildGet()
-            .submit(new InvocationCallback<Response>() {
-                @Override
-                public void completed(Response response) {
-                    JsonNode node;
+            ManagementAPI managementApi = new ManagementAPI(
+                this.configuration.oauth.domain,
+                this.auth0Service.getToken().get("access_token").asText()
+            );
 
-                    try {
-                        node = mapper.readTree(response.readEntity(String.class));
-                    } catch (IOException e) {
-                        node = null;
-                    }
+            User user = managementApi.users().get(id, new UserFilter()).execute();
 
-                    String userId = node.get("user_id").asText();
-                    boolean isNonAuth0IdentityProvider = userId.startsWith("google") || userId.startsWith("facebook");
+            boolean emailChange = !Objects.equals(user.getEmail(), entity.email);
 
-                    if (isNonAuth0IdentityProvider) {
-                        promise.resume(Response.status(Status.BAD_REQUEST).build());
-                    } else {
-                        ClientBuilder.newClient()
-                        .property(HttpUrlConnectorProvider.SET_METHOD_WORKAROUND, true) /*PATCH not supported as of 9 May 2016*/
-                        .target("https://" + Auth0Resource.this.oAuthConfiguration.domain)
-                        .path("/api/v2/users/" + id)
-                        .request()
-                        .header("Authorization", "Bearer " + Auth0Resource.this.oAuthConfiguration.apiToken)
-                        .build("PATCH", Entity.entity(entity, MediaType.APPLICATION_JSON))
-                        .submit(new InvocationCallback<Response>() {
-                            @Override
-                            public void completed(Response response) {
-                                promise.resume(response);
-                            }
+            if (emailChange) {
+                user.setEmailVerified(false);
+            }
 
-                            @Override
-                            public void failed(Throwable throwable) {
-                                promise.resume(throwable);
-                            }
-                        });
-                    }
-                }
+            Map<String, Object> metaData = new HashMap<>();
+            metaData.put("given_name", entity.user_metadata.given_name);
+            metaData.put("family_name", entity.user_metadata.family_name);
 
-                @Override
-                public void failed(Throwable throwable) {
-                    promise.resume(throwable);
-                }
-            });
+            user.setEmail(entity.email);
+            user.setUserMetadata(metaData);
+
+            managementApi.users().update(id, user);
+
+            if (emailChange) {
+                EmailVerificationTicket ticket = new EmailVerificationTicket(id);
+                managementApi.tickets().requestEmailVerification(ticket).execute();
+            }
+
+            builder = Response.ok(user).type(MediaType.APPLICATION_JSON);
         } else {
-            promise.resume(Response.status(Status.UNAUTHORIZED).build());
+            builder = Response.status(Status.UNAUTHORIZED);
         }
+
+        return builder.build();
     }
 }

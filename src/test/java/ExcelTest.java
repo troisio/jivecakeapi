@@ -3,7 +3,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
-import java.util.List;
 
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.bson.types.ObjectId;
@@ -51,9 +50,11 @@ public class ExcelTest {
         Event event = new Event();
         event.userData = new ArrayList<>();
 
+        User[] users = new User[]{};
+
         this.transactionService.writeToExcel(
             event,
-            new ArrayList<>(),
+            users,
             Arrays.asList(transaction),
             file
         );
@@ -85,7 +86,7 @@ public class ExcelTest {
         Event event = new Event();
         event.userData = new ArrayList<>();
 
-        List<User> users  = new ArrayList<>();
+        User[] users = new User[]{};
 
         this.transactionService.writeToExcel(event, users, Arrays.asList(transaction), file);
     }

@@ -21,6 +21,7 @@ import com.jivecake.api.model.Event;
 import com.jivecake.api.model.EventBroadcaster;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
+import com.jivecake.api.model.OrganizationInvitation;
 import com.jivecake.api.model.PaymentProfile;
 import com.jivecake.api.model.Permission;
 import com.jivecake.api.model.Transaction;
@@ -54,7 +55,7 @@ public class NotificationService {
 
         for (Object entity: entities) {
             ObjectId organizationId = null;
-            String userId = null;
+            List<String> userIds = new ArrayList<>();
 
             if (entity instanceof Item) {
                 organizationId = ((Item)entity).organizationId;
@@ -63,7 +64,7 @@ public class NotificationService {
             } else if (entity instanceof Permission) {
                 Permission permission = (Permission)entity;
 
-                userId = permission.user_id;
+                userIds.add(permission.user_id);
 
                 if (permission.objectClass.equals(this.organizationService.getPermissionObjectClass())) {
                     organizationId = permission.objectId;
@@ -77,21 +78,26 @@ public class NotificationService {
             } else if (entity instanceof Transaction) {
                 Transaction transaction = (Transaction)entity;
                 organizationId = transaction.organizationId;
-                userId = transaction.user_id;
+                userIds.add(transaction.user_id);
             } else if (entity instanceof EntityAsset) {
                 EntityAsset asset = (EntityAsset)entity;
 
                 if (asset.entityType == EntityType.USER) {
-                    userId = asset.entityId;
+                    userIds.add(asset.entityId);
                     /*
                      * Additionally, we ought to figure out how to notify an organization with
-                     * an active Event which has a transaction associated with with this user
+                     * an active Event which has a transaction associated with this user
                      */
                 } else if (asset.entityType == EntityType.ORGANIZATION) {
                     organizationId = new ObjectId(asset.entityId);
                 } else {
                     throw new IllegalArgumentException(entity + " is not a valid class for notification");
                 }
+            } else if (entity instanceof OrganizationInvitation) {
+                OrganizationInvitation invitation = (OrganizationInvitation)entity;
+
+                organizationId = invitation.organizationId;
+                userIds.addAll(invitation.userIds);
             } else {
                 throw new IllegalArgumentException(entity + " is not a valid class for notification");
             }
@@ -104,7 +110,7 @@ public class NotificationService {
                 organizationToEntities.get(organizationId).add(entity);
             }
 
-            if (userId != null) {
+            for (String userId : userIds) {
                 if (!userToEntities.containsKey(userId)) {
                     userToEntities.put(userId, new ArrayList<>());
                 }

@@ -62,12 +62,17 @@ public class HasPermissionFilter implements ContainerRequestFilter {
 
                 if (!entities.isEmpty()) {
                     DecodedJWT jwt = this.auth0Service.getClaimsFromToken(token);
-                    boolean hasPermission = this.permissionService.has(jwt.getSubject(), entities, annotation.permission());
 
-                    if (hasPermission) {
-                        response = null;
-                    } else {
+                    if (jwt == null) {
                         response = Response.status(Status.UNAUTHORIZED).build();
+                    } else {
+                        boolean hasPermission = this.permissionService.has(jwt.getSubject(), entities, annotation.permission());
+
+                        if (hasPermission) {
+                            response = null;
+                        } else {
+                            response = Response.status(Status.UNAUTHORIZED).build();
+                        }
                     }
                 } else {
                     response = Response.status(Status.NOT_FOUND).build();

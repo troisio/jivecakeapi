@@ -1,11 +1,11 @@
 package com.jivecake.api.resources;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -15,9 +15,6 @@ import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.QueryParam;
-import javax.ws.rs.client.InvocationCallback;
-import javax.ws.rs.container.AsyncResponse;
-import javax.ws.rs.container.Suspended;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
@@ -30,6 +27,7 @@ import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
+import com.auth0.json.mgmt.users.User;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
@@ -79,27 +77,19 @@ public class TransactionResource {
     @GZip
     @GET
     @Authorized
-    public void search(
+    public Response search(
         @QueryParam("organizationId") List<ObjectId> organizationIds,
         @QueryParam("eventId") List<ObjectId> eventIds,
         @QueryParam("itemId") List<ObjectId> itemIds,
         @QueryParam("user_id") List<String> userIds,
         @QueryParam("id") List<ObjectId> ids,
-        @QueryParam("parentTransactionId") List<ObjectId> parentTransactionIds,
-        @QueryParam("timeCreatedLessThan") Long timeCreatedLessThan,
-        @QueryParam("timeCreatedGreaterThan") Long timeCreatedGreaterThan,
-        @QueryParam("given_name") String given_name,
-        @QueryParam("family_name") String family_name,
         @QueryParam("email") String email,
         @QueryParam("leaf") Boolean leaf,
         @QueryParam("status") List<Integer> statuses,
-        @QueryParam("paymentStatus") List<Integer> paymentStatuses,
-        @QueryParam("text") String text,
         @QueryParam("limit") Integer limit,
         @QueryParam("offset") Integer offset,
         @QueryParam("order") String order,
-        @Context DecodedJWT jwt,
-        @Suspended AsyncResponse futureResponse
+        @Context DecodedJWT jwt
     ) {
         Query<Transaction> query = this.datastore.createQuery(Transaction.class);
 
@@ -123,14 +113,6 @@ public class TransactionResource {
             query.field("status").in(statuses);
         }
 
-        if (!paymentStatuses.isEmpty()) {
-            query.field("paymentStatus").in(paymentStatuses);
-        }
-
-        if (!parentTransactionIds.isEmpty()) {
-            query.field("parentTransactionId").in(parentTransactionIds);
-        }
-
         if (!userIds.isEmpty()) {
             query.field("user_id").in(userIds);
         }
@@ -139,87 +121,51 @@ public class TransactionResource {
             query.field("email").startsWithIgnoreCase(email);
         }
 
-        if (given_name != null) {
-            query.field("given_name").startsWithIgnoreCase(given_name);
-        }
-
-        if (family_name != null) {
-            query.field("family_name").startsWithIgnoreCase(family_name);
-        }
-
         if (leaf != null) {
             query.field("leaf").equal(leaf);
-        }
-
-        if (timeCreatedGreaterThan != null) {
-            query.field("timeCreated").greaterThan(new Date(timeCreatedGreaterThan));
-        }
-
-        if (timeCreatedLessThan != null) {
-            query.field("timeCreated").lessThan(new Date(timeCreatedLessThan));
         }
 
         if (order != null) {
             query.order(order);
         }
 
-        CompletableFuture<List<Transaction>> textSearchFuture;
+        int defaultLimit = 5000;
 
-        if (text == null) {
-            textSearchFuture = new CompletableFuture<>();
-            textSearchFuture.complete(null);
+        FindOptions options = new FindOptions();
+
+        if (limit != null && limit > -1 && limit <= defaultLimit) {
+            options.limit(limit);
         } else {
-            textSearchFuture = this.transactionService.searchTransactionsFromText(text, this.auth0Service);
+            options.limit(defaultLimit);
         }
 
-        textSearchFuture.thenAcceptAsync(textTransactions -> {
-            if (textTransactions != null) {
-                List<ObjectId> textTransactionIds = textTransactions.stream()
-                    .map(transaction -> transaction.id)
-                    .collect(Collectors.toList());
+        if (offset != null && offset > -1) {
+            options.skip(offset);
+        }
 
-                query.field("id").in(textTransactionIds);
-            }
+        List<Transaction> transactions = query.asList(options);
 
-            int defaultLimit = 5000;
+        String userId = jwt.getSubject();
 
-            FindOptions options = new FindOptions();
+        boolean hasUserPermission = userIds.size() == 1 && userIds.contains(userId);
+        boolean hasOrganizationPermission = this.permissionService.has(
+            userId,
+            transactions,
+            PermissionService.READ
+        );
 
-            if (limit != null && limit > -1 && limit <= defaultLimit) {
-                options.limit(limit);
-            } else {
-                options.limit(defaultLimit);
-            }
+        boolean hasPermission = hasUserPermission || hasOrganizationPermission;
 
-            if (offset != null && offset > -1) {
-                options.skip(offset);
-            }
+        ResponseBuilder builder;
 
-            List<Transaction> transactions = query.asList(options);
+        if (hasPermission) {
+            Paging<Transaction> entity = new Paging<>(transactions, query.count());
+            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+        } else {
+            builder = Response.status(Status.UNAUTHORIZED);
+        }
 
-            String userId = jwt.getSubject();
-
-            boolean hasPermission = userIds.size() == 1 && userIds.contains(userId) ||
-                this.permissionService.has(
-                    userId,
-                    transactions,
-                    PermissionService.READ
-                );
-
-            ResponseBuilder builder;
-
-            if (hasPermission) {
-                Paging<Transaction> entity = new Paging<>(transactions, query.count());
-                builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-            } else {
-                builder = Response.status(Status.UNAUTHORIZED);
-            }
-
-            futureResponse.resume(builder.build());
-        }).exceptionally(exception -> {
-            futureResponse.resume(exception);
-            return null;
-        });
+        return builder.build();
     }
 
     @GET
@@ -326,11 +272,10 @@ public class TransactionResource {
     @GET
     @Path("user")
     @Authorized
-    public void searchUsers(
+    public Response searchUsers(
         @QueryParam("id") List<ObjectId> ids,
-        @Context DecodedJWT jwt,
-        @Suspended AsyncResponse promise
-    ) {
+        @Context DecodedJWT jwt
+    ) throws IOException {
         List<Transaction> transactions = this.datastore.createQuery(Transaction.class)
             .field("id").in(ids)
             .asList();
@@ -352,29 +297,25 @@ public class TransactionResource {
         boolean hasPermission = !transactions.isEmpty() &&
             (hasTransactionPermission || transactionsNotBelongingToRequester == 0);
 
+        ResponseBuilder builder;
+
         if (hasPermission) {
             if (user_ids.isEmpty()) {
-                promise.resume(Response.ok().entity(new ArrayList<>()).type(MediaType.APPLICATION_JSON).build());
+                builder = Response.ok(new ArrayList<>(), MediaType.APPLICATION_JSON);
             } else {
                 String query = user_ids.stream()
                     .map(id -> String.format("user_id: \"%s\"", id))
                     .collect(Collectors.joining(" OR "));
 
-                this.auth0Service.queryUsers(query, new InvocationCallback<Response>() {
-                    @Override
-                    public void completed(Response response) {
-                        promise.resume(response);
-                    }
+                User[] entity = this.auth0Service.queryUsers(query);
 
-                    @Override
-                    public void failed(Throwable throwable) {
-                        promise.resume(throwable);
-                    }
-                });
+                builder = Response.ok(entity, MediaType.APPLICATION_JSON);
             }
         } else {
-            promise.resume(Response.status(Status.UNAUTHORIZED).build());
+            builder = Response.status(Status.UNAUTHORIZED);
         }
+
+        return builder.build();
     }
 
     @GET

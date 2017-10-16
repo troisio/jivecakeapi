@@ -107,7 +107,7 @@ public class UserResource {
             FindOptions options = new FindOptions();
             options.limit(ApplicationService.LIMIT_DEFAULT);
 
-            builder = Response.ok(query.asList(options)).type(MediaType.APPLICATION_JSON);
+            builder = Response.ok(query.asList(options), MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.BAD_REQUEST);
         }
@@ -270,6 +270,34 @@ public class UserResource {
         } else {
             this.applicationService.saveException(exception, jwt.getSubject());
             builder = Response.status(Status.SERVICE_UNAVAILABLE);
+        }
+
+        return builder.build();
+    }
+
+    @GET
+    @Authorized
+    @Path("{userId}/organizationInvitation")
+    public Response getOrganizationInvitations(
+        @PathParam("userId") String userId,
+        @Context DecodedJWT jwt
+    ) {
+        ResponseBuilder builder;
+
+        if (jwt.getSubject().equals(userId)) {
+            long days7 = 1000 * 60 * 60 * 24 * 7;
+            Date lessThanTimeCreated = new Date(new Date().getTime() + days7);
+
+            List<OrganizationInvitation> invitations = this.datastore.createQuery(OrganizationInvitation.class)
+                .field("userIds").equal(userId)
+                .field("timeCreated").lessThan(lessThanTimeCreated)
+                .field("timeAccepted").doesNotExist()
+                .asList();
+
+            builder = Response.ok(invitations)
+                .type(MediaType.APPLICATION_JSON);
+        } else {
+            builder = Response.status(Status.UNAUTHORIZED);
         }
 
         return builder.build();

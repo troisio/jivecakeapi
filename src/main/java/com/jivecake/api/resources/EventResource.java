@@ -33,11 +33,7 @@ import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
-import com.auth0.client.mgmt.ManagementAPI;
-import com.auth0.client.mgmt.filter.UserFilter;
-import com.auth0.json.mgmt.users.UsersPage;
 import com.auth0.jwt.interfaces.DecodedJWT;
-import com.auth0.net.Request;
 import com.google.cloud.storage.Acl;
 import com.google.cloud.storage.Acl.Role;
 import com.google.cloud.storage.Acl.User;
@@ -67,6 +63,7 @@ import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.request.ItemData;
 import com.jivecake.api.request.Paging;
 import com.jivecake.api.service.ApplicationService;
+import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.ItemService;
@@ -81,6 +78,7 @@ import com.stripe.model.Subscription;
 @CORS
 @Singleton
 public class EventResource {
+    private final Auth0Service auth0Service;
     private final EventService eventService;
     private final ItemService itemService;
     private final TransactionService transactionService;
@@ -92,6 +90,7 @@ public class EventResource {
 
     @Inject
     public EventResource(
+        Auth0Service auth0Service,
         EventService eventService,
         ItemService itemService,
         TransactionService transactionService,
@@ -101,6 +100,7 @@ public class EventResource {
         Datastore datastore,
         APIConfiguration configuration
     ) {
+        this.auth0Service = auth0Service;
         this.itemService = itemService;
         this.eventService = eventService;
         this.transactionService = transactionService;
@@ -434,14 +434,7 @@ public class EventResource {
 
         File writeFile = file;
 
-        ManagementAPI managementApi = new ManagementAPI(
-            this.configuration.oauth.domain,
-            this.configuration.oauth.apiToken
-        );
-        UserFilter filter = new UserFilter();
-        filter.withQuery(userQuery);
-        Request<UsersPage> request = managementApi.users().list(filter);
-        List<com.auth0.json.mgmt.users.User> users = request.execute().getItems();
+        com.auth0.json.mgmt.users.User[] users = this.auth0Service.queryUsers(userQuery);
 
         EventResource.this.transactionService.writeToExcel(
             event,
