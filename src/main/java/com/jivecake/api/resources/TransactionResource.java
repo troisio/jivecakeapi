@@ -37,6 +37,9 @@ import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.filter.QueryRestrict;
 import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.EntityType;
+import com.jivecake.api.model.Event;
+import com.jivecake.api.model.Item;
+import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.request.Paging;
@@ -81,21 +84,15 @@ public class TransactionResource {
         @QueryParam("organizationId") List<ObjectId> organizationIds,
         @QueryParam("eventId") List<ObjectId> eventIds,
         @QueryParam("itemId") List<ObjectId> itemIds,
-        @QueryParam("user_id") List<String> userIds,
-        @QueryParam("id") List<ObjectId> ids,
+        @QueryParam("userId") String userId,
         @QueryParam("email") String email,
         @QueryParam("leaf") Boolean leaf,
-        @QueryParam("status") List<Integer> statuses,
         @QueryParam("limit") Integer limit,
         @QueryParam("offset") Integer offset,
         @QueryParam("order") String order,
         @Context DecodedJWT jwt
     ) {
         Query<Transaction> query = this.datastore.createQuery(Transaction.class);
-
-        if (!ids.isEmpty()) {
-            query.field("id").in(ids);
-        }
 
         if (!organizationIds.isEmpty()) {
             query.field("organizationId").in(organizationIds);
@@ -109,12 +106,8 @@ public class TransactionResource {
             query.field("itemId").in(itemIds);
         }
 
-        if (!statuses.isEmpty()) {
-            query.field("status").in(statuses);
-        }
-
-        if (!userIds.isEmpty()) {
-            query.field("user_id").in(userIds);
+        if (userId != null) {
+            query.field("user_id").equal(userId);
         }
 
         if (email != null) {
@@ -145,16 +138,17 @@ public class TransactionResource {
 
         List<Transaction> transactions = query.asList(options);
 
-        String userId = jwt.getSubject();
+        boolean hasPermission;
 
-        boolean hasUserPermission = userIds.size() == 1 && userIds.contains(userId);
-        boolean hasOrganizationPermission = this.permissionService.has(
-            userId,
-            transactions,
-            PermissionService.READ
-        );
-
-        boolean hasPermission = hasUserPermission || hasOrganizationPermission;
+        if (jwt.getSubject().equals(userId)) {
+            hasPermission = true;
+        } else {
+            hasPermission = this.permissionService.has(
+                jwt.getSubject(),
+                transactions,
+                PermissionService.READ
+            );
+        }
 
         ResponseBuilder builder;
 
@@ -436,9 +430,75 @@ public class TransactionResource {
             }
 
             this.entityService.cascadeLastActivity(transactions, new Date());
-            builder = Response.ok(transaction).type(MediaType.APPLICATION_JSON);
+            builder = Response.ok(transaction, MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.BAD_REQUEST);
+        }
+
+        return builder.build();
+    }
+
+    @GET
+    @Path("/{id}/organization")
+    @Authorized
+    public Response getOrganization(
+        @PathObject("id") Transaction transaction,
+        @Context DecodedJWT jwt
+    ) {
+        boolean authorized = jwt.getSubject().equals(transaction.user_id);
+
+        ResponseBuilder builder;
+
+        if (authorized) {
+            Organization organization = this.datastore.createQuery(Organization.class)
+                .project("children", false)
+                .field("id").equal(transaction.organizationId)
+                .get();
+            builder = Response.ok(organization, MediaType.APPLICATION_JSON);
+        } else {
+            builder = Response.status(Status.UNAUTHORIZED);
+        }
+
+        return builder.build();
+    }
+
+    @GET
+    @Path("/{id}/event")
+    @Authorized
+    public Response getEvent(
+        @PathObject("id") Transaction transaction,
+        @Context DecodedJWT jwt
+    ) {
+        boolean authorized = jwt.getSubject().equals(transaction.user_id);
+
+        ResponseBuilder builder;
+
+        if (authorized) {
+            Event event = this.datastore.get(Event.class, transaction.eventId);
+            builder = Response.ok(event, MediaType.APPLICATION_JSON);
+        } else {
+            builder = Response.status(Status.UNAUTHORIZED);
+        }
+
+        return builder.build();
+    }
+
+    @GET
+    @Path("/{id}/item")
+    @Authorized
+    public Response getItem(
+        @PathObject("id") Transaction transaction,
+        @Context DecodedJWT jwt
+    ) {
+        boolean authorized = jwt.getSubject().equals(transaction.user_id);
+
+        ResponseBuilder builder;
+
+        if (authorized) {
+            Item item = this.datastore.get(Item.class, transaction.itemId);
+            builder = Response.ok(item, MediaType.APPLICATION_JSON);
+        } else {
+            builder = Response.status(Status.UNAUTHORIZED);
         }
 
         return builder.build();

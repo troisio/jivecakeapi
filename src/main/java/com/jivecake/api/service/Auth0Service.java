@@ -27,18 +27,25 @@ public class Auth0Service {
     private final ObjectMapper mapper = new ObjectMapper();
     private final List<JWTVerifier> verifiers;
     private final OAuthConfiguration oAuthConfiguration;
+    private final ApplicationService applicationService;
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private JsonNode token = null;
 
     @Inject
-    public Auth0Service(OAuthConfiguration oAuthConfiguration, List<JWTVerifier> verifiers) {
+    public Auth0Service(
+        OAuthConfiguration oAuthConfiguration,
+        List<JWTVerifier> verifiers,
+        ApplicationService applicationService
+    ) {
         this.oAuthConfiguration = oAuthConfiguration;
         this.verifiers = verifiers;
+        this.applicationService = applicationService;
 
         try {
             this.token = this.getNewToken();
         } catch (IOException e) {
             e.printStackTrace();
+            this.applicationService.saveException(e, null);
         }
 
         this.executor.schedule(() -> {
@@ -46,8 +53,9 @@ public class Auth0Service {
                 this.token = this.getNewToken();
             } catch (IOException e) {
                 e.printStackTrace();
+                this.applicationService.saveException(e, null);
             }
-        }, 23, TimeUnit.HOURS);
+        }, 1, TimeUnit.HOURS);
     }
 
     public DecodedJWT getClaimsFromToken(String token) {

@@ -7,6 +7,7 @@ import java.text.DecimalFormat;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -27,9 +28,11 @@ import com.auth0.json.mgmt.users.User;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Transaction;
+import com.jivecake.api.model.UserData;
 
 public class TransactionService {
     public static final int PAYMENT_EQUAL = 0;
+
     public static final int SETTLED = 0;
     public static final int PENDING = 1;
     public static final int USER_REVOKED = 2;
@@ -95,6 +98,9 @@ public class TransactionService {
         Sheet sheet = workbook.createSheet("Transactions");
         sheet.createFreezePane(0, 1);
 
+        Map<String, UserData> idToUserData = event.userData.stream()
+            .collect(Collectors.toMap(userData -> userData.userId, Function.identity()));
+
         List<ObjectId> itemIds = transactions.stream()
             .map(transaction -> transaction.itemId)
             .collect(Collectors.toList());
@@ -109,6 +115,7 @@ public class TransactionService {
             .collect(Collectors.groupingBy(user -> user.getId()));
 
         String[] headers = {
+            "registrationNumber",
             "givenName",
             "middleName",
             "familyName",
@@ -117,7 +124,7 @@ public class TransactionService {
             "amount",
             "currency",
             "timeCreated",
-            "linkedObjectClass"
+            "generatedBy"
         };
 
         CellStyle dateStyle = workbook.createCellStyle();
@@ -138,7 +145,7 @@ public class TransactionService {
             Item item = itemById.containsKey(transaction.itemId) ? itemById.get(transaction.itemId).get(0) : null;
             User user = userById.containsKey(transaction.user_id) ? userById.get(transaction.user_id).get(0) : null;
 
-            this.writeRow(transaction, item, user, row, dateStyle);
+            this.writeRow(transaction, idToUserData, item, user, row, dateStyle);
         }
 
         for (int index = 0; index < headers.length; index++) {
@@ -151,19 +158,32 @@ public class TransactionService {
         workbook.close();
     }
 
-    public void writeRow(Transaction subject, Item item, User user, Row row, CellStyle dateStyle) {
-        Cell givenName = row.createCell(0);
-        Cell middleName = row.createCell(1);
-        Cell familyName = row.createCell(2);
-        Cell email = row.createCell(3);
-        Cell itemName = row.createCell(4);
-        Cell amount = row.createCell(5);
-        Cell currency = row.createCell(6);
-        Cell timeCreated = row.createCell(7);
-        Cell linkedObjectClass = row.createCell(8);
+    public void writeRow(
+        Transaction subject,
+        Map<String, UserData> idToUserData,
+        Item item,
+        User user,
+        Row row,
+        CellStyle dateStyle
+    ) {
+        Cell registrationNumber = row.createCell(0);
+        Cell givenName = row.createCell(1);
+        Cell middleName = row.createCell(2);
+        Cell familyName = row.createCell(3);
+        Cell email = row.createCell(4);
+        Cell itemName = row.createCell(5);
+        Cell amount = row.createCell(6);
+        Cell currency = row.createCell(7);
+        Cell timeCreated = row.createCell(8);
+        Cell linkedObjectClass = row.createCell(9);
 
         amount.setCellValue(subject.amount);
         currency.setCellValue(subject.currency);
+
+        if (user != null) {
+            UserData data = idToUserData.get(user.getId());
+            registrationNumber.setCellValue(data.number);
+        }
 
         if ("PaypalPayment".equals(subject.linkedObjectClass)) {
             linkedObjectClass.setCellValue("paypal");
