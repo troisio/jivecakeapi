@@ -11,4 +11,4 @@ services:
       - ./settings.yml:/root/settings.yml
       - ./gcp-credentials.json:/root/gcp-credentials.json
   mongo:
-    image: mongo:3.4.1
+    image: mongo:3.4.6

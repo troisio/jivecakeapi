@@ -13,18 +13,14 @@ import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
-import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
-import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Key;
-import org.mongodb.morphia.query.FindOptions;
-import org.mongodb.morphia.query.Query;
 
 import com.auth0.client.mgmt.ManagementAPI;
 import com.auth0.client.mgmt.filter.UserFilter;
@@ -35,7 +31,6 @@ import com.auth0.net.Request;
 import com.jivecake.api.APIConfiguration;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
-import com.jivecake.api.filter.GZip;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Event;
@@ -43,8 +38,6 @@ import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.request.ErrorData;
-import com.jivecake.api.request.Paging;
-import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
@@ -60,7 +53,6 @@ public class ItemResource {
     private final Auth0Service auth0Service;
     private final ItemService itemService;
     private final EventService eventService;
-    private final PermissionService permissionService;
     private final TransactionService transactionService;
     private final NotificationService notificationService;
     private final EntityService entityService;
@@ -72,7 +64,6 @@ public class ItemResource {
         Auth0Service auth0Service,
         ItemService itemService,
         EventService eventService,
-        PermissionService permissionService,
         TransactionService transactionService,
         NotificationService notificationService,
         EntityService entityService,
@@ -82,7 +73,6 @@ public class ItemResource {
         this.auth0Service = auth0Service;
         this.itemService = itemService;
         this.eventService = eventService;
-        this.permissionService = permissionService;
         this.transactionService = transactionService;
         this.notificationService = notificationService;
         this.entityService = entityService;
@@ -168,146 +158,6 @@ public class ItemResource {
             }
         } else {
             builder = Response.status(Status.BAD_REQUEST);
-        }
-
-        return builder.build();
-    }
-
-    /*
-     * TODO:
-     *
-     * This resource is currently being used to retrieve items which are associated with
-     * transactions, to display on the individual user transaction page, to accommodate this
-     * the 'active' flag has been taken off the query.
-     *
-     * The 'active' field check needs to be put back on and another resource needs to be
-     * modified or created to retrieve user-authorized item data even when the item is not active
-     * Currently, API calls can access item data that have events that are not active or if the item
-     * being queried itself is not active, no bueno
-     *
-     * The resulting resource which retrieves user item data should only return the minimum amount
-     * of information necessary to use for user interfaces
-     * */
-    @GZip
-    @GET
-    @Path("/search")
-    public Response search(
-        @QueryParam("name") String name,
-        @QueryParam("id") List<ObjectId> ids,
-        @QueryParam("status") List<Integer> statuses,
-        @QueryParam("eventId") List<ObjectId> eventIds,
-        @QueryParam("organizationId") List<ObjectId> organizationIds,
-        @QueryParam("timeStartGreaterThan") Long timeStartGreaterThan,
-        @QueryParam("timeStartLessThan") Long timeStartLessThan,
-        @QueryParam("timeEndGreaterThan") Long timeEndGreaterThan,
-        @QueryParam("timeEndLessThan") Long timeEndLessThan
-    ) {
-        Query<Item> query = this.datastore.createQuery(Item.class);
-
-        if (!ids.isEmpty()) {
-            query.field("id").in(ids);
-        }
-
-        if (!statuses.isEmpty()) {
-            query.field("status").in(statuses);
-        }
-
-        if (name != null) {
-            query.field("name").startsWithIgnoreCase(name);
-        }
-
-        if (!eventIds.isEmpty()) {
-            query.field("eventId").in(eventIds);
-        }
-
-        if (timeStartGreaterThan != null) {
-            query.field("timeStart").greaterThan(new Date(timeStartGreaterThan));
-        }
-
-        if (timeStartLessThan != null) {
-            query.field("timeStart").lessThan(new Date(timeStartLessThan));
-        }
-
-        if (timeEndGreaterThan != null) {
-            query.field("timeEnd").greaterThan(new Date(timeEndGreaterThan));
-        }
-
-        if (timeEndLessThan != null) {
-            query.field("timeEnd").lessThan(new Date(timeEndLessThan));
-        }
-
-        FindOptions options = new FindOptions();
-        options.limit(ApplicationService.LIMIT_DEFAULT);
-
-        Paging<Item> entity = new Paging<>(query.asList(options), query.count());
-        return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
-    }
-
-    @GZip
-    @GET
-    @Authorized
-    public Response search(
-        @QueryParam("id") List<ObjectId> ids,
-        @QueryParam("status") List<Integer> statuses,
-        @QueryParam("eventId") List<ObjectId> eventIds,
-        @QueryParam("organizationId") List<ObjectId> organizationIds,
-        @QueryParam("name") String name,
-        @QueryParam("limit") Integer limit,
-        @QueryParam("offset") Integer offset,
-        @QueryParam("order") String order,
-        @Context DecodedJWT jwt
-    ) {
-        ResponseBuilder builder;
-
-        Query<Item> query = this.datastore.createQuery(Item.class);
-
-        if (!ids.isEmpty()) {
-            query.field("id").in(ids);
-        }
-
-        if (!statuses.isEmpty()) {
-            query.field("status").in(statuses);
-        }
-
-        if (!eventIds.isEmpty()) {
-            query.field("eventId").in(eventIds);
-        }
-
-        if (!organizationIds.isEmpty()) {
-            query.field("organizationId").in(organizationIds);
-        }
-
-        if (name != null) {
-            query.field("name").startsWithIgnoreCase(name);
-        }
-
-        FindOptions options = new FindOptions();
-
-        if (limit != null && limit > -1) {
-            options.limit(limit);
-        }
-
-        if (offset != null && offset > -1) {
-            options.skip(offset);
-        }
-
-        if (order != null) {
-            query.order(order);
-        }
-
-        List<Item> items = query.asList(options);
-
-        boolean hasPermission = this.permissionService.has(
-            jwt.getSubject(),
-            items,
-            PermissionService.READ
-        );
-
-        if (hasPermission) {
-            Paging<Item> entity = new Paging<>(items, query.count());
-            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-        } else {
-            builder = Response.status(Status.UNAUTHORIZED);
         }
 
         return builder.build();
