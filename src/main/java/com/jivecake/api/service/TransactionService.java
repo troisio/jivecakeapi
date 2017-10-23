@@ -180,7 +180,7 @@ public class TransactionService {
         amount.setCellValue(subject.amount);
         currency.setCellValue(subject.currency);
 
-        if (user != null) {
+        if (user != null && idToUserData.containsKey(user.getId())) {
             UserData data = idToUserData.get(user.getId());
             registrationNumber.setCellValue(data.number);
         }
