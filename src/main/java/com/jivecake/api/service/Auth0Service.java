@@ -41,21 +41,13 @@ public class Auth0Service {
         this.verifiers = verifiers;
         this.applicationService = applicationService;
 
-        try {
-            this.token = this.getNewToken();
-        } catch (IOException e) {
-            e.printStackTrace();
-            this.applicationService.saveException(e, null);
-        }
-
-        this.executor.schedule(() -> {
+        this.executor.scheduleAtFixedRate(() -> {
             try {
                 this.token = this.getNewToken();
             } catch (IOException e) {
-                e.printStackTrace();
                 this.applicationService.saveException(e, null);
             }
-        }, 1, TimeUnit.HOURS);
+        }, 0, 1, TimeUnit.HOURS);
     }
 
     public DecodedJWT getClaimsFromToken(String token) {
