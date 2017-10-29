@@ -76,11 +76,11 @@ public class PermissionService {
         return hasApplicationPermission && hasOrganizationPermissions;
     }
 
-    public boolean has(String user_id, Class<?> model, int permission, ObjectId objectId) {
+    public boolean has(String userId, Class<?> model, int permission, ObjectId objectId) {
         Query<Permission> query = this.datastore.find(Permission.class);
         query.field("objectClass").equal(model.getSimpleName())
             .field("objectId").equal(objectId)
-            .field("user_id").equal(user_id)
+            .field("user_id").equal(userId)
             .and(
                  query.or(
                      query.criteria("include").equal(PermissionService.ALL),

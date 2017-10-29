@@ -2,6 +2,7 @@ package com.jivecake.api.resources;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
@@ -60,12 +61,16 @@ import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.GoogleCloudPlatformService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.OrganizationService;
+import com.jivecake.api.service.StripeService;
+import com.stripe.exception.StripeException;
+import com.stripe.model.Subscription;
 
 @CORS
 @Path("user")
 @Singleton
 public class UserResource {
     private final Datastore datastore;
+    private final StripeService stripeService;
     private final ApplicationService applicationService;
     private final OrganizationService organizationService;
     private final GoogleCloudPlatformService googleCloudPlatformService;
@@ -75,6 +80,7 @@ public class UserResource {
     @Inject
     public UserResource(
         Datastore datastore,
+        StripeService stripeService,
         ApplicationService applicationService,
         OrganizationService organizationService,
         GoogleCloudPlatformService googleCloudPlatformService,
@@ -82,6 +88,7 @@ public class UserResource {
         APIConfiguration configuration
     ) {
         this.datastore = datastore;
+        this.stripeService = stripeService;
         this.applicationService = applicationService;
         this.organizationService = organizationService;
         this.googleCloudPlatformService = googleCloudPlatformService;
@@ -296,6 +303,39 @@ public class UserResource {
 
             builder = Response.ok(invitations)
                 .type(MediaType.APPLICATION_JSON);
+        } else {
+            builder = Response.status(Status.UNAUTHORIZED);
+        }
+
+        return builder.build();
+    }
+
+    @GET
+    @Authorized
+    @Path("{userId}/subscription")
+    public Response getSubscriptions(
+        @PathParam("userId") String userId,
+        @Context DecodedJWT jwt
+    ) throws StripeException {
+        ResponseBuilder builder;
+
+        if (jwt.getSubject().equals(userId)) {
+            Map<String, Object> query = new HashMap<>();
+            query.put("status", "all");
+            query.put("limit", "100");
+
+            Iterable<Subscription> subscriptions = Subscription.list(query, this.stripeService.getRequestOptions())
+                .autoPagingIterable();
+
+            List<Subscription> result = new ArrayList<>();
+
+            for (Subscription subscription: subscriptions) {
+                if (userId.equals(subscription.getMetadata().get("sub"))) {
+                    result.add(subscription);
+                }
+            }
+
+            builder = Response.ok(result, MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);
         }
