@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.Future;
 
 import javax.inject.Inject;
@@ -24,11 +23,15 @@ import com.stripe.net.RequestOptions;
 import com.stripe.net.RequestOptions.RequestOptionsBuilder;
 
 public class StripeService {
+    public static final String MONTHLY_ID = "monthly10";
+    public static final String MONTHLY_TRIAL_ID = "monthly10trial";
     private final RequestOptions requestOptions;
     private final StripeConfiguration configuration;
 
     @Inject
-    public StripeService(StripeConfiguration configuration) {
+    public StripeService(
+        StripeConfiguration configuration
+    ) {
         this.configuration = configuration;
         this.requestOptions = new RequestOptionsBuilder()
             .setApiKey(configuration.secretKey)
@@ -37,10 +40,6 @@ public class StripeService {
 
     public RequestOptions getRequestOptions() {
         return this.requestOptions;
-    }
-
-    public String getMonthly10PlanId() {
-        return "monthly10";
     }
 
     public Future<StripeAccountCredentials> getAccountCredentials(String code, InvocationCallback<StripeAccountCredentials> callback) {
@@ -57,33 +56,42 @@ public class StripeService {
     }
 
     public List<Subscription> getCurrentSubscriptions(ObjectId organizationId) throws StripeException {
-        Map<String, Object> activeSearch = new HashMap<>();
-        activeSearch.put("plan", this.getMonthly10PlanId());
-        activeSearch.put("status", "active");
-        activeSearch.put("limit", "100");
-
-        Map<String, Object> trialSearch = new HashMap<>();
-        trialSearch.put("plan", this.getMonthly10PlanId());
-        trialSearch.put("status", "trialing");
-        trialSearch.put("limit", "100");
-
-        Iterable<Subscription> active = Subscription.list(activeSearch, this.getRequestOptions())
-            .autoPagingIterable();
-        Iterable<Subscription> trialing = Subscription.list(trialSearch, this.getRequestOptions())
-            .autoPagingIterable();
-
         List<Subscription> result = new ArrayList<>();
 
-        for (Subscription subscription: active) {
-            if (Objects.equals(subscription.getMetadata().get("organizationId"), organizationId.toString())) {
-                result.add(subscription);
+        List<Iterable<Subscription>> subscriptions = this.getActiveOrTrialingSubscriptions();
+
+        for (Iterable<Subscription> iterable: subscriptions) {
+            for (Subscription subscription: iterable) {
+                if (organizationId.toString().equals(subscription.getMetadata().get("organizationId"))) {
+                    result.add(subscription);
+                }
             }
         }
 
-        for (Subscription subscription: trialing) {
-            if (Objects.equals(subscription.getMetadata().get("organizationId"), organizationId.toString())) {
-                result.add(subscription);
-            }
+        return result;
+    }
+
+    public List<Iterable<Subscription>> getActiveOrTrialingSubscriptions() throws StripeException {
+        List<Map<String, Object>> queries = new ArrayList<>();
+
+        Map<String, Object> activeTrialSearch = new HashMap<>();
+        activeTrialSearch.put("status", "active");
+        activeTrialSearch.put("limit", "100");
+
+        Map<String, Object> trialSearch = new HashMap<>();
+        trialSearch.put("status", "trialing");
+        trialSearch.put("limit", "100");
+
+        queries.add(activeTrialSearch);
+        queries.add(trialSearch);
+
+        List<Iterable<Subscription>> result = new ArrayList<>();
+
+        for (Map<String, Object> query: queries) {
+            Iterable<Subscription> subscriptions = Subscription.list(query, this.getRequestOptions())
+                .autoPagingIterable();
+
+            result.add(subscriptions);
         }
 
         return result;

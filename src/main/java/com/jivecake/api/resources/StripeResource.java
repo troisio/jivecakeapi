@@ -19,20 +19,26 @@ import javax.ws.rs.HeaderParam;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
+import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
-import org.apache.log4j.Logger;
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 
+import com.auth0.client.mgmt.ManagementAPI;
+import com.auth0.client.mgmt.filter.UserFilter;
+import com.auth0.exception.Auth0Exception;
+import com.auth0.json.mgmt.users.User;
 import com.auth0.jwt.interfaces.DecodedJWT;
+import com.jivecake.api.APIConfiguration;
 import com.jivecake.api.StripeConfiguration;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
+import com.jivecake.api.filter.GZip;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.Log;
 import com.jivecake.api.filter.PathObject;
@@ -46,6 +52,7 @@ import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.request.ItemData;
 import com.jivecake.api.request.StripeOrderPayload;
 import com.jivecake.api.service.ApplicationService;
+import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.MandrillService;
@@ -67,7 +74,8 @@ import com.stripe.net.Webhook;
 @Path("stripe")
 @Singleton
 public class StripeResource {
-    private final Logger logger = Logger.getLogger(StripeResource.class);
+    private final APIConfiguration apiConfiguration;
+    private final Auth0Service auth0Service;
     private final ApplicationService applicationService;
     private final MandrillService mandrillService;
     private final StripeConfiguration stripeConfiguration;
@@ -81,6 +89,8 @@ public class StripeResource {
 
     @Inject
     public StripeResource(
+        APIConfiguration apiConfiguration,
+        Auth0Service auth0Service,
         ApplicationService applicationService,
         MandrillService mandrillService,
         StripeConfiguration stripeConfiguration,
@@ -92,6 +102,8 @@ public class StripeResource {
         NotificationService notificationService,
         Datastore datastore
     ) {
+        this.apiConfiguration = apiConfiguration;
+        this.auth0Service = auth0Service;
         this.applicationService = applicationService;
         this.mandrillService = mandrillService;
         this.stripeConfiguration = stripeConfiguration;
@@ -110,21 +122,8 @@ public class StripeResource {
     public Response webhook(
         @HeaderParam("Stripe-Signature") String signature,
         String body
-    ) {
-        com.stripe.model.Event event = null;
-        SignatureVerificationException exception = null;
-
-        try {
-            event = Webhook.constructEvent(body, signature, this.stripeConfiguration.signingSecret);
-        } catch (SignatureVerificationException e) {
-            exception = e;
-        }
-
-        if (exception == null) {
-        } else {
-            this.logger.info(exception);
-        }
-
+    ) throws SignatureVerificationException {
+        Webhook.constructEvent(body, signature, this.stripeConfiguration.signingSecret);
         return Response.ok().build();
     }
 
@@ -404,73 +403,191 @@ public class StripeResource {
         return builder.build();
     }
 
-    @GET
-    @Path("{organizationId}/subscription")
-    @Authorized
-    @HasPermission(clazz=Organization.class, id="organizationId", permission=PermissionService.READ)
-    public Response subscribe(
-        @PathObject("organizationId") Organization organization,
-        @Context DecodedJWT jwt
-    ) {
-        ResponseBuilder builder;
-
-        List<Subscription> subscriptions = null;
-        StripeException exception = null;
-
-        try {
-            subscriptions = this.stripeService.getCurrentSubscriptions(organization.id);
-        } catch (StripeException e) {
-            exception = e;
-        }
-
-        if (exception == null) {
-            builder = Response.ok(subscriptions).type(MediaType.APPLICATION_JSON);
-        } else {
-            exception.printStackTrace();
-            builder = Response.status(Status.SERVICE_UNAVAILABLE);
-        }
-
-        return builder.build();
-    }
-
     @POST
-    @Path("{organizationId}/subscribe")
+    @Path("{organizationId}/subscribe/{planId}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
     @HasPermission(clazz=Organization.class, id="organizationId", permission=PermissionService.WRITE)
     public Response subscribe(
         @PathObject("organizationId") Organization organization,
+        @PathParam("planId") String planId,
         Map<String, Object> json,
         @Context DecodedJWT jwt
-    ) {
+    ) throws Auth0Exception, StripeException {
         ResponseBuilder builder;
 
-        Map<String, Object> customerOptions = new HashMap<>();
-        customerOptions.put("email", json.get("email"));
-        customerOptions.put("source", json.get("source"));
-        customerOptions.put("plan", this.stripeService.getMonthly10PlanId());
+        boolean validPlan = StripeService.MONTHLY_TRIAL_ID.equals(planId) || StripeService.MONTHLY_ID.equals(planId);
 
-        Map<String, Object> metadata = new HashMap<>();
-        metadata.put("sub", jwt.getSubject());
-        customerOptions.put("metadata", metadata);
+        ManagementAPI api = new ManagementAPI(
+            this.apiConfiguration.oauth.domain,
+            this.auth0Service.getToken().get("access_token").asText()
+        );
 
-        Map<String, Object> subscriptionUpdate = new HashMap<>();
-        Map<String, Object> subscriptionMetaData = new HashMap<>();
-        subscriptionMetaData.put("organizationId", organization.id);
-        subscriptionMetaData.put("sub", jwt.getSubject());
-        subscriptionUpdate.put("metadata", subscriptionMetaData);
+        User user = api.users().get(jwt.getSubject(), new UserFilter()).execute();
 
-        try {
-            Customer customer = Customer.create(customerOptions, this.stripeService.getRequestOptions());
-            List<Subscription> subscriptions = customer.getSubscriptions().getData();
-            subscriptions.get(0).update(subscriptionUpdate, this.stripeService.getRequestOptions());
-            this.entityService.cascadeLastActivity(Arrays.asList(organization), new Date());
+        if (validPlan) {
+            boolean trialViolation = false;
 
-            builder = Response.ok(customer).type(MediaType.APPLICATION_JSON);
-        } catch (StripeException e) {
-            builder = Response.status(Status.SERVICE_UNAVAILABLE).entity(e);
+            if (StripeService.MONTHLY_TRIAL_ID.equals(planId)) {
+                Map<String, Object> query = new HashMap<>();
+                query.put("plan", StripeService.MONTHLY_TRIAL_ID);
+                query.put("status", "all");
+                query.put("limit", "100");
+
+                Iterable<Subscription> subscriptions = Subscription.list(
+                    query,
+                    this.stripeService.getRequestOptions()
+                ).autoPagingIterable();
+
+                for (Subscription subscription: subscriptions) {
+                    Map<String, String> metadata = subscription.getMetadata();
+
+                    trialViolation = organization.id.toString().equals(metadata.get("organizationId")) ||
+                        jwt.getSubject().equals(metadata.get("sub")) ||
+                        user.getEmail().equals(metadata.get("email"));
+
+                    if (trialViolation) {
+                        break;
+                    }
+                }
+            }
+
+            if (trialViolation) {
+                ErrorData entity = new ErrorData();
+                entity.error = "hasSubscribed";
+                builder = Response.status(Status.BAD_REQUEST)
+                    .entity(entity)
+                    .type(MediaType.APPLICATION_JSON);
+            } else {
+                Map<String, Object> customerOptions = new HashMap<>();
+                customerOptions.put("email", json.get("email"));
+                customerOptions.put("source", json.get("source"));
+                customerOptions.put("plan", planId);
+
+                Map<String, Object> metadata = new HashMap<>();
+                metadata.put("sub", jwt.getSubject());
+                customerOptions.put("metadata", metadata);
+
+                Map<String, Object> subscriptionUpdate = new HashMap<>();
+                Map<String, Object> subscriptionMetaData = new HashMap<>();
+                subscriptionMetaData.put("organizationId", organization.id);
+                subscriptionMetaData.put("sub", jwt.getSubject());
+                subscriptionMetaData.put("email", user.getEmail());
+                subscriptionUpdate.put("metadata", subscriptionMetaData);
+
+                try {
+                    Customer customer = Customer.create(customerOptions, this.stripeService.getRequestOptions());
+                    List<Subscription> subscriptions = customer.getSubscriptions().getData();
+                    Subscription subscription = subscriptions.get(0);
+                    subscription.update(subscriptionUpdate, this.stripeService.getRequestOptions());
+                    this.entityService.cascadeLastActivity(Arrays.asList(organization), new Date());
+
+                    builder = Response.ok(subscription, MediaType.APPLICATION_JSON);
+                } catch (StripeException e) {
+                    builder = Response.status(Status.SERVICE_UNAVAILABLE);
+                }
+            }
+        } else {
+            builder = Response.status(Status.NOT_FOUND);
         }
 
         return builder.build();
+    }
+
+    @GET
+    @GZip
+    @Path("subscription")
+    @Authorized
+    public Response subscribe(
+        @QueryParam("organizationId") ObjectId organizationId,
+        @QueryParam("sub") String sub,
+        @QueryParam("email") String email,
+        @QueryParam("status") String status,
+        @QueryParam("planId") String plan,
+        @QueryParam("limit") Long limit,
+        @Context DecodedJWT jwt
+    ) throws StripeException, Auth0Exception {
+        boolean validQuery = organizationId != null || sub != null || email != null;
+        boolean validLimit = limit == null || (limit > -1 && limit < 101);
+        boolean validStatus = status == null ||
+            "active".equals(status) ||
+            "all".equals(status) ||
+            "trialing".equals(status) ||
+            "past_due".equals(status) ||
+            "canceled".equals(status) ||
+            "unpaid".equals(status);
+
+        if (!validLimit || !validStatus || !validQuery) {
+            return Response.status(Status.BAD_REQUEST).build();
+        }
+
+        boolean isAuthorized = false;
+
+        if (email != null) {
+            ManagementAPI api = new ManagementAPI(
+                this.apiConfiguration.oauth.domain,
+                this.auth0Service.getToken().get("access_token").asText()
+            );
+
+            User user = api.users().get(jwt.getSubject(), new UserFilter()).execute();
+
+            isAuthorized = email != null && email.equals(user.getEmail());
+        }
+
+        if (sub != null) {
+            isAuthorized = jwt.getSubject().equals(sub);
+        }
+
+        if (organizationId != null) {
+            isAuthorized = this.permissionService.has(
+                jwt.getSubject(),
+                Organization.class,
+                PermissionService.READ,
+                organizationId
+            );
+        }
+
+        if (!isAuthorized) {
+            return Response.status(Status.UNAUTHORIZED).build();
+        }
+
+        Map<String, Object> query = new HashMap<>();
+
+        if (plan != null) {
+            query.put("plan", plan);
+        }
+
+        if (status != null) {
+            query.put("status", status);
+        }
+
+        if (limit != null) {
+            query.put("limit", limit);
+        }
+
+        List<Subscription> result = new ArrayList<>();
+
+        Subscription.list(
+            query,
+            this.stripeService.getRequestOptions()
+        )
+        .autoPagingIterable()
+        .forEach(subscription -> {
+            Map<String, String> metaData = subscription.getMetadata();
+
+            if (organizationId != null && organizationId.toString().equals(metaData.get("organizationId"))) {
+                result.add(subscription);
+            }
+
+            if (email != null && email.equals(metaData.get("email"))) {
+                result.add(subscription);
+            }
+
+            if (sub != null && sub.equals(metaData.get("sub"))) {
+                result.add(subscription);
+            }
+        });
+
+        return Response.ok(result, MediaType.APPLICATION_JSON).build();
     }
 }

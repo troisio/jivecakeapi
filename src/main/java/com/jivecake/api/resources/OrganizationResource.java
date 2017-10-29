@@ -513,7 +513,7 @@ public class OrganizationResource {
                 List<Subscription> subscriptions = null;
 
                 try {
-                    subscriptions = stripeService.getCurrentSubscriptions(organization.id);
+                    subscriptions = this.stripeService.getCurrentSubscriptions(organization.id);
                 } catch (StripeException e) {
                     stripeException = e;
                 }
@@ -889,8 +889,10 @@ public class OrganizationResource {
             .count();
 
         if (count > 0) {
+            ErrorData errorData = new ErrorData();
+            errorData.error = "count";
             builder = Response.status(Status.BAD_REQUEST)
-                .entity("{\"error\": \"count\"}")
+                .entity(errorData)
                 .type(MediaType.APPLICATION_JSON);
         } else if (searchedOrganization.parentId == null) {
             builder = Response.status(Status.BAD_REQUEST);

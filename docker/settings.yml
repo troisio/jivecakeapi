@@ -9,7 +9,6 @@ oauth:
   nonInteractiveClientId: "default"
   nonInteractiveSecret: "default"
   domain: "default"
-  apiToken: "default"
 
 paypal:
   webhookId: "default"
