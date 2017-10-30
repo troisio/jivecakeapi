@@ -43,9 +43,6 @@ import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageClass;
 import com.google.cloud.storage.StorageException;
 import com.google.cloud.storage.StorageOptions;
-import com.google.cloud.vision.v1.AnnotateImageResponse;
-import com.google.cloud.vision.v1.FaceAnnotation;
-import com.google.cloud.vision.v1.Feature.Type;
 import com.jivecake.api.APIConfiguration;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
@@ -193,93 +190,36 @@ public class UserResource {
         byte[] bytes = IOUtils.toByteArray(stream);
         Blob blob = storage.create(info, bytes);
 
-        IOException exception = null;
-        List<AnnotateImageResponse> responses = null;
+        List<EntityAsset> assets = this.datastore.createQuery(EntityAsset.class)
+            .field("entityType").equal(EntityType.USER)
+            .field("entityId").equal(jwt.getSubject())
+            .field("assetType").equal(AssetType.GOOGLE_CLOUD_STORAGE_BLOB_FACE)
+            .asList();
 
-        try {
-            responses = this.googleCloudPlatformService.getAnnotations(
-                Type.FACE_DETECTION,
-                String.format("gs://%s/%s", this.configuration.gcp.bucket, name)
-            );
-            exception = null;
-        } catch (IOException e) {
-            exception = e;
-        }
+        for (EntityAsset asset: assets) {
+            String[] parts = asset.assetId.split("/");
 
-        ResponseBuilder builder;
-
-        if (exception == null) {
-            boolean detectsOneFace = false;
-
-            AnnotateImageResponse response = responses.get(0);
-            List<FaceAnnotation> annotations = response.getFaceAnnotationsList();
-
-            if (annotations.size() ==1) {
-                FaceAnnotation annotation = annotations.get(0);
-                detectsOneFace = annotation.getDetectionConfidence() > 0.9;
+            try {
+                storage.delete(BlobId.of(parts[0], parts[1]));
+            } catch (StorageException e) {
+                e.printStackTrace();
             }
 
-            if (detectsOneFace) {
-                List<EntityAsset> assets = this.datastore.createQuery(EntityAsset.class)
-                    .field("entityType").equal(EntityType.USER)
-                    .field("entityId").equal(jwt.getSubject())
-                    .field("assetType").equal(AssetType.GOOGLE_CLOUD_STORAGE_BLOB_FACE)
-                    .asList();
-
-                for (EntityAsset asset: assets) {
-                    String[] parts = asset.assetId.split("/");
-
-                    try {
-                        storage.delete(BlobId.of(parts[0], parts[1]));
-                    } catch (StorageException e) {
-                        e.printStackTrace();
-                    }
-
-                    this.datastore.delete(asset);
-                }
-
-                EntityAsset asset = new EntityAsset();
-                asset.entityType = EntityType.USER;
-                asset.entityId = jwt.getSubject();
-                asset.assetId = blob.getBucket() + "/" + blob.getName();
-                asset.assetType = AssetType.GOOGLE_CLOUD_STORAGE_BLOB_FACE;
-                asset.name = "";
-                asset.timeCreated = new Date();
-
-                this.datastore.save(asset);
-                this.notificationService.notify(Arrays.asList(asset), "asset.create");
-
-                builder = Response.ok(asset).type(MediaType.APPLICATION_JSON);
-            } else {
-                try {
-                    storage.delete(BlobId.of(this.configuration.gcp.bucket, name));
-                } catch (StorageException e) {
-                    e.printStackTrace();
-                }
-
-                Map<String, Object> entity = new HashMap<>();
-                entity.put("error", "face");
-
-                Map<String, Object> data = new HashMap<>();
-                data.put("annotationsCount", annotations.size());
-
-                if (annotations.size() == 1) {
-                    FaceAnnotation annotation = annotations.get(0);
-                    data.put("confidence", annotation.getDetectionConfidence());
-                }
-
-                entity.put("data", data);
-
-                builder = Response.status(Status.BAD_REQUEST)
-                    .entity(entity)
-                    .type(MediaType.APPLICATION_JSON);
-            }
-        } else {
-            this.applicationService.saveException(exception, jwt.getSubject());
-            builder = Response.status(Status.SERVICE_UNAVAILABLE);
+            this.datastore.delete(asset);
         }
 
-        return builder.build();
+        EntityAsset asset = new EntityAsset();
+        asset.entityType = EntityType.USER;
+        asset.entityId = jwt.getSubject();
+        asset.assetId = blob.getBucket() + "/" + blob.getName();
+        asset.assetType = AssetType.GOOGLE_CLOUD_STORAGE_BLOB_FACE;
+        asset.name = "";
+        asset.timeCreated = new Date();
+
+        this.datastore.save(asset);
+        this.notificationService.notify(Arrays.asList(asset), "asset.create");
+
+        return Response.ok(asset).type(MediaType.APPLICATION_JSON).build();
     }
 
     @GET
@@ -301,8 +241,7 @@ public class UserResource {
                 .field("timeAccepted").doesNotExist()
                 .asList();
 
-            builder = Response.ok(invitations)
-                .type(MediaType.APPLICATION_JSON);
+            builder = Response.ok(invitations, MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);
         }

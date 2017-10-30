@@ -239,13 +239,13 @@ public class APIApplication extends Application<APIConfiguration> {
         PermissionService permissionService,
         com.jivecake.api.model.Application application,
         Organization organization,
-        List<String> user_ids
+        List<String> userIds
     ) {
         Date time = new Date();
 
         Collection<Permission> permissions = new ArrayList<>();
 
-        for (String user_id: user_ids) {
+        for (String user_id: userIds) {
             Permission organizationPermission = new Permission();
             organizationPermission.include = PermissionService.ALL;
             organizationPermission.permissions = new HashSet<>();

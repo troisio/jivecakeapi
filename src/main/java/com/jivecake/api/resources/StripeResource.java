@@ -324,16 +324,19 @@ public class StripeResource {
                                     "event.update"
                                 );
                             } catch (InterruptedException | ExecutionException e) {
+                                e.printStackTrace();
                                 this.applicationService.saveException(e, userId);
                             }
                         }
 
                         builder = Response.ok();
                     } else {
+                        exception.printStackTrace();
                         this.applicationService.saveException(exception, userId);
                         builder = Response.status(Status.SERVICE_UNAVAILABLE);
                     }
                 } else {
+                    tokenException.printStackTrace();
                     this.applicationService.saveException(tokenException, userId);
                     builder = Response.status(Status.SERVICE_UNAVAILABLE);
                 }
@@ -552,6 +555,7 @@ public class StripeResource {
         }
 
         Map<String, Object> query = new HashMap<>();
+        query.put("limit", 100);
 
         if (plan != null) {
             query.put("plan", plan);
@@ -559,10 +563,6 @@ public class StripeResource {
 
         if (status != null) {
             query.put("status", status);
-        }
-
-        if (limit != null) {
-            query.put("limit", limit);
         }
 
         List<Subscription> result = new ArrayList<>();

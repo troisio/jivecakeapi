@@ -1,7 +1,5 @@
 package com.jivecake.api.service;
 
-import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -14,14 +12,6 @@ import com.google.cloud.storage.Cors;
 import com.google.cloud.storage.Cors.Origin;
 import com.google.cloud.storage.HttpMethod;
 import com.google.cloud.storage.Storage;
-import com.google.cloud.vision.v1.AnnotateImageRequest;
-import com.google.cloud.vision.v1.AnnotateImageResponse;
-import com.google.cloud.vision.v1.BatchAnnotateImagesResponse;
-import com.google.cloud.vision.v1.Feature;
-import com.google.cloud.vision.v1.Image;
-import com.google.cloud.vision.v1.ImageAnnotatorClient;
-import com.google.cloud.vision.v1.ImageAnnotatorSettings;
-import com.google.cloud.vision.v1.ImageSource;
 import com.jivecake.api.APIConfiguration;
 
 public class GoogleCloudPlatformService {
@@ -53,30 +43,5 @@ public class GoogleCloudPlatformService {
             .build();
 
         return storage.update(info);
-    }
-
-    public List<AnnotateImageResponse> getAnnotations(Feature.Type featureType, String path) throws IOException {
-        List<AnnotateImageRequest> requests = new ArrayList<>();
-
-        ImageAnnotatorSettings settings = ImageAnnotatorSettings.newBuilder().build();
-
-        ImageSource imgSource = ImageSource.newBuilder()
-            .setGcsImageUri(path)
-            .build();
-        Image img = Image.newBuilder()
-            .setSource(imgSource)
-            .build();
-        Feature feat = Feature.newBuilder()
-            .setType(featureType)
-            .build();
-
-        AnnotateImageRequest request = AnnotateImageRequest.newBuilder()
-            .addFeatures(feat)
-            .setImage(img)
-            .build();
-        requests.add(request);
-        ImageAnnotatorClient client = ImageAnnotatorClient.create(settings);
-        BatchAnnotateImagesResponse response = client.batchAnnotateImages(requests);
-        return response.getResponsesList();
     }
 }

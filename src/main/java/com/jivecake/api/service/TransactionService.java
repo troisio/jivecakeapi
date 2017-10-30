@@ -47,13 +47,30 @@ public class TransactionService {
         TransactionService.DEFAULT_DECIMAL_FORMAT.setGroupingUsed(false);
     }
 
-    private final Datastore datastore;
-    public static final List<String> CURRENCIES = Arrays.asList("EUR", "USD");
+    public static final List<String> CURRENCIES = Arrays.asList(
+        "AUD",
+        "BBD",
+        "BRL",
+        "BSD",
+        "CAD",
+        "EUR",
+        "GBP",
+        "ILS",
+        "ISK",
+        "NZD",
+        "RUS",
+        "SEK",
+        "TTD",
+        "USD",
+        "ZAR"
+    );
     public static final Predicate<Transaction> usedForCountFilter = transaction -> transaction.leaf &&
         (
             transaction.status == TransactionService.SETTLED ||
             transaction.status == TransactionService.PENDING
         );
+
+    private final Datastore datastore;
 
     @Inject
     public TransactionService(Datastore datastore) {
