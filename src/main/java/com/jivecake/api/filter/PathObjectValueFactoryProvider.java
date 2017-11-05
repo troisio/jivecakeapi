@@ -26,46 +26,50 @@ public class PathObjectValueFactoryProvider extends AbstractValueFactoryProvider
 
     @Override
     protected Factory<?> createValueFactory(Parameter parameter) {
-        PathObject pathObject = parameter.getAnnotation(PathObject.class);
-        Datastore datastore = this.datastore;
+        AbstractContainerRequestValueFactory<Object> result;
 
-        Class<?> collection = pathObject.collection();
-        Class<?> clazz;
+        if (parameter.isAnnotationPresent(PathObject.class)) {
+            PathObject pathObject = parameter.getAnnotation(PathObject.class);
+            Class<?> collection = pathObject.collection();
+            Class<?> clazz;
 
-        if (collection.equals(Object.class)) {
-            clazz = parameter.getRawType();
+            if (collection.equals(Object.class)) {
+                clazz = parameter.getRawType();
+            } else {
+                clazz = collection;
+            }
+
+            result = new AbstractContainerRequestValueFactory<Object>() {
+                @Context
+                private UriInfo info;
+
+                @Override
+                public Object provide() {
+                    Object result = null;
+
+                    List<String> value = this.info.getPathParameters(true).get(pathObject.value());
+
+                    if (!value.isEmpty()) {
+                        ObjectId id;
+
+                        try {
+                            id = new ObjectId(value.get(0));
+                        } catch (IllegalArgumentException e) {
+                            id = null;
+                        }
+
+                        if (id != null) {
+                            result = PathObjectValueFactoryProvider.this.datastore.createQuery(clazz).field("id").equal(id).get();
+                        }
+                    }
+
+                    return result;
+                }
+            };
         } else {
-            clazz = collection;
+            result = null;
         }
 
-        AbstractContainerRequestValueFactory<Object> request = new AbstractContainerRequestValueFactory<Object>() {
-            @Context
-            private UriInfo info;
-
-            @Override
-            public Object provide() {
-                Object result = null;
-
-                List<String> value = this.info.getPathParameters(true).get(pathObject.value());
-
-                if (!value.isEmpty()) {
-                    ObjectId id;
-
-                    try {
-                        id = new ObjectId(value.get(0));
-                    } catch (IllegalArgumentException e) {
-                        id = null;
-                    }
-
-                    if (id != null) {
-                        result = datastore.createQuery(clazz).field("id").equal(id).get();
-                    }
-                }
-
-                return result;
-            }
-        };
-
-        return request;
+        return result;
     }
 }

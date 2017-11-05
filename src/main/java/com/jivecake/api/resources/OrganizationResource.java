@@ -57,6 +57,7 @@ import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.GZip;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
+import com.jivecake.api.filter.ValidEvent;
 import com.jivecake.api.model.AssetType;
 import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.EntityType;
@@ -492,7 +493,7 @@ public class OrganizationResource {
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
     public Response createEvent(
         @PathObject("id") Organization organization,
-        Event event
+        @ValidEvent Event event
     ) {
         ResponseBuilder builder;
 
