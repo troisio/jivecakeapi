@@ -1,5 +1,10 @@
 ### JiveCake API Project
 
+#### Dependencies
+
+- [gradle](https://gradle.org/install)
+- [docker](https://www.docker.com)
+
 #### Build
 
 ```sh
@@ -22,6 +27,6 @@ cd your_project_directory
 gradle test -Ddb=MONGO_DB_URL
 ```
 
-#### Google Cloud Platform
+#### Settings
 
-This project depends on Google Cloud Platform. You will need a Google Cloud Platform account. You will need to download [Cloud SDK](https://cloud.google.com/sdk/). The [authentication process](https://developers.google.com/identity/protocols/application-default-credentials) is outside the scope of this document.
+The settings files in docker/settings.yml need to be filled out.
