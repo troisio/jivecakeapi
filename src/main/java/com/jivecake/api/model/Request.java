@@ -4,8 +4,6 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
-import javax.ws.rs.core.Cookie;
-
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.annotations.Entity;
 import org.mongodb.morphia.annotations.Field;
@@ -34,8 +32,7 @@ public class Request {
     public String uri;
     public String ip;
     public String body;
-    public Map<String, String[]> query;
-    public Map<String, Cookie> cookies;
+    public Map<String, List<String>> query;
     public Map<String, List<String>> headers;
     public String user_id;
     public Date timeCreated;
