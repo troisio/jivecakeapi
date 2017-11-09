@@ -4,7 +4,11 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.net.URI;
+import java.util.Arrays;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import javax.inject.Inject;
 import javax.servlet.http.HttpServletRequest;
@@ -36,36 +40,53 @@ public class LogFilter implements ContainerRequestFilter {
     }
 
     @Override
-    public void filter(ContainerRequestContext requestContext) throws IOException {
+    public void filter(ContainerRequestContext context) throws IOException {
         Log log = this.resourceInfo.getResourceMethod().getAnnotation(Log.class);
 
         Request request = new Request();
-        URI uri = requestContext.getUriInfo().getRequestUri();
-        request.cookies = requestContext.getCookies();
+        URI uri = context.getUriInfo().getRequestUri();
         request.uri = uri.toString();
         request.path = uri.getPath();
         request.ip = this.request.getRemoteAddr();
-        request.headers = requestContext.getHeaders();
-        request.query = this.request.getParameterMap();
         request.timeCreated = new Date();
+
+        Map<String, List<String>> headers = context.getHeaders();
+        Map<String, List<String>> headersCopy = new HashMap<>();
+
+        Map<String, String[]> query = this.request.getParameterMap();
+        Map<String, List<String>> queryCopy = new HashMap<>();
+
+        for (String key: headers.keySet()) {
+            headersCopy.put(key.replace('.', ' '), headers.get(key));
+        }
+
+        for (String key: query.keySet()) {
+            queryCopy.put(key.replace('.', ' '), Arrays.asList(query.get(key)));
+        }
+
+        request.headers = headersCopy;
+        request.query = queryCopy;
 
         if (log.body()) {
             String requestEncoding = this.request.getCharacterEncoding();
             String encoding = requestEncoding == null ? "UTF-8" : requestEncoding;
 
             StringWriter writer = new StringWriter();
-            IOUtils.copy(requestContext.getEntityStream(), writer, encoding);
+            IOUtils.copy(context.getEntityStream(), writer, encoding);
             request.body = writer.toString();
-            requestContext.setEntityStream(new ByteArrayInputStream(request.body.getBytes()));
+            context.setEntityStream(new ByteArrayInputStream(request.body.getBytes()));
         }
 
-        String authorization = requestContext.getHeaderString("Authorization");
+        String authorization = context.getHeaderString("Authorization");
 
         if (authorization != null && authorization.startsWith("Bearer .")) {
             String token = authorization.substring("Bearer ".length());
 
             DecodedJWT jwt = this.auth0Service.getClaimsFromToken(token);
-            request.user_id = jwt.getSubject();
+
+            if (jwt != null) {
+                request.user_id = jwt.getSubject();
+            }
         }
 
         this.datastore.save(request);

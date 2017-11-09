@@ -3,6 +3,9 @@ rootOAuthIds:
 errorRecipients:
   - ""
 
+facebook:
+  messengerWebhookVerifyToken: "default"
+
 oauth:
   webClientId: "default"
   webClientSecret: "default"
