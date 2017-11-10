@@ -31,6 +31,7 @@ public class Request {
     public String path;
     public String uri;
     public String ip;
+    public String method;
     public String body;
     public Map<String, List<String>> query;
     public Map<String, List<String>> headers;
