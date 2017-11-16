@@ -6,7 +6,7 @@ errorRecipients:
 facebook:
   messengerWebhookVerifyToken: "default"
   secret: "default"
-  pageAccessToken: "default"
+  accessToken: "default"
 
 oauth:
   webClientId: "default"

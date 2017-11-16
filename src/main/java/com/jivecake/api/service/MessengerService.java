@@ -1,5 +1,6 @@
 package com.jivecake.api.service;
 
+import java.io.File;
 import java.io.IOException;
 
 import javax.inject.Inject;
@@ -9,6 +10,7 @@ import javax.ws.rs.core.MediaType;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jivecake.api.APIConfiguration;
 
@@ -32,6 +34,77 @@ public class MessengerService {
             .queryParam("access_token", this.configuration.facebook.accessToken)
             .request()
             .buildPost(Entity.entity(node, MediaType.APPLICATION_JSON))
+            .invoke()
+            .readEntity(String.class);
+
+        return this.mapper.readTree(entity);
+    }
+
+    public JsonNode setWhiteListedDomains() throws IOException {
+        ObjectNode body = this.mapper.createObjectNode();
+        ArrayNode array = body.putArray("whitelisted_domains");
+        array.add("https://jivecake.com");
+
+        String entity = ClientBuilder.newClient()
+            .target("https://graph.facebook.com/v2.6/me/messenger_profile")
+            .queryParam("access_token", this.configuration.facebook.accessToken)
+            .request()
+            .buildPost(Entity.entity(body, MediaType.APPLICATION_JSON))
+            .invoke()
+            .readEntity(String.class);
+
+        return this.mapper.readTree(entity);
+    }
+
+    public JsonNode setStandardGreeting() throws IOException {
+        File file = new File("facebook/greeting.json");
+
+        String entity = ClientBuilder.newClient()
+            .target("https://graph.facebook.com/v2.6/me/messenger_profile")
+            .queryParam("access_token", this.configuration.facebook.accessToken)
+            .request()
+            .buildPost(Entity.entity(file, MediaType.APPLICATION_JSON))
+            .invoke()
+            .readEntity(String.class);
+
+        return this.mapper.readTree(entity);
+    }
+
+    public JsonNode setGetStarted() throws IOException {
+        File file = new File("facebook/getStarted.json");
+
+        String entity = ClientBuilder.newClient()
+            .target("https://graph.facebook.com/v2.6/me/messenger_profile")
+            .queryParam("access_token", this.configuration.facebook.accessToken)
+            .request()
+            .buildPost(Entity.entity(file, MediaType.APPLICATION_JSON))
+            .invoke()
+            .readEntity(String.class);
+
+        return this.mapper.readTree(entity);
+    }
+
+    public JsonNode setBotData() throws IOException {
+        File file = new File("facebook/data.json");
+
+        String entity = ClientBuilder.newClient()
+            .target("https://graph.facebook.com/v2.6/me/messenger_profile")
+            .queryParam("access_token", this.configuration.facebook.accessToken)
+            .request()
+            .buildPost(Entity.entity(file, MediaType.APPLICATION_JSON))
+            .invoke()
+            .readEntity(String.class);
+
+        return this.mapper.readTree(entity);
+    }
+
+    public JsonNode getBotData() throws IOException {
+        String entity = ClientBuilder.newClient()
+            .target("https://graph.facebook.com/v2.6/me/messenger_profile")
+            .queryParam("access_token", this.configuration.facebook.accessToken)
+            .queryParam("fields", "greeting,whitelisted_domains,get_started")
+            .request()
+            .buildGet()
             .invoke()
             .readEntity(String.class);
 

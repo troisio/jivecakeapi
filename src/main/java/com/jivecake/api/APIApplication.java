@@ -68,6 +68,7 @@ import com.jivecake.api.service.GoogleCloudPlatformService;
 import com.jivecake.api.service.HttpService;
 import com.jivecake.api.service.ItemService;
 import com.jivecake.api.service.MandrillService;
+import com.jivecake.api.service.MessengerService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PermissionService;
@@ -124,6 +125,7 @@ public class APIApplication extends Application<APIConfiguration> {
         HttpService.class,
         ItemService.class,
         MandrillService.class,
+        MessengerService.class,
         NotificationService.class,
         OrganizationService.class,
         PermissionService.class,
