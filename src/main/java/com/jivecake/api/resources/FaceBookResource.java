@@ -60,8 +60,6 @@ public class FaceBookResource {
                 return Response.status(Status.BAD_REQUEST).build();
             }
 
-System.out.println(node);
-
             builder = Response.ok();
         } else {
             builder = Response.status(Status.FORBIDDEN);

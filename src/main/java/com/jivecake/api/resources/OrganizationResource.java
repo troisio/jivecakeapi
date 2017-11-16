@@ -57,6 +57,7 @@ import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.GZip;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
+import com.jivecake.api.filter.QueryRestrict;
 import com.jivecake.api.filter.ValidEvent;
 import com.jivecake.api.model.AssetType;
 import com.jivecake.api.model.EntityAsset;
@@ -294,7 +295,7 @@ public class OrganizationResource {
                 asset.assetType = AssetType.ORGANIZATION_CONSENT_TEXT;
                 asset.timeCreated = new Date();
 
-                long byteLimit = 100000;
+                long byteLimit = 1000000;
 
                 if (asset.data.length > byteLimit) {
                     ErrorData data = new ErrorData();
@@ -674,55 +675,14 @@ public class OrganizationResource {
     @GZip
     @GET
     @Path("search")
+    @QueryRestrict(hasAny=true, target={"email"})
     public Response search(
-        @QueryParam("id") List<ObjectId> organizationIds,
-        @QueryParam("parentId") List<ObjectId> parentIds,
-        @QueryParam("name") String name,
-        @QueryParam("shortName") String shortName,
-        @QueryParam("email") String email,
-        @QueryParam("order") String order,
-        @QueryParam("limit") Integer limit,
-        @QueryParam("offset") Integer offset
+        @QueryParam("email") String email
     ) {
         Query<Organization> query = this.datastore.createQuery(Organization.class);
+        query.field("email").equal(email);
 
-        if (!organizationIds.isEmpty()) {
-            query.field("id").in(organizationIds);
-        }
-
-        if (shortName != null) {
-            query.field("shortName").equal(shortName);
-        }
-
-        if (!parentIds.isEmpty()) {
-            query.field("parentId").in(parentIds);
-        }
-
-        if (name != null) {
-            query.field("name").startsWithIgnoreCase(name);
-        }
-
-        if (email != null) {
-            query.field("email").startsWithIgnoreCase(email);
-        }
-
-        if (order != null) {
-            query.order(order);
-        }
-
-        FindOptions options = new FindOptions();
-
-        if (limit != null && limit > -1 && limit <= 100) {
-            options.limit(limit);
-        } else {
-            options.limit(100);
-        }
-
-        if (offset != null && offset > -1) {
-            options.skip(offset);
-        }
-
-        Paging<Organization> entity = new Paging<>(query.asList(options), query.count());
+        Paging<Organization> entity = new Paging<>(query.asList(), query.count());
         return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
     }
 

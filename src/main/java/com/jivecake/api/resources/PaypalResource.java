@@ -54,6 +54,7 @@ import com.jivecake.api.request.PaypalAuthorizationPayload;
 import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
+import com.jivecake.api.service.MandrillService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.TransactionService;
@@ -78,6 +79,7 @@ import com.paypal.base.rest.PayPalRESTException;
 @Singleton
 public class PaypalResource {
     private final Datastore datastore;
+    private final MandrillService mandrillService;
     private final ApplicationService applicationService;
     private final EventService eventService;
     private final EntityService entityService;
@@ -91,6 +93,7 @@ public class PaypalResource {
     @Inject
     public PaypalResource(
         Datastore datastore,
+        MandrillService mandrillService,
         ApplicationService applicationService,
         EventService eventService,
         EntityService entityService,
@@ -100,6 +103,7 @@ public class PaypalResource {
         APIConfiguration configuration
     ) {
         this.datastore = datastore;
+        this.mandrillService = mandrillService;
         this.applicationService = applicationService;
         this.eventService = eventService;
         this.entityService = entityService;
@@ -308,6 +312,31 @@ public class PaypalResource {
                 this.notificationService.notify(new ArrayList<>(transactions), "transaction.create");
                 this.entityService.cascadeLastActivity(new ArrayList<>(transactions), date);
 
+                Event event = this.datastore.get(Event.class, transactions.get(0).eventId);
+
+                if (jwt == null) {
+                    List<ObjectId> itemIds = transactions.stream()
+                        .map(transaction -> transaction.itemId)
+                        .collect(Collectors.toList());
+                    List<Item> transactionItems = this.datastore.get(Item.class, itemIds).asList();
+
+                    Map<String, Object> message = this.mandrillService.getTransactionConfirmation(
+                        complete,
+                        event,
+                        transactionItems,
+                        transactions
+                    );
+
+                    this.mandrillService.send(message);
+                } else {
+                    this.eventService.assignNumberToUserSafely(jwt.getSubject(), event).thenAcceptAsync((updatedEvent) -> {
+                        this.notificationService.notify(
+                            Arrays.asList(updatedEvent),
+                            "event.update"
+                        );
+                    });
+                }
+
                 builder = Response.status(Status.CREATED);
             } else if ("failed".equals(complete.getState())) {
                 Map<String, Object> body = new HashMap<>();
@@ -441,15 +470,6 @@ public class PaypalResource {
                 if (exception == null) {
                     Map<String, Object> body = new HashMap<>();
                     body.put("id", newPayment.getId());
-
-                    if (userId != null) {
-                        this.eventService.assignNumberToUserSafely(userId, event).thenAcceptAsync((updatedEvent) -> {
-                            this.notificationService.notify(
-                                Arrays.asList(updatedEvent),
-                                "event.update"
-                            );
-                        });
-                    }
 
                     builder = Response.ok(body).type(MediaType.APPLICATION_JSON);
                 } else {

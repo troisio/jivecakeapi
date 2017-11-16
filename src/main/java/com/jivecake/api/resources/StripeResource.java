@@ -43,6 +43,7 @@ import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.Log;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.model.Event;
+import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.StripePaymentProfile;
 import com.jivecake.api.model.Transaction;
@@ -300,20 +301,16 @@ public class StripeResource {
                         );
 
                         if (userId == null) {
-                            Map<String, String> to = new HashMap<>();
-                            to.put("email", token.getEmail());
-                            to.put("type", "to");
+                            List<Item> items = aggregated.itemData.stream()
+                                .map(data -> data.item)
+                                .collect(Collectors.toList());
 
-                            Map<String, Object> message = new HashMap<>();
-                            message.put(
-                                "text",
-                                "Your payment for " + event.name + " has been received. Your Stripe transaction ID is "
-                                + charge.getId()
+                            Map<String, Object> message = this.mandrillService.getTransactionConfirmation(
+                                token,
+                                event,
+                                items,
+                                completedTransactions
                             );
-                            message.put("subject", event.name);
-                            message.put("from_email", "noreply@jivecake.com");
-                            message.put("from_name", "JiveCake");
-                            message.put("to", Arrays.asList(to));
 
                             this.mandrillService.send(message);
                         } else {
@@ -324,19 +321,16 @@ public class StripeResource {
                                     "event.update"
                                 );
                             } catch (InterruptedException | ExecutionException e) {
-                                e.printStackTrace();
                                 this.applicationService.saveException(e, userId);
                             }
                         }
 
                         builder = Response.ok();
                     } else {
-                        exception.printStackTrace();
                         this.applicationService.saveException(exception, userId);
                         builder = Response.status(Status.SERVICE_UNAVAILABLE);
                     }
                 } else {
-                    tokenException.printStackTrace();
                     this.applicationService.saveException(tokenException, userId);
                     builder = Response.status(Status.SERVICE_UNAVAILABLE);
                 }
