@@ -680,7 +680,7 @@ public class OrganizationResource {
         @QueryParam("email") String email
     ) {
         Query<Organization> query = this.datastore.createQuery(Organization.class);
-        query.field("email").equal(email);
+        query.field("email").equalIgnoreCase(email);
 
         Paging<Organization> entity = new Paging<>(query.asList(), query.count());
         return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
