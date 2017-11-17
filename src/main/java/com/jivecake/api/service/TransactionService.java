@@ -54,6 +54,7 @@ public class TransactionService {
         "BSD",
         "CAD",
         "EUR",
+        "FJD",
         "GBP",
         "ILS",
         "ISK",
