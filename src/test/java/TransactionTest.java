@@ -30,7 +30,7 @@ public class TransactionTest {
         transaction.organizationName = "org";
         transaction.currency = "currency";
         transaction.email = "email@email.com";
-        transaction.leaf = false;
+        transaction.leaf = true;
         transaction.timeCreated = new Date(0);
 
         Transaction newTransaction = new Transaction(transaction);

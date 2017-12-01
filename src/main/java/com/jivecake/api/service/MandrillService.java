@@ -57,7 +57,7 @@ public class MandrillService {
         String transactionLines = transactions.stream().map(transaction -> {
             Item foundItem = items.stream().filter(item -> transaction.itemId.equals(item.id)).findFirst().get();
             return String.format("<p><strong>%s</strong> (%s)</p>", foundItem.name, transaction.quantity);
-        }).collect(Collectors.joining("\n"));
+        }).collect(Collectors.joining(System.lineSeparator()));
 
         message.put(
             "html",

@@ -1,6 +1,5 @@
 package com.jivecake.api.resources;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
@@ -27,8 +26,12 @@ import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
+import com.auth0.client.mgmt.ManagementAPI;
+import com.auth0.client.mgmt.filter.UserFilter;
+import com.auth0.exception.Auth0Exception;
 import com.auth0.json.mgmt.users.User;
 import com.auth0.jwt.interfaces.DecodedJWT;
+import com.jivecake.api.APIConfiguration;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.GZip;
@@ -53,6 +56,7 @@ import com.jivecake.api.service.TransactionService;
 @CORS
 @Singleton
 public class TransactionResource {
+    private final APIConfiguration apiConfiguration;
     private final TransactionService transactionService;
     private final NotificationService notificationService;
     private final PermissionService permissionService;
@@ -62,6 +66,7 @@ public class TransactionResource {
 
     @Inject
     public TransactionResource(
+        APIConfiguration apiConfiguration,
         TransactionService transactionService,
         NotificationService notificationService,
         PermissionService permissionService,
@@ -69,6 +74,7 @@ public class TransactionResource {
         Auth0Service auth0Service,
         Datastore datastore
     ) {
+        this.apiConfiguration = apiConfiguration;
         this.transactionService = transactionService;
         this.notificationService = notificationService;
         this.permissionService = permissionService;
@@ -269,7 +275,7 @@ public class TransactionResource {
     public Response searchUsers(
         @QueryParam("id") List<ObjectId> ids,
         @Context DecodedJWT jwt
-    ) throws IOException {
+    ) throws Auth0Exception {
         List<Transaction> transactions = this.datastore.createQuery(Transaction.class)
             .field("id").in(ids)
             .asList();
@@ -301,9 +307,16 @@ public class TransactionResource {
                     .map(id -> String.format("user_id: \"%s\"", id))
                     .collect(Collectors.joining(" OR "));
 
-                User[] entity = this.auth0Service.queryUsers(query);
+                ManagementAPI api = new ManagementAPI(
+                    this.apiConfiguration.oauth.domain,
+                    this.auth0Service.getToken().get("access_token").asText()
+                );
 
-                builder = Response.ok(entity, MediaType.APPLICATION_JSON);
+                List<User> users = api.users().list(new UserFilter().withQuery(query))
+                    .execute()
+                    .getItems();
+
+                builder = Response.ok(users, MediaType.APPLICATION_JSON);
             }
         } else {
             builder = Response.status(Status.UNAUTHORIZED);

@@ -33,6 +33,8 @@ import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
+import com.auth0.client.mgmt.ManagementAPI;
+import com.auth0.client.mgmt.filter.UserFilter;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.google.cloud.storage.Acl;
 import com.google.cloud.storage.Acl.Role;
@@ -434,7 +436,14 @@ public class EventResource {
 
         File writeFile = file;
 
-        com.auth0.json.mgmt.users.User[] users = this.auth0Service.queryUsers(userQuery);
+        ManagementAPI api = new ManagementAPI(
+            this.configuration.oauth.domain,
+            this.auth0Service.getToken().get("access_token").asText()
+        );
+
+        List<com.auth0.json.mgmt.users.User> users = api.users().list(new UserFilter().withQuery(userQuery))
+            .execute()
+            .getItems();
 
         EventResource.this.transactionService.writeToExcel(
             event,

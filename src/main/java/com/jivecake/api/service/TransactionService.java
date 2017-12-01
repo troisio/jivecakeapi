@@ -108,7 +108,7 @@ public class TransactionService {
 
     public void writeToExcel(
         Event event,
-        User[] users,
+        List<User> users,
         List<Transaction> transactions,
         File file
     ) throws IOException {
@@ -129,20 +129,20 @@ public class TransactionService {
             .stream()
             .collect(Collectors.groupingBy(item -> item.id));
 
-        Map<String, List<User>> userById = Arrays.asList(users).stream()
-            .collect(Collectors.groupingBy(user -> user.getId()));
+        Map<String, List<User>> userById = users.stream()
+            .collect(Collectors.groupingBy(User::getId));
 
         String[] headers = {
-            "registrationNumber",
-            "givenName",
-            "middleName",
-            "familyName",
-            "email",
-            "itemName",
-            "amount",
-            "currency",
-            "timeCreated",
-            "generatedBy"
+            "Registration Number",
+            "Given Name",
+            "Middle Name",
+            "Family Name",
+            "Email",
+            "Item",
+            "Amount",
+            "Currency",
+            "Time Created",
+            "Payment System"
         };
 
         CellStyle dateStyle = workbook.createCellStyle();

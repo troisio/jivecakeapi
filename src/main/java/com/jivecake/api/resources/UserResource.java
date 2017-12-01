@@ -55,7 +55,6 @@ import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.OrganizationInvitation;
 import com.jivecake.api.model.Permission;
 import com.jivecake.api.service.ApplicationService;
-import com.jivecake.api.service.GoogleCloudPlatformService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.StripeService;
@@ -68,9 +67,7 @@ import com.stripe.model.Subscription;
 public class UserResource {
     private final Datastore datastore;
     private final StripeService stripeService;
-    private final ApplicationService applicationService;
     private final OrganizationService organizationService;
-    private final GoogleCloudPlatformService googleCloudPlatformService;
     private final NotificationService notificationService;
     private final APIConfiguration configuration;
 
@@ -78,17 +75,13 @@ public class UserResource {
     public UserResource(
         Datastore datastore,
         StripeService stripeService,
-        ApplicationService applicationService,
         OrganizationService organizationService,
-        GoogleCloudPlatformService googleCloudPlatformService,
         NotificationService notificationService,
         APIConfiguration configuration
     ) {
         this.datastore = datastore;
         this.stripeService = stripeService;
-        this.applicationService = applicationService;
         this.organizationService = organizationService;
-        this.googleCloudPlatformService = googleCloudPlatformService;
         this.notificationService = notificationService;
         this.configuration = configuration;
     }

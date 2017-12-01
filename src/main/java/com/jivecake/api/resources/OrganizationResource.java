@@ -1,6 +1,5 @@
 package com.jivecake.api.resources;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
@@ -41,6 +40,9 @@ import org.mongodb.morphia.Key;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
+import com.auth0.client.mgmt.ManagementAPI;
+import com.auth0.client.mgmt.filter.UserFilter;
+import com.auth0.exception.Auth0Exception;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.google.cloud.storage.Acl;
 import com.google.cloud.storage.Acl.Role;
@@ -197,7 +199,7 @@ public class OrganizationResource {
     public Response inviteUser(
         @PathObject("id") Organization organization,
         OrganizationInvitation invitation
-    ) throws IOException {
+    ) throws Auth0Exception {
         ResponseBuilder builder;
 
         if (invitation.permissions == null) {
@@ -215,14 +217,23 @@ public class OrganizationResource {
             if (validPermissions && validIncludeField) {
                 String emailSearch = invitation.email.replaceAll("\"", "\\\"");
                 String query = String.format("email:\"%s\"", emailSearch);
-                com.auth0.json.mgmt.users.User[] users = this.auth0Service.queryUsers(query);
+
+                ManagementAPI api = new ManagementAPI(
+                    this.configuration.oauth.domain,
+                    this.auth0Service.getToken().get("access_token").asText()
+                );
+
+                UserFilter filter = new UserFilter();
+                filter.withQuery(query);
+
+                List<com.auth0.json.mgmt.users.User> users = api.users().list(filter).execute().getItems();
 
                 invitation.id = null;
                 invitation.organizationId = organization.id;
                 invitation.timeCreated = new Date();
                 invitation.timeAccepted = null;
-                invitation.userIds = Arrays.asList(users).stream()
-                    .map(user -> user.getId())
+                invitation.userIds = users.stream()
+                    .map(com.auth0.json.mgmt.users.User::getId)
                     .collect(Collectors.toList());
 
                 long permissionsWithEmail = this.datastore.createQuery(Permission.class)
@@ -275,7 +286,7 @@ public class OrganizationResource {
                 )
             ).count();
 
-        boolean isValid = asset.name != null && asset.data != null;
+        boolean isValid = asset.name != null && asset.name.length() > 0 && asset.data != null;
 
         if (!isValid) {
             builder = Response.status(Status.BAD_REQUEST);
@@ -825,7 +836,7 @@ public class OrganizationResource {
     @Path("{id}/user")
     @Authorized
     @HasPermission(id="id", clazz=Organization.class, permission=PermissionService.READ)
-    public Response getUsers(@PathObject("id") Organization organization) throws IOException {
+    public Response getUsers(@PathObject("id") Organization organization) throws Auth0Exception {
         String query = this.datastore.createQuery(Permission.class)
             .field("objectClass").equal("Organization")
             .field("objectId").equal(organization.id)
@@ -834,7 +845,15 @@ public class OrganizationResource {
             .map(permission -> "user_id: \"" + permission.user_id + "\"")
             .collect(Collectors.joining(" OR "));
 
-        com.auth0.json.mgmt.users.User[] users = this.auth0Service.queryUsers(query);
+        ManagementAPI api = new ManagementAPI(
+            this.configuration.oauth.domain,
+            this.auth0Service.getToken().get("access_token").asText()
+        );
+
+        UserFilter filter = new UserFilter();
+        filter.withQuery(query);
+
+        List<com.auth0.json.mgmt.users.User> users = api.users().list(filter).execute().getItems();
         return Response.ok(users, MediaType.APPLICATION_JSON).build();
     }
 
