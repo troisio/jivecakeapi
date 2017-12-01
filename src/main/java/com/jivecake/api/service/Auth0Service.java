@@ -9,12 +9,8 @@ import java.util.concurrent.TimeUnit;
 import javax.inject.Inject;
 import javax.ws.rs.client.ClientBuilder;
 import javax.ws.rs.client.Entity;
-import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.MultivaluedHashMap;
-import javax.ws.rs.core.MultivaluedMap;
 
-import com.auth0.json.mgmt.users.User;
 import com.auth0.jwt.JWTVerifier;
 import com.auth0.jwt.exceptions.JWTVerificationException;
 import com.auth0.jwt.interfaces.DecodedJWT;
@@ -83,39 +79,5 @@ public class Auth0Service {
             .readEntity(String.class);
 
         return this.mapper.readTree(entity);
-    }
-
-    /*
-     * This Auth0 ManagementAPI class already has this functionality
-     * Unfortunately, due to a transitive dependency (jackson) between
-     *
-     * 'io.dropwizard:dropwizard-client:1.2.0',
-        'io.dropwizard:dropwizard-core:1.2.0'
-        and
-        'com.auth0:auth0:1.3.0'
-
-        the project breaks when using this API method with the Auth0 ManagementAPI
-        So, until both projects run on compatible versions or someone takes the take to proplerly
-        resolve the dependency on the classpath with gradle this method is used
-     */
-    public User[] queryUsers(String query) throws IOException {
-        WebTarget target = ClientBuilder.newClient()
-            .target("https://" + this.oAuthConfiguration.domain)
-            .path("/api/v2/users");
-
-        MultivaluedMap<String, String> parameters = new MultivaluedHashMap<>();
-        parameters.putSingle("q", query);
-        parameters.putSingle("search_engine","v2");
-
-        for (String key: parameters.keySet()) {
-            target = target.queryParam(key, parameters.get(key).toArray());
-        }
-
-        String body = target.request()
-            .header("Authorization", "Bearer " + this.token.get("access_token").asText())
-            .buildGet()
-            .invoke(String.class);
-
-        return this.mapper.readValue(body, User[].class);
     }
 }
