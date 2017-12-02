@@ -473,6 +473,7 @@ public class PaypalResource {
 
                     builder = Response.ok(body).type(MediaType.APPLICATION_JSON);
                 } else {
+                    exception.printStackTrace();
                     this.applicationService.saveException(exception, userId);
                     builder = Response.status(Status.SERVICE_UNAVAILABLE);
                 }
