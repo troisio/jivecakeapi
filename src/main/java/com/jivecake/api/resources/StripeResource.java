@@ -321,16 +321,19 @@ public class StripeResource {
                                     "event.update"
                                 );
                             } catch (InterruptedException | ExecutionException e) {
+                                e.printStackTrace();
                                 this.applicationService.saveException(e, userId);
                             }
                         }
 
                         builder = Response.ok();
                     } else {
+                        exception.printStackTrace();
                         this.applicationService.saveException(exception, userId);
                         builder = Response.status(Status.SERVICE_UNAVAILABLE);
                     }
                 } else {
+                    tokenException.printStackTrace();
                     this.applicationService.saveException(tokenException, userId);
                     builder = Response.status(Status.SERVICE_UNAVAILABLE);
                 }

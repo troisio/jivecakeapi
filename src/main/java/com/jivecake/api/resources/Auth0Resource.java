@@ -111,11 +111,9 @@ public class Auth0Resource {
         @Context DecodedJWT jwt,
         Auth0UserUpdateEntity entity
     ) throws Auth0Exception {
-        String userId = jwt.getSubject();
-
         ResponseBuilder builder;
 
-        if (userId.equals(id)) {
+        if (jwt.getSubject().equals(id)) {
             ManagementAPI managementApi = new ManagementAPI(
                 this.configuration.oauth.domain,
                 this.auth0Service.getToken().get("access_token").asText()
@@ -133,17 +131,18 @@ public class Auth0Resource {
             metaData.put("given_name", entity.user_metadata.given_name);
             metaData.put("family_name", entity.user_metadata.family_name);
 
-            user.setEmail(entity.email);
-            user.setUserMetadata(metaData);
+            User updateUser = new User();
+            updateUser.setEmail(entity.email);
+            updateUser.setUserMetadata(metaData);
 
-            managementApi.users().update(id, user);
+            User userAferUpdate = managementApi.users().update(id, updateUser).execute();
 
             if (emailChange) {
                 EmailVerificationTicket ticket = new EmailVerificationTicket(id);
                 managementApi.tickets().requestEmailVerification(ticket).execute();
             }
 
-            builder = Response.ok(user).type(MediaType.APPLICATION_JSON);
+            builder = Response.ok(userAferUpdate).type(MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);
         }
