@@ -124,6 +124,16 @@ public class Auth0Resource {
             boolean emailChange = !Objects.equals(user.getEmail(), entity.email);
 
             if (emailChange) {
+                boolean emailAvailible = managementApi.users()
+                    .list( new UserFilter().withQuery("email: \""+ user.getEmail() +"\""))
+                    .execute()
+                    .getItems()
+                    .isEmpty();
+
+                if (!emailAvailible) {
+                    return Response.status(Status.CONFLICT).build();
+                }
+
                 user.setEmailVerified(false);
             }
 
