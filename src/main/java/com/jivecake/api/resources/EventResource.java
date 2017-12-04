@@ -296,8 +296,8 @@ public class EventResource {
                 ErrorData errorData =  new ErrorData();
                 errorData.error = "entityAssetConsentId";
                 builder = Response.status(Status.BAD_REQUEST)
-                        .entity(errorData)
-                        .type(MediaType.APPLICATION_JSON);
+                    .entity(errorData)
+                    .type(MediaType.APPLICATION_JSON);
             } else if (!hasValidPaymentProfile) {
                 builder = Response.status(Status.BAD_REQUEST)
                     .entity("{\"error\": \"paymentProfileId\"}")

@@ -504,11 +504,9 @@ public class StripeResource {
         @QueryParam("email") String email,
         @QueryParam("status") String status,
         @QueryParam("planId") String plan,
-        @QueryParam("limit") Long limit,
         @Context DecodedJWT jwt
     ) throws StripeException, Auth0Exception {
         boolean validQuery = organizationId != null || sub != null || email != null;
-        boolean validLimit = limit == null || (limit > -1 && limit < 101);
         boolean validStatus = status == null ||
             "active".equals(status) ||
             "all".equals(status) ||
@@ -517,7 +515,7 @@ public class StripeResource {
             "canceled".equals(status) ||
             "unpaid".equals(status);
 
-        if (!validLimit || !validStatus || !validQuery) {
+        if (!validStatus || !validQuery) {
             return Response.status(Status.BAD_REQUEST).build();
         }
 
@@ -564,10 +562,7 @@ public class StripeResource {
 
         List<Subscription> result = new ArrayList<>();
 
-        Subscription.list(
-            query,
-            this.stripeService.getRequestOptions()
-        )
+        Subscription.list(query, this.stripeService.getRequestOptions())
         .autoPagingIterable()
         .forEach(subscription -> {
             Map<String, String> metaData = subscription.getMetadata();
