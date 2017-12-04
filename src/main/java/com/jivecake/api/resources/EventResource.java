@@ -203,6 +203,7 @@ public class EventResource {
         @QueryParam("text") String text
     ) {
         Query<Event> query = this.datastore.createQuery(Event.class)
+            .project("userData", false)
             .field("status").equal(EventService.STATUS_ACTIVE);
 
         if (text != null && !text.isEmpty()) {
