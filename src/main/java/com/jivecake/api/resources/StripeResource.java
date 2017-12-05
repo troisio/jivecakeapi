@@ -295,6 +295,7 @@ public class StripeResource {
                         }
 
                         this.datastore.save(completedTransactions);
+                        this.entityService.cascadeLastActivity(completedTransactions, date);
                         this.notificationService.notify(
                             new ArrayList<>(completedTransactions),
                             "transaction.create"
