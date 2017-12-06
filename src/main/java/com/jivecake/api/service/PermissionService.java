@@ -171,4 +171,22 @@ public class PermissionService {
 
         return hasOrganizationPermissions.containsAll(organizationIds);
     }
+
+    public static boolean isValid(Permission permission) {
+        boolean validPermissions;
+
+        if (permission.permissions == null) {
+            validPermissions = false;
+        } else {
+            Set<Integer> permissions = new HashSet<>(permission.permissions);
+            permissions.remove(PermissionService.WRITE);
+            permissions.remove(PermissionService.READ);
+
+            validPermissions = permissions.isEmpty();
+        }
+
+        return validPermissions && (permission.include == PermissionService.ALL ||
+            permission.include == PermissionService.INCLUDE ||
+            permission.include == PermissionService.EXCLUDE);
+    }
 }

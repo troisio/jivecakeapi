@@ -41,6 +41,7 @@ import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.Log;
 import com.jivecake.api.filter.PathObject;
+import com.jivecake.api.filter.ValidEntity;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.PaypalPaymentProfile;
@@ -228,7 +229,7 @@ public class PaypalResource {
     @Consumes(MediaType.APPLICATION_JSON)
     public Response execute(
         @Context DecodedJWT jwt,
-        PaypalAuthorizationPayload payload
+        @ValidEntity PaypalAuthorizationPayload payload
     ) {
         ResponseBuilder builder;
 
@@ -364,7 +365,7 @@ public class PaypalResource {
         @HeaderParam("Origin") String origin,
         @PathObject("eventId") Event event,
         @Context DecodedJWT jwt,
-        OrderData order
+        @ValidEntity OrderData order
     ) {
         ResponseBuilder builder;
 

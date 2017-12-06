@@ -342,8 +342,9 @@ public class EventService {
         return future;
     }
 
-    public boolean isValidEvent(Event event) {
-        return event.name != null &&
+    public static boolean isValidEvent(Event event) {
+        return event != null &&
+            event.name != null &&
             event.name.length() > 0 &&
             event.name.length() <= 100 &&
             (

@@ -42,6 +42,7 @@ import com.jivecake.api.filter.GZip;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.Log;
 import com.jivecake.api.filter.PathObject;
+import com.jivecake.api.filter.ValidEntity;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
@@ -191,7 +192,7 @@ public class StripeResource {
     @Consumes(MediaType.APPLICATION_JSON)
     public Response order(
         @PathObject("eventId") Event event,
-        StripeOrderPayload payload,
+        @ValidEntity StripeOrderPayload payload,
         @Context DecodedJWT jwt
     ) {
         ResponseBuilder builder;
@@ -412,8 +413,8 @@ public class StripeResource {
     public Response subscribe(
         @PathObject("organizationId") Organization organization,
         @PathParam("planId") String planId,
-        Map<String, Object> json,
-        @Context DecodedJWT jwt
+        @Context DecodedJWT jwt,
+        Map<String, Object> json
     ) throws Auth0Exception, StripeException {
         ResponseBuilder builder;
 
