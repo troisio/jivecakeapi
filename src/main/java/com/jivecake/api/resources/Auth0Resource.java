@@ -26,6 +26,7 @@ import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.APIConfiguration;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
+import com.jivecake.api.filter.ValidEntity;
 import com.jivecake.api.request.Auth0UserUpdateEntity;
 import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.request.UserEmailVerificationBody;
@@ -57,7 +58,7 @@ public class Auth0Resource {
     @Authorized
     public Response sendVerifyEmailAddress(
         @Context DecodedJWT jwt,
-        UserEmailVerificationBody body
+        @ValidEntity UserEmailVerificationBody body
     ) throws Auth0Exception {
         String user_id = jwt.getSubject();
 

@@ -27,6 +27,7 @@ import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.GZip;
+import com.jivecake.api.filter.ValidEntity;
 import com.jivecake.api.model.Application;
 import com.jivecake.api.model.Request;
 import com.jivecake.api.model.UserInterfaceEvent;
@@ -122,7 +123,7 @@ public class LogResource {
         @HeaderParam("User-Agent") String agent,
         @Context HttpServletRequest request,
         @Context DecodedJWT jwt,
-        UserInterfaceEvent event
+        @ValidEntity UserInterfaceEvent event
     ) {
         event.id = null;
         event.agent = agent;

@@ -51,6 +51,7 @@ import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.GZip;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
+import com.jivecake.api.filter.ValidEntity;
 import com.jivecake.api.model.AssetType;
 import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.EntityType;
@@ -82,7 +83,6 @@ import com.stripe.model.Subscription;
 public class EventResource {
     private final Auth0Service auth0Service;
     private final EventService eventService;
-    private final ItemService itemService;
     private final TransactionService transactionService;
     private final StripeService stripeService;
     private final EntityService entityService;
@@ -94,7 +94,6 @@ public class EventResource {
     public EventResource(
         Auth0Service auth0Service,
         EventService eventService,
-        ItemService itemService,
         TransactionService transactionService,
         StripeService stripeService,
         EntityService entityService,
@@ -103,7 +102,6 @@ public class EventResource {
         APIConfiguration configuration
     ) {
         this.auth0Service = auth0Service;
-        this.itemService = itemService;
         this.eventService = eventService;
         this.transactionService = transactionService;
         this.stripeService = stripeService;
@@ -249,91 +247,85 @@ public class EventResource {
     @HasPermission(clazz=Event.class, id="id", permission=PermissionService.WRITE)
     public Response update(
         @PathObject("id") Event original,
-        Event event
+        @ValidEntity Event event
     ) {
         ResponseBuilder builder;
 
-        boolean isValid = this.eventService.isValidEvent(event);
+        long activeEventsCount = this.datastore.createQuery(Event.class)
+            .field("id").notEqual(original.id)
+            .field("status").equal(EventService.STATUS_ACTIVE)
+            .field("organizationId").equal(original.organizationId)
+            .count();
 
-        if (isValid) {
-            long activeEventsCount = this.datastore.createQuery(Event.class)
-                .field("id").notEqual(original.id)
-                .field("status").equal(EventService.STATUS_ACTIVE)
-                .field("organizationId").equal(original.organizationId)
-                .count();
+        boolean hasValidEntityAssetConsentId = event.entityAssetConsentId == null ||
+        this.datastore.createQuery(EntityAsset.class)
+            .field("entityId").equal(original.organizationId.toString())
+            .field("entityType").equal(EntityType.ORGANIZATION)
+            .field("id").equal(event.entityAssetConsentId)
+            .count() == 1;
 
-            boolean hasValidEntityAssetConsentId = event.entityAssetConsentId == null ||
-            this.datastore.createQuery(EntityAsset.class)
-                .field("entityId").equal(original.organizationId.toString())
-                .field("entityType").equal(EntityType.ORGANIZATION)
-                .field("id").equal(event.entityAssetConsentId)
-                .count() == 1;
+        boolean hasSubscriptionViolation;
+        StripeException stripeException = null;
+        List<Subscription> currentSubscriptions = null;
 
-            boolean hasSubscriptionViolation;
-            StripeException stripeException = null;
-            List<Subscription> currentSubscriptions = null;
+        boolean hasValidPaymentProfile = event.paymentProfileId == null ||
+            this.datastore.createQuery(PaymentProfile.class)
+                .field("id").equal(event.paymentProfileId)
+                .count() > 0;
 
-            boolean hasValidPaymentProfile = event.paymentProfileId == null ||
-                this.datastore.createQuery(PaymentProfile.class)
-                    .field("id").equal(event.paymentProfileId)
-                    .count() > 0;
+        if (event.status == EventService.STATUS_ACTIVE) {
+            activeEventsCount++;
 
-            if (event.status == EventService.STATUS_ACTIVE) {
-                activeEventsCount++;
-
-                try {
-                    currentSubscriptions = this.stripeService.getCurrentSubscriptions(original.organizationId);
-                } catch (StripeException e) {
-                    stripeException = e;
-                }
-
-                hasSubscriptionViolation = currentSubscriptions != null && activeEventsCount > currentSubscriptions.size();
-            } else {
-                hasSubscriptionViolation = false;
+            try {
+                currentSubscriptions = this.stripeService.getCurrentSubscriptions(original.organizationId);
+            } catch (StripeException e) {
+                stripeException = e;
             }
 
-            if (!hasValidEntityAssetConsentId) {
-                ErrorData errorData =  new ErrorData();
-                errorData.error = "entityAssetConsentId";
-                builder = Response.status(Status.BAD_REQUEST)
-                    .entity(errorData)
-                    .type(MediaType.APPLICATION_JSON);
-            } else if (!hasValidPaymentProfile) {
-                builder = Response.status(Status.BAD_REQUEST)
-                    .entity("{\"error\": \"paymentProfileId\"}")
-                    .type(MediaType.APPLICATION_JSON);
-            } else if (stripeException != null) {
-                stripeException.printStackTrace();
-                builder = Response.status(Status.SERVICE_UNAVAILABLE);
-            } else if (hasSubscriptionViolation) {
-                Map<String, Object> entity = new HashMap<>();
-                entity.put("error", "subscription");
-                entity.put("data", currentSubscriptions);
-
-                builder = Response.status(Status.BAD_REQUEST)
-                    .entity(entity)
-                    .type(MediaType.APPLICATION_JSON);
-            } else {
-                Date currentTime = new Date();
-
-                event.id = original.id;
-                event.hash = original.hash;
-                event.userData = original.userData;
-                event.organizationId = original.organizationId;
-                event.timeCreated = original.timeCreated;
-                event.timeUpdated = currentTime;
-                event.lastActivity = currentTime;
-
-                Key<Event> key = this.datastore.save(event);
-
-                Event searchedEvent = this.datastore.get(Event.class, key.getId());
-                this.notificationService.notify(Arrays.asList(searchedEvent), "event.update");
-                this.entityService.cascadeLastActivity(Arrays.asList(searchedEvent), currentTime);
-
-                builder = Response.ok(searchedEvent).type(MediaType.APPLICATION_JSON);
-            }
+            hasSubscriptionViolation = currentSubscriptions != null && activeEventsCount > currentSubscriptions.size();
         } else {
-            builder = Response.status(Status.BAD_REQUEST);
+            hasSubscriptionViolation = false;
+        }
+
+        if (!hasValidEntityAssetConsentId) {
+            ErrorData errorData =  new ErrorData();
+            errorData.error = "entityAssetConsentId";
+            builder = Response.status(Status.BAD_REQUEST)
+                .entity(errorData)
+                .type(MediaType.APPLICATION_JSON);
+        } else if (!hasValidPaymentProfile) {
+            builder = Response.status(Status.BAD_REQUEST)
+                .entity("{\"error\": \"paymentProfileId\"}")
+                .type(MediaType.APPLICATION_JSON);
+        } else if (stripeException != null) {
+            stripeException.printStackTrace();
+            builder = Response.status(Status.SERVICE_UNAVAILABLE);
+        } else if (hasSubscriptionViolation) {
+            Map<String, Object> entity = new HashMap<>();
+            entity.put("error", "subscription");
+            entity.put("data", currentSubscriptions);
+
+            builder = Response.status(Status.BAD_REQUEST)
+                .entity(entity)
+                .type(MediaType.APPLICATION_JSON);
+        } else {
+            Date currentTime = new Date();
+
+            event.id = original.id;
+            event.hash = original.hash;
+            event.userData = original.userData;
+            event.organizationId = original.organizationId;
+            event.timeCreated = original.timeCreated;
+            event.timeUpdated = currentTime;
+            event.lastActivity = currentTime;
+
+            Key<Event> key = this.datastore.save(event);
+
+            Event searchedEvent = this.datastore.get(Event.class, key.getId());
+            this.notificationService.notify(Arrays.asList(searchedEvent), "event.update");
+            this.entityService.cascadeLastActivity(Arrays.asList(searchedEvent), currentTime);
+
+            builder = Response.ok(searchedEvent).type(MediaType.APPLICATION_JSON);
         }
 
         return builder.build();
@@ -344,42 +336,32 @@ public class EventResource {
     @Authorized
     @Consumes(MediaType.APPLICATION_JSON)
     @HasPermission(clazz=Event.class, id="id", permission=PermissionService.WRITE)
-    public Response createItem(@PathObject("id") Event event, Item item) {
-        ResponseBuilder builder;
+    public Response createItem(@PathObject("id") Event event, @ValidEntity Item item) {
+        Date currentTime = new Date();
 
-        boolean isValid = this.itemService.isValid(item);
-
-        if (isValid) {
-            Date currentTime = new Date();
-
-            if (item.countAmounts != null && item.countAmounts.isEmpty()) {
-                item.countAmounts = null;
-            }
-
-            if (item.timeAmounts != null && item.timeAmounts.isEmpty()) {
-                item.timeAmounts = null;
-            }
-
-            item.id = null;
-            item.eventId = event.id;
-            item.organizationId = event.organizationId;
-            item.timeCreated = currentTime;
-            item.timeUpdated = null;
+        if (item.countAmounts != null && item.countAmounts.isEmpty()) {
             item.countAmounts = null;
-            item.lastActivity = currentTime;
-
-            Key<Item> key = this.datastore.save(item);
-            Item searchedItem = this.datastore.get(Item.class, key.getId());
-
-            this.notificationService.notify(Arrays.asList(searchedItem), "item.create");
-            this.entityService.cascadeLastActivity(Arrays.asList(item), currentTime);
-
-            builder = Response.ok(searchedItem).type(MediaType.APPLICATION_JSON);
-        } else {
-            builder = Response.status(Status.BAD_REQUEST);
         }
 
-        return builder.build();
+        if (item.timeAmounts != null && item.timeAmounts.isEmpty()) {
+            item.timeAmounts = null;
+        }
+
+        item.id = null;
+        item.eventId = event.id;
+        item.organizationId = event.organizationId;
+        item.timeCreated = currentTime;
+        item.timeUpdated = null;
+        item.countAmounts = null;
+        item.lastActivity = currentTime;
+
+        Key<Item> key = this.datastore.save(item);
+        Item searchedItem = this.datastore.get(Item.class, key.getId());
+
+        this.notificationService.notify(Arrays.asList(searchedItem), "item.create");
+        this.entityService.cascadeLastActivity(Arrays.asList(item), currentTime);
+
+        return Response.ok(searchedItem).type(MediaType.APPLICATION_JSON).build();
     }
 
     @DELETE
@@ -442,7 +424,8 @@ public class EventResource {
             this.auth0Service.getToken().get("access_token").asText()
         );
 
-        List<com.auth0.json.mgmt.users.User> users = api.users().list(new UserFilter().withQuery(userQuery))
+        List<com.auth0.json.mgmt.users.User> users = api.users()
+            .list(new UserFilter().withQuery(userQuery))
             .execute()
             .getItems();
 

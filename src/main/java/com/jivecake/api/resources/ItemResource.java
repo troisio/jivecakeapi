@@ -4,6 +4,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -33,6 +34,7 @@ import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
+import com.jivecake.api.filter.ValidEntity;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
@@ -51,7 +53,6 @@ import com.jivecake.api.service.TransactionService;
 @Singleton
 public class ItemResource {
     private final Auth0Service auth0Service;
-    private final ItemService itemService;
     private final EventService eventService;
     private final TransactionService transactionService;
     private final NotificationService notificationService;
@@ -62,7 +63,6 @@ public class ItemResource {
     @Inject
     public ItemResource(
         Auth0Service auth0Service,
-        ItemService itemService,
         EventService eventService,
         TransactionService transactionService,
         NotificationService notificationService,
@@ -71,7 +71,6 @@ public class ItemResource {
         APIConfiguration apiConfiguration
     ) {
         this.auth0Service = auth0Service;
-        this.itemService = itemService;
         this.eventService = eventService;
         this.transactionService = transactionService;
         this.notificationService = notificationService;
@@ -88,7 +87,7 @@ public class ItemResource {
         @PathObject("id") Item item,
         @Context DecodedJWT jwt,
         Transaction transaction
-    ) {
+    ) throws InterruptedException, ExecutionException {
         ResponseBuilder builder;
 
         if (item == null) {
@@ -148,10 +147,8 @@ public class ItemResource {
 
                 this.datastore.save(userTransaction);
 
-                this.eventService.assignNumberToUserSafely(jwt.getSubject(), event).thenAcceptAsync((updatedEvent) -> {
-                    this.notificationService.notify(Arrays.asList(updatedEvent), "event.update");
-                });
-
+                Event updatedEvent = this.eventService.assignNumberToUserSafely(jwt.getSubject(), event).get();
+                this.notificationService.notify(Arrays.asList(updatedEvent), "event.update");
                 this.entityService.cascadeLastActivity(Arrays.asList(userTransaction), currentTime);
 
                 builder = Response.ok(userTransaction).type(MediaType.APPLICATION_JSON);
@@ -171,11 +168,11 @@ public class ItemResource {
     public Response createTransaction(
         @PathObject("id") Item item,
         @Context DecodedJWT jwt,
-        Transaction transaction
+        @ValidEntity Transaction transaction
     ) {
         transaction.status = TransactionService.PAYMENT_EQUAL;
         transaction.paymentStatus = TransactionService.SETTLED;
-        boolean isValid = this.transactionService.isValidTransaction(transaction) && transaction.amount >= 0;
+        boolean isValid = transaction.amount >= 0;
 
         ResponseBuilder builder;
 
@@ -295,49 +292,39 @@ public class ItemResource {
     @Path("/{id}")
     @Authorized
     @HasPermission(clazz=Item.class, id="id", permission=PermissionService.WRITE)
-    public Response update(@PathObject("id") Item searchedItem, Item item) {
-        ResponseBuilder builder;
+    public Response update(@PathObject("id") Item searchedItem, @ValidEntity Item item) {
+        Date currentDate = new Date();
 
-        boolean isValid = this.itemService.isValid(item);
+        item.id = searchedItem.id;
+        item.eventId = searchedItem.eventId;
+        item.organizationId = searchedItem.organizationId;
+        item.countAmounts = null;
+        item.timeCreated = searchedItem.timeCreated;
+        item.lastActivity = currentDate;
+        item.timeUpdated = currentDate;
 
-        if (isValid) {
-            Date currentDate = new Date();
-
-            item.id = searchedItem.id;
-            item.eventId = searchedItem.eventId;
-            item.organizationId = searchedItem.organizationId;
-            item.countAmounts = null;
-            item.timeCreated = searchedItem.timeCreated;
-            item.lastActivity = currentDate;
-            item.timeUpdated = currentDate;
-
-            if (item.timeAmounts != null) {
-                if (item.timeAmounts.isEmpty()) {
-                    item.timeAmounts = null;
-                } else {
-                    Collections.sort(item.timeAmounts, (first, second) -> first.after.compareTo(second.after));
-                }
+        if (item.timeAmounts != null) {
+            if (item.timeAmounts.isEmpty()) {
+                item.timeAmounts = null;
+            } else {
+                Collections.sort(item.timeAmounts, (first, second) -> first.after.compareTo(second.after));
             }
-
-            if (item.countAmounts != null) {
-                if (item.countAmounts.isEmpty()) {
-                    item.countAmounts = null;
-                } else {
-                    Collections.sort(item.countAmounts, (first, second) -> first.count - second.count);
-                }
-            }
-
-            Key<Item> key = this.datastore.save(item);
-            Item updatedItem = this.datastore.get(Item.class, key.getId());
-
-            this.notificationService.notify(Arrays.asList(updatedItem), "item.update");
-            this.entityService.cascadeLastActivity(Arrays.asList(updatedItem), new Date());
-
-            builder = Response.ok(updatedItem).type(MediaType.APPLICATION_JSON);
-        } else {
-            builder = Response.status(Status.BAD_REQUEST);
         }
 
-        return builder.build();
+        if (item.countAmounts != null) {
+            if (item.countAmounts.isEmpty()) {
+                item.countAmounts = null;
+            } else {
+                Collections.sort(item.countAmounts, (first, second) -> first.count - second.count);
+            }
+        }
+
+        Key<Item> key = this.datastore.save(item);
+        Item updatedItem = this.datastore.get(Item.class, key.getId());
+
+        this.notificationService.notify(Arrays.asList(updatedItem), "item.update");
+        this.entityService.cascadeLastActivity(Arrays.asList(updatedItem), new Date());
+
+        return Response.ok(updatedItem).type(MediaType.APPLICATION_JSON).build();
     }
 }

@@ -10,7 +10,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -59,8 +58,7 @@ import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.GZip;
 import com.jivecake.api.filter.HasPermission;
 import com.jivecake.api.filter.PathObject;
-import com.jivecake.api.filter.QueryRestrict;
-import com.jivecake.api.filter.ValidEvent;
+import com.jivecake.api.filter.ValidEntity;
 import com.jivecake.api.model.AssetType;
 import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.EntityType;
@@ -198,66 +196,52 @@ public class OrganizationResource {
     @HasPermission(id="id", clazz=Organization.class, permission=PermissionService.WRITE)
     public Response inviteUser(
         @PathObject("id") Organization organization,
-        OrganizationInvitation invitation
+        @ValidEntity OrganizationInvitation invitation
     ) throws Auth0Exception {
+        String emailSearch = invitation.email.replaceAll("\"", "\\\"");
+        String query = String.format("email:\"%s\"", emailSearch);
+
+        ManagementAPI api = new ManagementAPI(
+            this.configuration.oauth.domain,
+            this.auth0Service.getToken().get("access_token").asText()
+        );
+
+        UserFilter filter = new UserFilter();
+        filter.withQuery(query);
+
+        List<com.auth0.json.mgmt.users.User> users = api.users()
+            .list(filter)
+            .execute()
+            .getItems();
+
+        invitation.id = null;
+        invitation.organizationId = organization.id;
+        invitation.timeCreated = new Date();
+        invitation.timeAccepted = null;
+        invitation.userIds = users.stream()
+            .map(com.auth0.json.mgmt.users.User::getId)
+            .collect(Collectors.toList());
+
+        long permissionsWithEmail = this.datastore.createQuery(Permission.class)
+            .field("objectId").equal(organization.id)
+            .field("objectClass").equal("Organization")
+            .field("user_id").in(invitation.userIds)
+            .count();
+
         ResponseBuilder builder;
 
-        if (invitation.permissions == null) {
-            builder = Response.status(Status.BAD_REQUEST);
-        } else {
-            Set<Integer> permissions = new HashSet<>(invitation.permissions);
-            permissions.remove(PermissionService.READ);
-            permissions.remove(PermissionService.WRITE);
-
-            boolean validPermissions = permissions.isEmpty();
-            boolean validIncludeField = invitation.include == PermissionService.ALL ||
-                invitation.include == PermissionService.EXCLUDE ||
-                invitation.include == PermissionService.INCLUDE;
-
-            if (validPermissions && validIncludeField) {
-                String emailSearch = invitation.email.replaceAll("\"", "\\\"");
-                String query = String.format("email:\"%s\"", emailSearch);
-
-                ManagementAPI api = new ManagementAPI(
-                    this.configuration.oauth.domain,
-                    this.auth0Service.getToken().get("access_token").asText()
+        if (permissionsWithEmail == 0) {
+            if (!invitation.userIds.isEmpty()) {
+                this.datastore.save(invitation);
+                this.notificationService.notify(
+                    Arrays.asList(invitation),
+                    "organizationInvitation.create"
                 );
-
-                UserFilter filter = new UserFilter();
-                filter.withQuery(query);
-
-                List<com.auth0.json.mgmt.users.User> users = api.users().list(filter).execute().getItems();
-
-                invitation.id = null;
-                invitation.organizationId = organization.id;
-                invitation.timeCreated = new Date();
-                invitation.timeAccepted = null;
-                invitation.userIds = users.stream()
-                    .map(com.auth0.json.mgmt.users.User::getId)
-                    .collect(Collectors.toList());
-
-                long permissionsWithEmail = this.datastore.createQuery(Permission.class)
-                    .field("objectId").equal(organization.id)
-                    .field("objectClass").equal("Organization")
-                    .field("user_id").in(invitation.userIds)
-                    .count();
-
-                if (permissionsWithEmail == 0) {
-                    if (!invitation.userIds.isEmpty()) {
-                        this.datastore.save(invitation);
-                        this.notificationService.notify(
-                            Arrays.asList(invitation),
-                            "organizationInvitation.create"
-                        );
-                    }
-
-                    builder = Response.ok();
-                } else {
-                    builder = Response.status(Status.CONFLICT);
-                }
-            } else {
-                builder = Response.status(Status.BAD_REQUEST);
             }
+
+            builder = Response.ok();
+        } else {
+            builder = Response.status(Status.CONFLICT);
         }
 
         return builder.build();
@@ -272,7 +256,7 @@ public class OrganizationResource {
         @PathObject("id") Organization organization,
         @HeaderParam("Content-Type") String contentType,
         @Context DecodedJWT jwt,
-        EntityAsset asset
+        @ValidEntity EntityAsset asset
     ) {
         ResponseBuilder builder;
 
@@ -286,11 +270,7 @@ public class OrganizationResource {
                 )
             ).count();
 
-        boolean isValid = asset.name != null && asset.name.length() > 0 && asset.data != null;
-
-        if (!isValid) {
-            builder = Response.status(Status.BAD_REQUEST);
-        } else if (count > 50) {
+        if (count > 50) {
             ErrorData data = new ErrorData();
             data.error = "limit";
             data.data = 50;
@@ -359,7 +339,7 @@ public class OrganizationResource {
     public void createStripeProfile(
         @PathObject("id") Organization organization,
         @Suspended AsyncResponse asyncResponse,
-        StripeOAuthCode oauthCode
+        @ValidEntity StripeOAuthCode oauthCode
     ) {
         this.stripeService.getAccountCredentials(oauthCode.code, new InvocationCallback<StripeAccountCredentials>() {
             @Override
@@ -431,29 +411,43 @@ public class OrganizationResource {
         @PathObject("id") Organization organization,
         List<Permission> permissions
     ) {
-        Date currentTime = new Date();
+        boolean valid = permissions != null &&
+            permissions.stream()
+            .map(permission -> PermissionService.isValid(permission))
+            .reduce((a, b) -> a && b)
+            .orElse(false);
 
-        for (Permission permission : permissions) {
-            permission.id = null;
-            permission.objectId = organization.id;
-            permission.timeCreated = currentTime;
-            permission.objectClass = this.organizationService.getPermissionObjectClass();
+        ResponseBuilder builder;
 
-            if (permission.permissions == null) {
-                permission.permissions = new HashSet<>();
+        if (valid) {
+            Date currentTime = new Date();
+
+            for (Permission permission : permissions) {
+                permission.id = null;
+                permission.objectId = organization.id;
+                permission.timeCreated = currentTime;
+                permission.objectClass = this.organizationService.getPermissionObjectClass();
+
+                if (permission.permissions == null) {
+                    permission.permissions = new HashSet<>();
+                }
             }
+
+            this.permissionService.write(permissions);
+            this.notificationService.notify(new ArrayList<>(permissions), "permission.write");
+            this.entityService.cascadeLastActivity(Arrays.asList(organization), currentTime);
+
+            List<Permission> entity = this.datastore.createQuery(Permission.class)
+                .field("objectId").equal(organization.id)
+                .field("objectClass").equal(this.organizationService.getPermissionObjectClass())
+                .asList();
+
+            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+        } else {
+            builder = Response.status(Status.BAD_REQUEST);
         }
 
-        this.permissionService.write(permissions);
-        this.notificationService.notify(new ArrayList<>(permissions), "permission.write");
-        this.entityService.cascadeLastActivity(Arrays.asList(organization), currentTime);
-
-        List<Permission> entity = this.datastore.createQuery(Permission.class)
-            .field("objectId").equal(organization.id)
-            .field("objectClass").equal(this.organizationService.getPermissionObjectClass())
-            .asList();
-
-        return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
+        return builder.build();
     }
 
     @POST
@@ -463,36 +457,32 @@ public class OrganizationResource {
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
     public Response createPaypalPaymentProfile(
         @PathObject("id") Organization organization,
-        PaypalPaymentProfile profile
+        @ValidEntity PaypalPaymentProfile profile
     ) {
         ResponseBuilder builder;
 
-        boolean validProfile = profile.email != null && profile.email.contains("@");
+        long profileCount = this.datastore.createQuery(PaymentProfile.class)
+            .field("organizationId").equal(organization.id)
+            .count();
 
-        if (validProfile) {
-            long profileCount = this.datastore.createQuery(PaymentProfile.class)
-                .field("organizationId").equal(organization.id)
-                .count();
-
-            if (profileCount > 50) {
-                builder = Response.status(Status.BAD_REQUEST)
-                    .entity("{\"error\": \"limit\"}")
-                    .type(MediaType.APPLICATION_JSON);
-            } else {
-                Date currentTime = new Date();
-
-                profile.organizationId = organization.id;
-                profile.timeCreated = currentTime;
-
-                Key<PaymentProfile> key = this.datastore.save(profile);
-                this.entityService.cascadeLastActivity(Arrays.asList(profile), currentTime);
-                this.notificationService.notify(Arrays.asList(profile), "paymentprofile.create");
-
-                PaymentProfile entity = this.datastore.get(PaymentProfile.class, key.getId());
-                builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-            }
+        if (profileCount > 50) {
+            ErrorData entity = new ErrorData();
+            entity.error = "limit";
+            builder = Response.status(Status.BAD_REQUEST)
+                .entity(entity)
+                .type(MediaType.APPLICATION_JSON);
         } else {
-            builder = Response.status(Status.BAD_REQUEST);
+            Date currentTime = new Date();
+
+            profile.organizationId = organization.id;
+            profile.timeCreated = currentTime;
+
+            Key<PaymentProfile> key = this.datastore.save(profile);
+            this.entityService.cascadeLastActivity(Arrays.asList(profile), currentTime);
+            this.notificationService.notify(Arrays.asList(profile), "paymentprofile.create");
+
+            PaymentProfile entity = this.datastore.get(PaymentProfile.class, key.getId());
+            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
         }
 
         return builder.build();
@@ -505,100 +495,94 @@ public class OrganizationResource {
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
     public Response createEvent(
         @PathObject("id") Organization organization,
-        @ValidEvent Event event
+        @ValidEntity Event event
     ) {
         ResponseBuilder builder;
 
-        boolean isValid = this.eventService.isValidEvent(event);
+        long activeEventsCount = this.datastore.createQuery(Event.class)
+            .field("status").equal(EventService.STATUS_ACTIVE)
+            .field("organizationId").equal(organization.id)
+            .count();
 
-        if (isValid) {
-            long activeEventsCount = this.datastore.createQuery(Event.class)
-                .field("status").equal(EventService.STATUS_ACTIVE)
-                .field("organizationId").equal(organization.id)
-                .count();
+        boolean hasFeatureViolation;
 
-            boolean hasFeatureViolation;
+        StripeException stripeException = null;
 
-            StripeException stripeException = null;
+        if (event.status == EventService.STATUS_ACTIVE) {
+            activeEventsCount++;
+            List<Subscription> subscriptions = null;
 
-            if (event.status == EventService.STATUS_ACTIVE) {
-                activeEventsCount++;
-                List<Subscription> subscriptions = null;
-
-                try {
-                    subscriptions = this.stripeService.getCurrentSubscriptions(organization.id);
-                } catch (StripeException e) {
-                    stripeException = e;
-                }
-
-                hasFeatureViolation = subscriptions != null && activeEventsCount > subscriptions.size();
-            } else {
-                hasFeatureViolation = false;
+            try {
+                subscriptions = this.stripeService.getCurrentSubscriptions(organization.id);
+            } catch (StripeException e) {
+                stripeException = e;
             }
 
-            boolean hasValidEntityAssetConsentId = event.entityAssetConsentId == null ||
-                this.datastore.createQuery(EntityAsset.class)
-                    .field("entityId").equal(event.organizationId.toString())
-                    .field("entityType").equal(EntityType.ORGANIZATION)
-                    .field("id").equal(event.entityAssetConsentId)
-                    .count() == 1;
-
-            boolean hasValidPaymentProfile = event.paymentProfileId == null ||
-                this.datastore.createQuery(PaymentProfile.class)
-                    .field("id").equal(event.paymentProfileId)
-                    .count() > 0;
-
-            long eventCount = this.datastore.createQuery(Event.class)
-                .field("organizationId").equal(organization.id)
-                .count();
-
-            if (!hasValidEntityAssetConsentId) {
-                ErrorData errorData =  new ErrorData();
-                errorData.error = "entityAssetConsentId";
-                builder = Response.status(Status.BAD_REQUEST)
-                    .entity(errorData)
-                    .type(MediaType.APPLICATION_JSON);
-            } else if (!hasValidPaymentProfile) {
-                ErrorData errorData =  new ErrorData();
-                errorData.error = "paymentProfileId";
-                builder = Response.status(Status.BAD_REQUEST)
-                    .entity(errorData)
-                    .type(MediaType.APPLICATION_JSON);
-            } else if (stripeException != null) {
-                builder = Response.status(Status.SERVICE_UNAVAILABLE);
-            } else if (eventCount > 100) {
-                ErrorData errorData =  new ErrorData();
-                errorData.error = "limit";
-                builder = Response.status(Status.BAD_REQUEST)
-                    .entity(errorData)
-                    .type(MediaType.APPLICATION_JSON);
-            } else if (hasFeatureViolation) {
-                ErrorData errorData =  new ErrorData();
-                errorData.error = "subscription";
-                builder = Response.status(Status.BAD_REQUEST)
-                    .entity(errorData)
-                    .type(MediaType.APPLICATION_JSON);
-            } else {
-                Date currentTime = new Date();
-
-                event.id = null;
-                event.userData = new ArrayList<>();
-                event.hash = this.eventService.getHash();
-                event.organizationId = organization.id;
-                event.timeCreated = currentTime;
-                event.lastActivity = currentTime;
-
-                Key<Event> key = this.datastore.save(event);
-
-                Event searchedEvent = this.datastore.get(Event.class, key.getId());
-
-                this.notificationService.notify(Arrays.asList(searchedEvent), "event.create");
-                this.entityService.cascadeLastActivity(Arrays.asList(searchedEvent), currentTime);
-
-                builder = Response.ok(searchedEvent).type(MediaType.APPLICATION_JSON);
-            }
+            hasFeatureViolation = subscriptions != null && activeEventsCount > subscriptions.size();
         } else {
-            builder = Response.status(Status.BAD_REQUEST);
+            hasFeatureViolation = false;
+        }
+
+        boolean hasValidEntityAssetConsentId = event.entityAssetConsentId == null ||
+            this.datastore.createQuery(EntityAsset.class)
+                .field("entityId").equal(event.organizationId.toString())
+                .field("entityType").equal(EntityType.ORGANIZATION)
+                .field("id").equal(event.entityAssetConsentId)
+                .count() == 1;
+
+        boolean hasValidPaymentProfile = event.paymentProfileId == null ||
+            this.datastore.createQuery(PaymentProfile.class)
+                .field("id").equal(event.paymentProfileId)
+                .count() > 0;
+
+        long eventCount = this.datastore.createQuery(Event.class)
+            .field("organizationId").equal(organization.id)
+            .count();
+
+        if (!hasValidEntityAssetConsentId) {
+            ErrorData errorData =  new ErrorData();
+            errorData.error = "entityAssetConsentId";
+            builder = Response.status(Status.BAD_REQUEST)
+                .entity(errorData)
+                .type(MediaType.APPLICATION_JSON);
+        } else if (!hasValidPaymentProfile) {
+            ErrorData errorData =  new ErrorData();
+            errorData.error = "paymentProfileId";
+            builder = Response.status(Status.BAD_REQUEST)
+                .entity(errorData)
+                .type(MediaType.APPLICATION_JSON);
+        } else if (stripeException != null) {
+            builder = Response.status(Status.SERVICE_UNAVAILABLE);
+        } else if (eventCount > 100) {
+            ErrorData errorData =  new ErrorData();
+            errorData.error = "limit";
+            builder = Response.status(Status.BAD_REQUEST)
+                .entity(errorData)
+                .type(MediaType.APPLICATION_JSON);
+        } else if (hasFeatureViolation) {
+            ErrorData errorData =  new ErrorData();
+            errorData.error = "subscription";
+            builder = Response.status(Status.BAD_REQUEST)
+                .entity(errorData)
+                .type(MediaType.APPLICATION_JSON);
+        } else {
+            Date currentTime = new Date();
+
+            event.id = null;
+            event.userData = new ArrayList<>();
+            event.hash = this.eventService.getHash();
+            event.organizationId = organization.id;
+            event.timeCreated = currentTime;
+            event.lastActivity = currentTime;
+
+            Key<Event> key = this.datastore.save(event);
+
+            Event searchedEvent = this.datastore.get(Event.class, key.getId());
+
+            this.notificationService.notify(Arrays.asList(searchedEvent), "event.create");
+            this.entityService.cascadeLastActivity(Arrays.asList(searchedEvent), currentTime);
+
+            builder = Response.ok(searchedEvent).type(MediaType.APPLICATION_JSON);
         }
 
         return builder.build();
@@ -609,92 +593,72 @@ public class OrganizationResource {
     @Consumes(MediaType.APPLICATION_JSON)
     public Response create(
         @Context DecodedJWT jwt,
-        Organization organization
+        @ValidEntity Organization organization
     ) {
         ResponseBuilder builder;
 
-        boolean valid = this.organizationService.isValid(organization);
+        long sameEmailCount = this.datastore.createQuery(Organization.class)
+            .field("email").equalIgnoreCase(organization.email)
+            .count();
 
-        if (valid) {
-            long sameEmailCount = this.datastore.createQuery(Organization.class)
-                .field("email").equalIgnoreCase(organization.email)
+        if (sameEmailCount == 0) {
+            long userOrganizationPermissions = this.datastore.createQuery(Permission.class)
+                .field("user_id").equal(jwt.getSubject())
+                .field("objectClass").equal(Organization.class.getSimpleName())
+                .field("include").equal(PermissionService.ALL)
                 .count();
 
-            if (sameEmailCount == 0) {
-                long userOrganizationPermissions = this.datastore.createQuery(Permission.class)
-                    .field("user_id").equal(jwt.getSubject())
-                    .field("objectClass").equal(Organization.class.getSimpleName())
-                    .field("include").equal(PermissionService.ALL)
-                    .count();
-
-                if (userOrganizationPermissions > this.maximumOrganizationsPerUser) {
-                    ErrorData entity = new ErrorData();
-                    entity.error = "limit";
-                    builder = Response.status(Status.BAD_REQUEST)
-                        .entity(entity)
-                        .type(MediaType.APPLICATION_JSON);
-                } else {
-                    Organization rootOrganization = this.organizationService.getRootOrganization();
-                    Date currentTime = new Date();
-
-                    organization.id = null;
-                    organization.parentId = rootOrganization.id;
-                    organization.children = new ArrayList<>();
-                    organization.emailConfirmed = false;
-                    organization.timeCreated = currentTime;
-                    organization.timeUpdated = null;
-                    organization.lastActivity = currentTime;
-
-                    Key<Organization> key = this.datastore.save(organization);
-
-                    Permission permission = new Permission();
-                    permission.user_id = jwt.getSubject();
-                    permission.include = PermissionService.ALL;
-                    permission.permissions = new HashSet<>();
-                    permission.objectClass = this.organizationService.getPermissionObjectClass();
-                    permission.objectId = (ObjectId)key.getId();
-                    permission.timeCreated = currentTime;
-
-                    this.permissionService.write(Arrays.asList(permission));
-
-                    List<Object> entities = new ArrayList<>();
-                    entities.add(organization);
-                    entities.add(permission);
-
-                    this.notificationService.notify(entities, "organization.create");
-
-                    Organization entity = this.datastore.get(Organization.class, key.getId());
-                    builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-
-                    this.reindexExecutor.submit(new Runnable() {
-                        @Override
-                        public void run() {
-                            OrganizationResource.this.organizationService.reindex();
-                        }
-                    });
-                }
+            if (userOrganizationPermissions > this.maximumOrganizationsPerUser) {
+                ErrorData entity = new ErrorData();
+                entity.error = "limit";
+                builder = Response.status(Status.BAD_REQUEST)
+                    .entity(entity)
+                    .type(MediaType.APPLICATION_JSON);
             } else {
-                builder = Response.status(Status.CONFLICT);
+                Organization rootOrganization = this.organizationService.getRootOrganization();
+                Date currentTime = new Date();
+
+                organization.id = null;
+                organization.parentId = rootOrganization.id;
+                organization.children = new ArrayList<>();
+                organization.emailConfirmed = false;
+                organization.timeCreated = currentTime;
+                organization.timeUpdated = null;
+                organization.lastActivity = currentTime;
+
+                Key<Organization> key = this.datastore.save(organization);
+
+                Permission permission = new Permission();
+                permission.user_id = jwt.getSubject();
+                permission.include = PermissionService.ALL;
+                permission.permissions = new HashSet<>();
+                permission.objectClass = this.organizationService.getPermissionObjectClass();
+                permission.objectId = (ObjectId)key.getId();
+                permission.timeCreated = currentTime;
+
+                this.permissionService.write(Arrays.asList(permission));
+
+                List<Object> entities = new ArrayList<>();
+                entities.add(organization);
+                entities.add(permission);
+
+                this.notificationService.notify(entities, "organization.create");
+
+                Organization entity = this.datastore.get(Organization.class, key.getId());
+                builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+
+                this.reindexExecutor.submit(new Runnable() {
+                    @Override
+                    public void run() {
+                        OrganizationResource.this.organizationService.reindex();
+                    }
+                });
             }
         } else {
-            builder = Response.status(Status.BAD_REQUEST);
+            builder = Response.status(Status.CONFLICT);
         }
 
         return builder.build();
-    }
-
-    @GZip
-    @GET
-    @Path("search")
-    @QueryRestrict(hasAny=true, target={"email"})
-    public Response search(
-        @QueryParam("email") String email
-    ) {
-        Query<Organization> query = this.datastore.createQuery(Organization.class);
-        query.field("email").equalIgnoreCase(email);
-
-        Paging<Organization> entity = new Paging<>(query.asList(), query.count());
-        return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
     }
 
     @GZip
@@ -734,8 +698,10 @@ public class OrganizationResource {
 
         FindOptions options = new FindOptions();
 
-        if (limit != null && limit > -1) {
+        if (limit != null && limit > -1 && limit <= ApplicationService.LIMIT_DEFAULT) {
             options.limit(limit);
+        } else {
+            options.limit(ApplicationService.LIMIT_DEFAULT);
         }
 
         if (offset != null && offset > -1) {
@@ -769,48 +735,41 @@ public class OrganizationResource {
     @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
     public Response update(
         @PathObject("id") Organization searchedOrganization,
-        Organization organization
+        @ValidEntity Organization organization
     ) {
         ResponseBuilder builder;
 
-        boolean valid = this.organizationService.isValid(organization);
+        Query<Organization> query = this.datastore.createQuery(Organization.class)
+            .field("id").notEqual(searchedOrganization.id)
+            .field("email").equalIgnoreCase(organization.email);
 
-        if (valid) {
-            Query<Organization> query = this.datastore.createQuery(Organization.class)
-                .field("id").notEqual(searchedOrganization.id)
-                .field("email").equalIgnoreCase(organization.email);
+        long sameEmailCount = query.count();
 
-            long sameEmailCount = query.count();
+        if (sameEmailCount == 0) {
+            boolean parentIdChangeViolation = !Objects.equals(searchedOrganization.parentId, organization.parentId);
 
-            if (sameEmailCount == 0) {
-                boolean parentIdChangeViolation = !Objects.equals(searchedOrganization.parentId, organization.parentId);
-
-                if (parentIdChangeViolation) {
-                    ErrorData entity = new ErrorData();
-                    entity.error = "parentId";
-                    builder = Response.status(Status.BAD_REQUEST)
-                        .entity(entity)
-                        .type(MediaType.APPLICATION_JSON);
-                } else {
-
-                    organization.id = searchedOrganization.id;
-                    organization.emailConfirmed = searchedOrganization.emailConfirmed;
-                    organization.children = searchedOrganization.children;
-                    organization.timeCreated = searchedOrganization.timeCreated;
-                    organization.timeUpdated = new Date();
-
-                    Key<Organization> key = this.datastore.save(organization);
-                    Organization entity = this.datastore.get(Organization.class, key.getId());
-
-                    this.notificationService.notify(Arrays.asList(entity), "organization.update");
-
-                    builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-                }
+            if (parentIdChangeViolation) {
+                ErrorData entity = new ErrorData();
+                entity.error = "parentId";
+                builder = Response.status(Status.BAD_REQUEST)
+                    .entity(entity)
+                    .type(MediaType.APPLICATION_JSON);
             } else {
-                builder = Response.status(Status.CONFLICT);
+                organization.id = searchedOrganization.id;
+                organization.emailConfirmed = searchedOrganization.emailConfirmed;
+                organization.children = searchedOrganization.children;
+                organization.timeCreated = searchedOrganization.timeCreated;
+                organization.timeUpdated = new Date();
+
+                Key<Organization> key = this.datastore.save(organization);
+                Organization entity = this.datastore.get(Organization.class, key.getId());
+
+                this.notificationService.notify(Arrays.asList(entity), "organization.update");
+
+                builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
             }
         } else {
-            builder = Response.status(Status.BAD_REQUEST);
+            builder = Response.status(Status.CONFLICT);
         }
 
         return builder.build();

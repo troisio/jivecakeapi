@@ -59,7 +59,7 @@ public class PathObjectValueFactoryProvider extends AbstractValueFactoryProvider
                         }
 
                         if (id != null) {
-                            result = PathObjectValueFactoryProvider.this.datastore.createQuery(clazz).field("id").equal(id).get();
+                            result = PathObjectValueFactoryProvider.this.datastore.get(clazz, id);
                         }
                     }
 

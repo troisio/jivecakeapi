@@ -92,8 +92,13 @@ public class TransactionService {
         return query;
     }
 
-    public boolean isValidTransaction(Transaction transaction) {
-        return transaction.quantity > 0 &&
+    public static boolean isValid(Transaction transaction) {
+        return transaction != null &&
+            transaction.quantity > 0 &&
+            (transaction.given_name == null || transaction.given_name.length() <= 100) &&
+            (transaction.middleName == null || transaction.middleName.length() <= 100) &&
+            (transaction.family_name == null || transaction.family_name.length() <= 100) &&
+            (transaction.email == null || (transaction.email.contains("@") && transaction.email.length() <= 100)) &&
             TransactionService.CURRENCIES.contains(transaction.currency) &&
             (
                 transaction.status == TransactionService.PENDING ||

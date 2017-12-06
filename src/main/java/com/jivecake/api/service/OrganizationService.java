@@ -30,8 +30,13 @@ public class OrganizationService {
         return Organization.class.getSimpleName();
     }
 
-    public boolean isValid(Organization organization) {
-        return organization != null && organization.email != null && organization.email.contains("@");
+    public static boolean isValid(Organization organization) {
+        return organization != null &&
+            organization.email != null &&
+            organization.email.contains("@") &&
+            organization.name != null &&
+            organization.name.length() > 0 &&
+            organization.name.length() <= 100;
     }
 
     public void reindex() {
