@@ -170,8 +170,6 @@ public class ItemResource {
         @Context DecodedJWT jwt,
         @ValidEntity Transaction transaction
     ) {
-        transaction.status = TransactionService.PAYMENT_EQUAL;
-        transaction.paymentStatus = TransactionService.SETTLED;
         boolean isValid = transaction.amount >= 0;
 
         ResponseBuilder builder;
@@ -225,15 +223,42 @@ public class ItemResource {
                     transaction.itemId = item.id;
                     transaction.eventId = item.eventId;
                     transaction.organizationId = item.organizationId;
+                    transaction.status = TransactionService.PAYMENT_EQUAL;
+                    transaction.paymentStatus = TransactionService.SETTLED;
                     transaction.timeCreated = currentTime;
 
                     Key<Transaction> key = ItemResource.this.datastore.save(transaction);
                     Transaction entity = ItemResource.this.datastore.get(Transaction.class, key.getId());
 
-                    this.entityService.cascadeLastActivity(Arrays.asList(entity), currentTime);
+                    List<Object> results = this.entityService.cascadeLastActivity(
+                        Arrays.asList(entity),
+                        currentTime
+                    );
+
                     ItemResource.this.notificationService.notify(
                         Arrays.asList(entity),
                         "transaction.create"
+                    );
+
+                    ItemResource.this.notificationService.notify(
+                        results.stream()
+                            .filter(object -> object instanceof Item)
+                            .collect(Collectors.toList()),
+                        "item.update"
+                    );
+
+                    ItemResource.this.notificationService.notify(
+                        results.stream()
+                            .filter(object -> object instanceof Event)
+                            .collect(Collectors.toList()),
+                        "event.update"
+                    );
+
+                    ItemResource.this.notificationService.notify(
+                        results.stream()
+                            .filter(object -> object instanceof Organization)
+                            .collect(Collectors.toList()),
+                        "organization.update"
                     );
 
                     builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);

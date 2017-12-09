@@ -2,6 +2,7 @@ package com.jivecake.api.resources;
 
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.Set;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -65,10 +66,9 @@ public class AssetResource {
     public Response search(
         @QueryParam("entityId") String entityId,
         @QueryParam("entityType") Integer entityType,
-        @QueryParam("assetType") Integer assetType,
+        @QueryParam("assetType") Set<Integer> assetTypes,
         @QueryParam("order") String order,
         @QueryParam("limit") Integer limit,
-        @QueryParam("skip") Integer skip,
         @Context DecodedJWT jwt
     ) {
         ResponseBuilder builder;
@@ -97,8 +97,8 @@ public class AssetResource {
                 query.field("entityId").equal(entityId);
             }
 
-            if (assetType != null) {
-                query.field("assetType").equal(assetType);
+            if (!assetTypes.isEmpty()) {
+                query.field("assetType").in(assetTypes);
             }
 
             if (order != null) {
@@ -111,10 +111,6 @@ public class AssetResource {
                 options.limit(limit);
             } else {
                 options.limit(ApplicationService.LIMIT_DEFAULT);
-            }
-
-            if (skip != null && skip > -1) {
-                options.skip(skip);
             }
 
             Paging<EntityAsset> paging = new Paging<>(query.asList(options), query.count());

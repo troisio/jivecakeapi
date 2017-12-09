@@ -1,6 +1,6 @@
 package com.jivecake.api.service;
 
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashSet;
@@ -11,7 +11,7 @@ import javax.inject.Inject;
 
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
-import org.mongodb.morphia.query.UpdateResults;
+import org.mongodb.morphia.query.Query;
 
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
@@ -27,7 +27,7 @@ public class EntityService {
         this.datastore = datastore;
     }
 
-    public List<UpdateResults> cascadeLastActivity(Collection<?> entities, Date date) {
+    public List<Object> cascadeLastActivity(Collection<?> entities, Date date) {
         Set<ObjectId> organizationIds = new HashSet<>();
         Set<ObjectId> eventIds = new HashSet<>();
         Set<ObjectId> itemIds = new HashSet<>();
@@ -58,27 +58,35 @@ public class EntityService {
             }
         }
 
-        UpdateResults organizationResult = this.datastore.update(
-            this.datastore.createQuery(Organization.class)
-                .field("id").in(organizationIds),
+        Query<Organization> organizationQuery = this.datastore.createQuery(Organization.class)
+            .field("id").in(organizationIds);
+        this.datastore.update(
+            organizationQuery,
             this.datastore.createUpdateOperations(Organization.class)
                 .set("lastActivity", date)
         );
 
-        UpdateResults eventResult = this.datastore.update(
-            this.datastore.createQuery(Event.class)
-                .field("id").in(eventIds),
+        Query<Event> eventQuery = this.datastore.createQuery(Event.class)
+            .field("id").in(eventIds);
+        this.datastore.update(
+            eventQuery,
             this.datastore.createUpdateOperations(Event.class)
                 .set("lastActivity", date)
         );
 
-        UpdateResults itemResult = this.datastore.update(
-            this.datastore.createQuery(Item.class)
-                .field("id").in(itemIds),
+        Query<Item> itemQuery = this.datastore.createQuery(Item.class)
+            .field("id").in(itemIds);
+        this.datastore.update(
+            itemQuery,
             this.datastore.createUpdateOperations(Item.class)
                 .set("lastActivity", date)
         );
 
-        return Arrays.asList(organizationResult, eventResult, itemResult);
+        List<Object> updated = new ArrayList<>();
+        updated.addAll(itemQuery.asList());
+        updated.addAll(eventQuery.asList());
+        updated.addAll(organizationQuery.asList());
+
+        return updated;
     }
 }

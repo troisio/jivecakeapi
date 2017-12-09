@@ -8,7 +8,6 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -19,7 +18,6 @@ import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
 import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
@@ -60,7 +58,6 @@ import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.PaymentProfile;
 import com.jivecake.api.model.Transaction;
-import com.jivecake.api.model.UserData;
 import com.jivecake.api.request.AggregatedEvent;
 import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.request.ItemData;
@@ -113,7 +110,7 @@ public class EventResource {
 
     @GZip
     @GET
-    @Path("/{eventId}/aggregated")
+    @Path("{eventId}/aggregated")
     public Response getAggregatedItemData(
         @PathObject("eventId") Event event,
         @Context DecodedJWT jwt
@@ -159,45 +156,12 @@ public class EventResource {
         return builder.build();
     }
 
-    @GET
-    @Path("{id}/userData/{userId}")
-    @Authorized
-    public Response getUserData(
-        @PathObject("id") Event event,
-        @PathParam("userId") String userId,
-        @Context DecodedJWT jwt
-    ) {
-        ResponseBuilder builder;
-
-        if (event == null) {
-            builder = Response.status(Status.NOT_FOUND);
-        } else {
-            if (jwt.getSubject().equals(userId)) {
-                Optional<UserData> optional = event.userData
-                    .stream()
-                    .filter(userData -> jwt.getSubject().equals(userData.userId))
-                    .findFirst();
-
-                if (optional.isPresent()) {
-                    builder = Response.ok(optional.get(), MediaType.APPLICATION_JSON);
-                } else {
-                    builder = Response.status(Status.NOT_FOUND);
-                }
-            } else {
-                builder = Response.status(Status.UNAUTHORIZED);
-            }
-        }
-
-        return builder.build();
-    }
-
     @GZip
     @GET
     @Path("search")
-    public Response publicSearch(
+    public Response search(
         @QueryParam("id") ObjectId id,
         @QueryParam("hash") String hash,
-        @QueryParam("order") String order,
         @QueryParam("text") String text
     ) {
         Query<Event> query = this.datastore.createQuery(Event.class)
@@ -229,10 +193,6 @@ public class EventResource {
             query.field("hash").equal(hash);
         }
 
-        if (order != null) {
-            query.order(order);
-        }
-
         FindOptions options = new FindOptions();
         options.limit(ApplicationService.LIMIT_DEFAULT);
 
@@ -241,7 +201,7 @@ public class EventResource {
     }
 
     @POST
-    @Path("/{id}")
+    @Path("{id}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
     @HasPermission(clazz=Event.class, id="id", permission=PermissionService.WRITE)
@@ -332,7 +292,7 @@ public class EventResource {
     }
 
     @POST
-    @Path("/{id}/item")
+    @Path("{id}/item")
     @Authorized
     @Consumes(MediaType.APPLICATION_JSON)
     @HasPermission(clazz=Event.class, id="id", permission=PermissionService.WRITE)
@@ -365,7 +325,7 @@ public class EventResource {
     }
 
     @DELETE
-    @Path("/{id}")
+    @Path("{id}")
     @Authorized
     @HasPermission(clazz=Event.class, id="id", permission=PermissionService.WRITE)
     public Response delete(@PathObject("id") Event event) {
@@ -390,7 +350,7 @@ public class EventResource {
     }
 
     @GET
-    @Path("/{id}")
+    @Path("{id}")
     @Authorized
     @HasPermission(id="id", clazz=Event.class, permission=PermissionService.READ)
     public Response read(@PathObject("id") Event event) {
