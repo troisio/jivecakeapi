@@ -106,7 +106,7 @@ public class UserResource {
 
             builder = Response.ok(query.asList(options), MediaType.APPLICATION_JSON);
         } else {
-            builder = Response.status(Status.BAD_REQUEST);
+            builder = Response.status(Status.UNAUTHORIZED);
         }
 
         return builder.build();

@@ -362,6 +362,7 @@ public class EventResource {
     @HasPermission(id="id", clazz=Event.class, permission=PermissionService.READ)
     public Response requestExcel(
         @PathObject("id") Event event,
+        @QueryParam("itemId") ObjectId itemId,
         @Context DecodedJWT jwt
     ) throws IOException {
         File file = File.createTempFile("transactions", ".xlsx");
@@ -369,6 +370,10 @@ public class EventResource {
         Query<Transaction> query = this.datastore.createQuery(Transaction.class)
             .field("eventId").equal(event.id)
             .field("leaf").equal(true);
+
+        if (itemId != null) {
+            query.field("itemId").equal(itemId);
+        }
 
         List<Transaction> transactions = query.asList();
 
