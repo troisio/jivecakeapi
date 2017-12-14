@@ -34,6 +34,7 @@ public class OrganizationService {
         return organization != null &&
             organization.email != null &&
             organization.email.contains("@") &&
+            organization.email.length() <= 100 &&
             organization.name != null &&
             organization.name.length() > 0 &&
             organization.name.length() <= 100;
