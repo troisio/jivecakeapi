@@ -5,5 +5,6 @@ public class OAuthConfiguration {
     public String webClientSecret;
     public String nonInteractiveClientId;
     public String nonInteractiveSecret;
+    public String iOSClientSecret;
     public String domain;
 }

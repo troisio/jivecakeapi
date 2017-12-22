@@ -13,6 +13,7 @@ oauth:
   webClientSecret: "default"
   nonInteractiveClientId: "default"
   nonInteractiveSecret: "default"
+  iOSClientSecret: "default"
   domain: "default"
 
 paypal:

@@ -170,10 +170,14 @@ public class APIApplication extends Application<APIConfiguration> {
         }
 
         List<JWTVerifier> verifiers = new ArrayList<>();
-
         try {
             verifiers.add(
                 JWT.require(Algorithm.HMAC256(configuration.oauth.webClientSecret))
+                .withIssuer(String.format("https://%s/", configuration.oauth.domain))
+                .build()
+            );
+            verifiers.add(
+                JWT.require(Algorithm.HMAC256(configuration.oauth.iOSClientSecret))
                 .withIssuer(String.format("https://%s/", configuration.oauth.domain))
                 .build()
             );
