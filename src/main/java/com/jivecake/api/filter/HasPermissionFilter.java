@@ -15,6 +15,7 @@ import javax.ws.rs.core.Response.Status;
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 
+import com.auth0.jwk.JwkException;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.PermissionService;
@@ -61,7 +62,13 @@ public class HasPermissionFilter implements ContainerRequestFilter {
                 Collection<?> entities = this.datastore.find(annotation.clazz()).field("id").equal(objectId).asList();
 
                 if (!entities.isEmpty()) {
-                    DecodedJWT jwt = this.auth0Service.getClaimsFromToken(token);
+                    DecodedJWT jwt = null;
+
+                    try {
+                        jwt = this.auth0Service.getClaimsFromToken(token);
+                    } catch (JwkException e) {
+                        e.printStackTrace();
+                    }
 
                     if (jwt == null) {
                         response = Response.status(Status.UNAUTHORIZED).build();

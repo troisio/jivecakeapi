@@ -35,7 +35,6 @@ import com.auth0.exception.Auth0Exception;
 import com.auth0.json.mgmt.users.User;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.APIConfiguration;
-import com.jivecake.api.StripeConfiguration;
 import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.GZip;
@@ -80,7 +79,6 @@ public class StripeResource {
     private final Auth0Service auth0Service;
     private final ApplicationService applicationService;
     private final MandrillService mandrillService;
-    private final StripeConfiguration stripeConfiguration;
     private final StripeService stripeService;
     private final TransactionService transactionService;
     private final PermissionService permissionService;
@@ -95,7 +93,6 @@ public class StripeResource {
         Auth0Service auth0Service,
         ApplicationService applicationService,
         MandrillService mandrillService,
-        StripeConfiguration stripeConfiguration,
         StripeService stripeService,
         TransactionService transactionService,
         PermissionService permissionService,
@@ -108,7 +105,6 @@ public class StripeResource {
         this.auth0Service = auth0Service;
         this.applicationService = applicationService;
         this.mandrillService = mandrillService;
-        this.stripeConfiguration = stripeConfiguration;
         this.stripeService = stripeService;
         this.transactionService = transactionService;
         this.permissionService = permissionService;
@@ -125,7 +121,11 @@ public class StripeResource {
         @HeaderParam("Stripe-Signature") String signature,
         String body
     ) throws SignatureVerificationException {
-        Webhook.constructEvent(body, signature, this.stripeConfiguration.signingSecret);
+        Webhook.constructEvent(
+            body,
+            signature,
+            this.apiConfiguration.stripe.signingSecret
+        );
         return Response.ok().build();
     }
 

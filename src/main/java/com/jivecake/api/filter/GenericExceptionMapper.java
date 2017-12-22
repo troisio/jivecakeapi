@@ -24,6 +24,7 @@ import javax.ws.rs.ext.ExceptionMapper;
 
 import org.mongodb.morphia.Datastore;
 
+import com.auth0.jwk.JwkException;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.APIConfiguration;
 import com.jivecake.api.service.ApplicationService;
@@ -110,7 +111,13 @@ public class GenericExceptionMapper implements ExceptionMapper<Exception> {
                 String userId = null;
 
                 if (authorization != null && authorization.startsWith("Bearer ")) {
-                    DecodedJWT jwt = this.auth0Service.getClaimsFromToken(authorization.substring("Bearer ".length()));
+                    DecodedJWT jwt = null;
+
+                    try {
+                        jwt = this.auth0Service.getClaimsFromToken(authorization.substring("Bearer ".length()));
+                    } catch (JwkException e) {
+                        e.printStackTrace();
+                    }
 
                     if (jwt != null) {
                         userId = jwt.getSubject();

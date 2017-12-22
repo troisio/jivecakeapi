@@ -20,6 +20,7 @@ import javax.ws.rs.core.Context;
 import org.apache.commons.io.IOUtils;
 import org.mongodb.morphia.Datastore;
 
+import com.auth0.jwk.JwkException;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.model.Request;
 import com.jivecake.api.service.Auth0Service;
@@ -83,7 +84,13 @@ public class LogFilter implements ContainerRequestFilter {
         if (authorization != null && authorization.startsWith("Bearer .")) {
             String token = authorization.substring("Bearer ".length());
 
-            DecodedJWT jwt = this.auth0Service.getClaimsFromToken(token);
+            DecodedJWT jwt = null;
+
+            try {
+                jwt = this.auth0Service.getClaimsFromToken(token);
+            } catch (JwkException e) {
+                e.printStackTrace();
+            }
 
             if (jwt != null) {
                 request.user_id = jwt.getSubject();

@@ -1,6 +1,5 @@
 package com.jivecake.api;
 
-import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -13,7 +12,6 @@ import javax.inject.Singleton;
 
 import org.bson.types.ObjectId;
 import org.glassfish.hk2.api.InjectionResolver;
-import org.glassfish.hk2.api.TypeLiteral;
 import org.glassfish.hk2.utilities.binding.AbstractBinder;
 import org.glassfish.jersey.process.internal.RequestScoped;
 import org.glassfish.jersey.server.spi.internal.ValueFactoryProvider;
@@ -21,9 +19,6 @@ import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Morphia;
 import org.mongodb.morphia.mapping.MapperOptions;
 
-import com.auth0.jwt.JWT;
-import com.auth0.jwt.JWTVerifier;
-import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.AuthorizedFilter;
 import com.jivecake.api.filter.CORSFilter;
@@ -85,12 +80,12 @@ import io.dropwizard.setup.Environment;
 public class APIApplication extends Application<APIConfiguration> {
     private final List<Class<?>> filters = Arrays.asList(
         AuthorizedFilter.class,
+        APIConfiguration.class,
         GenericExceptionMapper.class,
         GZIPWriterInterceptor.class,
         HasPermissionFilter.class,
         LimitUserRequestFilter.class,
         LogFilter.class,
-        OAuthConfiguration.class,
         OptionsProcessor.class,
         QueryRestrictFilter.class
     );
@@ -139,7 +134,7 @@ public class APIApplication extends Application<APIConfiguration> {
 
     @Override
     public void run(APIConfiguration configuration, Environment environment) {
-        MongoClient mongoClient = new MongoClient(configuration.databases
+        MongoClient client = new MongoClient(configuration.databases
             .stream()
             .map(url -> new ServerAddress(url))
             .collect(Collectors.toList())
@@ -149,7 +144,7 @@ public class APIApplication extends Application<APIConfiguration> {
         MapperOptions options = morphia.getMapper().getOptions();
         options.setStoreEmpties(true);
 
-        Datastore datastore = morphia.createDatastore(mongoClient, "jiveCakeMorphia");
+        Datastore datastore = morphia.createDatastore(client, "jiveCakeMorphia");
         datastore.ensureIndexes();
 
         com.jivecake.api.model.Application application = new com.jivecake.api.model.Application();
@@ -167,22 +162,6 @@ public class APIApplication extends Application<APIConfiguration> {
             rootOrganization.lastActivity = new Date();
             rootOrganization.timeCreated = new Date();
             datastore.save(rootOrganization);
-        }
-
-        List<JWTVerifier> verifiers = new ArrayList<>();
-        try {
-            verifiers.add(
-                JWT.require(Algorithm.HMAC256(configuration.oauth.webClientSecret))
-                .withIssuer(String.format("https://%s/", configuration.oauth.domain))
-                .build()
-            );
-            verifiers.add(
-                JWT.require(Algorithm.HMAC256(configuration.oauth.iOSClientSecret))
-                .withIssuer(String.format("https://%s/", configuration.oauth.domain))
-                .build()
-            );
-        } catch (IllegalArgumentException | UnsupportedEncodingException e) {
-            e.printStackTrace();
         }
 
         ApplicationService applicationService = new ApplicationService(application, datastore);
@@ -209,13 +188,10 @@ public class APIApplication extends Application<APIConfiguration> {
         resourceConfiguration.register(new AbstractBinder() {
             @Override
             protected void configure() {
-                this.bind(verifiers).to(new TypeLiteral<List<JWTVerifier>>() {});
                 this.bind(new HashDateCount()).to(HashDateCount.class);
 
                 this.bind(applicationService).to(ApplicationService.class);
                 this.bind(datastore).to(Datastore.class);
-                this.bind(configuration.oauth).to(OAuthConfiguration.class);
-                this.bind(configuration.stripe).to(StripeConfiguration.class);
                 this.bind(configuration).to(APIConfiguration.class);
 
                 for (Class<?> clazz: APIApplication.this.services) {
