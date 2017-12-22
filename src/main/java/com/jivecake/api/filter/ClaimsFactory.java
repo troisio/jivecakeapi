@@ -5,6 +5,7 @@ import javax.servlet.http.HttpServletRequest;
 
 import org.glassfish.hk2.api.Factory;
 
+import com.auth0.jwk.JwkException;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.service.Auth0Service;
 
@@ -24,7 +25,11 @@ public class ClaimsFactory implements Factory<DecodedJWT> {
        DecodedJWT jwt = null;
 
        if (authorization != null && authorization.startsWith("Bearer ")) {
-           jwt = this.auth0Service.getClaimsFromToken(authorization.substring("Bearer ".length()));
+           try {
+               jwt = this.auth0Service.getClaimsFromToken(authorization.substring("Bearer ".length()));
+           } catch (JwkException e) {
+               e.printStackTrace();
+           }
        }
 
        return jwt;

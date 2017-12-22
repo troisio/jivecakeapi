@@ -15,7 +15,7 @@ import javax.ws.rs.core.MultivaluedMap;
 
 import org.bson.types.ObjectId;
 
-import com.jivecake.api.StripeConfiguration;
+import com.jivecake.api.APIConfiguration;
 import com.jivecake.api.request.StripeAccountCredentials;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Subscription;
@@ -26,15 +26,15 @@ public class StripeService {
     public static final String MONTHLY_ID = "monthly10";
     public static final String MONTHLY_TRIAL_ID = "monthly10trial";
     private final RequestOptions requestOptions;
-    private final StripeConfiguration configuration;
+    private final APIConfiguration configuration;
 
     @Inject
     public StripeService(
-        StripeConfiguration configuration
+        APIConfiguration configuration
     ) {
         this.configuration = configuration;
         this.requestOptions = new RequestOptionsBuilder()
-            .setApiKey(configuration.secretKey)
+            .setApiKey(configuration.stripe.secretKey)
             .build();
     }
 
@@ -46,7 +46,7 @@ public class StripeService {
         MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
         form.putSingle("grant_type", "authorization_code");
         form.putSingle("code", code);
-        form.putSingle("client_secret", this.configuration.secretKey);
+        form.putSingle("client_secret", this.configuration.stripe.secretKey);
 
         return ClientBuilder.newClient()
             .target("https://connect.stripe.com/oauth/token")

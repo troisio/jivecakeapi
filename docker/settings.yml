@@ -9,11 +9,8 @@ facebook:
   accessToken: "default"
 
 oauth:
-  webClientId: "default"
-  webClientSecret: "default"
   nonInteractiveClientId: "default"
   nonInteractiveSecret: "default"
-  iOSClientSecret: "default"
   domain: "default"
 
 paypal:

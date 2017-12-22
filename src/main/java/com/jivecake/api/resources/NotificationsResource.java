@@ -13,6 +13,7 @@ import javax.ws.rs.core.Response.Status;
 import org.glassfish.jersey.media.sse.EventOutput;
 import org.glassfish.jersey.media.sse.SseFeature;
 
+import com.auth0.jwk.JwkException;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.service.Auth0Service;
@@ -44,7 +45,13 @@ public class NotificationsResource {
         if (token == null || !token.startsWith("Bearer ")) {
             builder = Response.status(Status.BAD_REQUEST);
         } else {
-            DecodedJWT jwt = this.auth0Service.getClaimsFromToken(token.substring("Bearer ".length()));
+            DecodedJWT jwt = null;
+
+            try {
+                jwt = this.auth0Service.getClaimsFromToken(token.substring("Bearer ".length()));
+            } catch (JwkException e) {
+                e.printStackTrace();
+            }
 
             if (jwt == null) {
                 builder = Response.status(Status.UNAUTHORIZED);
