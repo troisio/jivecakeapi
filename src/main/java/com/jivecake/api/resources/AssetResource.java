@@ -78,11 +78,11 @@ public class AssetResource {
         boolean hasOrganizationPermission = false;
 
         if (Objects.equals(entityType, EntityType.ORGANIZATION) && entityId != null) {
-            hasOrganizationPermission = this.permissionService.has(
+            Organization organization = this.datastore.get(Organization.class, new ObjectId(entityId));
+
+            hasOrganizationPermission = this.permissionService.hasRead(
                 jwt.getSubject(),
-                Organization.class,
-                PermissionService.READ,
-                new ObjectId(entityId)
+                Arrays.asList(organization)
             );
         }
 
@@ -139,11 +139,10 @@ public class AssetResource {
             boolean hasOrganizationPermission = false;
 
             if (asset.entityType == EntityType.ORGANIZATION) {
-                hasOrganizationPermission = this.permissionService.has(
+                Organization organization = this.datastore.get(Organization.class, new ObjectId(asset.entityId));
+                hasOrganizationPermission = this.permissionService.hasWrite(
                     jwt.getSubject(),
-                    Organization.class,
-                    PermissionService.WRITE,
-                    new ObjectId(asset.entityId)
+                    Arrays.asList(organization)
                 );
             }
 

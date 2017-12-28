@@ -1,7 +1,6 @@
 package com.jivecake.api.model;
 
 import java.util.Date;
-import java.util.Set;
 
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.annotations.Entity;
@@ -32,9 +31,8 @@ public class Permission {
 
     @JsonSerialize(using=ObjectIdSerializer.class)
     public ObjectId objectId;
-
-    public int include;
     public String objectClass;
-    public Set<Integer> permissions;
+    public boolean write;
+    public boolean read;
     public Date timeCreated;
 }

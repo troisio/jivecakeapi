@@ -80,13 +80,12 @@ public class OrganizationInvitationResource {
                         .type(MediaType.APPLICATION_JSON);
                 } else {
                     Permission permission = new Permission();
-                    permission.permissions = invitation.permissions;
-                    permission.include = invitation.include;
+                    permission.read = invitation.read;
+                    permission.write = invitation.write;
                     permission.user_id = jwt.getSubject();
                     permission.objectId = invitation.organizationId;
-                    permission.objectClass = Organization.class.getSimpleName();
+                    permission.objectClass = "Organization";
                     permission.timeCreated = new Date();
-
                     invitation.timeAccepted = new Date();
 
                     this.datastore.save(Arrays.asList(permission, invitation));
@@ -120,11 +119,10 @@ public class OrganizationInvitationResource {
             builder = Response.status(Status.NOT_FOUND);
         } else {
             boolean isInvitedUser = invitation.userIds.contains(jwt.getSubject());
-            boolean hasOrganizationPermission = this.permissionService.has(
+            Organization organization = this.datastore.get(Organization.class, invitation.organizationId);
+            boolean hasOrganizationPermission = this.permissionService.hasWrite(
                 jwt.getSubject(),
-                Organization.class,
-                PermissionService.WRITE,
-                invitation.organizationId
+                Arrays.asList(organization)
             );
 
             if (isInvitedUser || hasOrganizationPermission) {

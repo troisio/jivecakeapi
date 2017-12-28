@@ -68,7 +68,6 @@ import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.ItemService;
 import com.jivecake.api.service.NotificationService;
-import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.StripeService;
 import com.jivecake.api.service.TransactionService;
 import com.stripe.exception.StripeException;
@@ -127,7 +126,6 @@ public class EventResource {
             );
 
             group.event.userData = null;
-            group.organization.children = null;
             group.itemData = group.itemData.stream()
                 .filter(itemData -> itemData.item.status == ItemService.STATUS_ACTIVE)
                 .collect(Collectors.toList());
@@ -204,7 +202,7 @@ public class EventResource {
     @Path("{id}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
-    @HasPermission(clazz=Event.class, id="id", permission=PermissionService.WRITE)
+    @HasPermission(clazz=Event.class, id="id", write=true)
     public Response update(
         @PathObject("id") Event original,
         @ValidEntity Event event
@@ -295,7 +293,7 @@ public class EventResource {
     @Path("{id}/item")
     @Authorized
     @Consumes(MediaType.APPLICATION_JSON)
-    @HasPermission(clazz=Event.class, id="id", permission=PermissionService.WRITE)
+    @HasPermission(clazz=Event.class, id="id", write=true)
     public Response createItem(@PathObject("id") Event event, @ValidEntity Item item) {
         Date currentTime = new Date();
 
@@ -327,7 +325,7 @@ public class EventResource {
     @DELETE
     @Path("{id}")
     @Authorized
-    @HasPermission(clazz=Event.class, id="id", permission=PermissionService.WRITE)
+    @HasPermission(clazz=Event.class, id="id", write=true)
     public Response delete(@PathObject("id") Event event) {
         long itemCount = this.datastore.createQuery(Item.class)
             .field("eventId").equal(event.id)
@@ -352,14 +350,14 @@ public class EventResource {
     @GET
     @Path("{id}")
     @Authorized
-    @HasPermission(id="id", clazz=Event.class, permission=PermissionService.READ)
+    @HasPermission(id="id", clazz=Event.class, read=true)
     public Response read(@PathObject("id") Event event) {
         return Response.ok(event).type(MediaType.APPLICATION_JSON).build();
     }
 
     @GET
     @Path("{id}/excel")
-    @HasPermission(id="id", clazz=Event.class, permission=PermissionService.READ)
+    @HasPermission(id="id", clazz=Event.class, read=true)
     public Response requestExcel(
         @PathObject("id") Event event,
         @QueryParam("itemId") ObjectId itemId,

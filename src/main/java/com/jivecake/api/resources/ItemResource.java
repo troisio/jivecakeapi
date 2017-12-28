@@ -45,7 +45,6 @@ import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.ItemService;
 import com.jivecake.api.service.NotificationService;
-import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.TransactionService;
 
 @Path("item")
@@ -164,7 +163,7 @@ public class ItemResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
     @Path("/{id}/transaction")
-    @HasPermission(id="id", clazz=Item.class, permission=PermissionService.WRITE)
+    @HasPermission(id="id", clazz=Item.class, write=true)
     public Response createTransaction(
         @PathObject("id") Item item,
         @Context DecodedJWT jwt,
@@ -281,7 +280,7 @@ public class ItemResource {
     @GET
     @Path("/{id}")
     @Authorized
-    @HasPermission(clazz=Item.class, id="id", permission=PermissionService.READ)
+    @HasPermission(clazz=Item.class, id="id", read=true)
     public Response read(@PathObject("id") Item item) {
         return Response.ok(item).type(MediaType.APPLICATION_JSON).build();
     }
@@ -289,7 +288,7 @@ public class ItemResource {
     @DELETE
     @Path("/{id}")
     @Authorized
-    @HasPermission(clazz=Item.class, id="id", permission=PermissionService.WRITE)
+    @HasPermission(clazz=Item.class, id="id", write=true)
     public Response delete(@PathObject("id") Item item) {
         ResponseBuilder builder;
 
@@ -316,7 +315,7 @@ public class ItemResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Path("/{id}")
     @Authorized
-    @HasPermission(clazz=Item.class, id="id", permission=PermissionService.WRITE)
+    @HasPermission(clazz=Item.class, id="id", write=true)
     public Response update(@PathObject("id") Item searchedItem, @ValidEntity Item item) {
         Date currentDate = new Date();
 

@@ -1,7 +1,6 @@
 package com.jivecake.api.model;
 
 import java.util.Date;
-import java.util.List;
 
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.annotations.Entity;
@@ -12,7 +11,6 @@ import org.mongodb.morphia.annotations.Indexes;
 import org.mongodb.morphia.utils.IndexType;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
-import com.jivecake.api.serializer.ObjectIdCollectionSerializer;
 import com.jivecake.api.serializer.ObjectIdSerializer;
 
 @Entity
@@ -27,11 +25,9 @@ public class Organization {
 
     @JsonSerialize(using=ObjectIdSerializer.class)
     public ObjectId parentId;
-
-    @JsonSerialize(using=ObjectIdCollectionSerializer.class)
-    public List<ObjectId> children;
     public String email;
     public boolean emailConfirmed;
+    public String createdBy;
     public String name;
     public Date timeCreated;
     public Date timeUpdated;

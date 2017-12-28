@@ -123,7 +123,7 @@ public class PaypalResource {
     @POST
     @Path("{id}/refund")
     @Consumes(MediaType.APPLICATION_JSON)
-    @HasPermission(id="id", clazz=Transaction.class, permission=PermissionService.WRITE)
+    @HasPermission(id="id", clazz=Transaction.class, write=true)
     public Response refund(@PathObject("id") Transaction transaction) {
         ResponseBuilder builder;
 
@@ -501,10 +501,9 @@ public class PaypalResource {
             builder = Response.status(Status.NOT_FOUND);
         } else {
             boolean hasPermission = jwt.getSubject().equals(transaction.user_id) ||
-                this.permissionService.has(
+                this.permissionService.hasRead(
                     jwt.getSubject(),
-                    Arrays.asList(transaction),
-                    PermissionService.READ
+                    Arrays.asList(transaction)
                 );
 
             if (hasPermission) {

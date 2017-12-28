@@ -2,9 +2,7 @@ package com.jivecake.api;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -16,8 +14,10 @@ import org.glassfish.hk2.utilities.binding.AbstractBinder;
 import org.glassfish.jersey.process.internal.RequestScoped;
 import org.glassfish.jersey.server.spi.internal.ValueFactoryProvider;
 import org.mongodb.morphia.Datastore;
+import org.mongodb.morphia.FindAndModifyOptions;
 import org.mongodb.morphia.Morphia;
 import org.mongodb.morphia.mapping.MapperOptions;
+import org.mongodb.morphia.query.UpdateOpsImpl;
 
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.AuthorizedFilter;
@@ -156,7 +156,6 @@ public class APIApplication extends Application<APIConfiguration> {
         if (rootOrganization == null) {
             rootOrganization = new Organization();
             rootOrganization.id = rootId;
-            rootOrganization.children = new ArrayList<>();
             rootOrganization.name = "JiveCake";
             rootOrganization.email = "luis@trois.io";
             rootOrganization.lastActivity = new Date();
@@ -165,16 +164,12 @@ public class APIApplication extends Application<APIConfiguration> {
         }
 
         ApplicationService applicationService = new ApplicationService(application, datastore);
-        OrganizationService organizationService = new OrganizationService(datastore);
-
-        PermissionService permissionService = new PermissionService(
-            datastore,
-            applicationService,
-            organizationService
-        );
+        PermissionService permissionService = new PermissionService(datastore);
 
         if (configuration.rootOAuthIds != null) {
             this.establishRootUsers(
+                datastore,
+                morphia,
                 permissionService,
                 application,
                 rootOrganization,
@@ -220,36 +215,35 @@ public class APIApplication extends Application<APIConfiguration> {
     }
 
     private void establishRootUsers(
+        Datastore datastore,
+        Morphia morphia,
         PermissionService permissionService,
         com.jivecake.api.model.Application application,
         Organization organization,
         List<String> userIds
     ) {
-        Date time = new Date();
-
-        Collection<Permission> permissions = new ArrayList<>();
-
         for (String user_id: userIds) {
-            Permission organizationPermission = new Permission();
-            organizationPermission.include = PermissionService.ALL;
-            organizationPermission.permissions = new HashSet<>();
-            organizationPermission.objectClass = Organization.class.getSimpleName();
-            organizationPermission.objectId = organization.id;
-            organizationPermission.timeCreated = time;
-            organizationPermission.user_id = user_id;
+            Object[][] permissionTuples = {
+                { "Organization", organization.id },
+                { "Application",  application.id}
+            };
 
-            Permission applicationPermission = new Permission();
-            applicationPermission.include = PermissionService.ALL;
-            applicationPermission.permissions = new HashSet<>();
-            applicationPermission.objectClass = Application.class.getSimpleName();
-            applicationPermission.objectId = application.id;
-            applicationPermission.timeCreated = time;
-            applicationPermission.user_id = user_id;
-
-            permissions.add(organizationPermission);
-            permissions.add(applicationPermission);
+            for (Object[] permissionTuple: permissionTuples) {
+                datastore.findAndModify(
+                    datastore.createQuery(Permission.class)
+                        .field("objectClass").equal(permissionTuple[0])
+                        .field("objectId").equal(permissionTuple[1])
+                        .field("user_id").equal(user_id),
+                    new UpdateOpsImpl<>(Permission.class, morphia.getMapper())
+                        .set("read", true)
+                        .set("write", true)
+                        .set("objectClass", permissionTuple[0])
+                        .set("objectId", permissionTuple[1])
+                        .set("timeCreated", new Date())
+                        .set("user_id", user_id),
+                    new FindAndModifyOptions().upsert(true)
+                );
+            }
         }
-
-        permissionService.write(permissions);
     }
 }

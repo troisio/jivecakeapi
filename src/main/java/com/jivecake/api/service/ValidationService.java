@@ -45,25 +45,9 @@ public class ValidationService {
     }
 
     public static boolean isValid(OrganizationInvitation entity) {
-        boolean validPermissions;
-
-        if (entity.permissions == null) {
-            validPermissions = false;
-        } else {
-            Set<Integer> permissions = new HashSet<>(entity.permissions);
-            permissions.remove(PermissionService.READ);
-            permissions.remove(PermissionService.WRITE);
-            validPermissions = permissions.isEmpty();
-        }
-
-        boolean validIncludeField = entity.include == PermissionService.ALL ||
-            entity.include == PermissionService.EXCLUDE ||
-            entity.include == PermissionService.INCLUDE;
-
-        return validIncludeField &&
-               validPermissions &&
-               entity.email != null &&
-               entity.email.contains("@");
+        return entity.email != null &&
+               entity.email.contains("@") &&
+               (entity.write || entity.read);
     }
 
     public static boolean isValid(EntityAsset entity) {
