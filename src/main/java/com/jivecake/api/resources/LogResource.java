@@ -71,10 +71,9 @@ public class LogResource {
 
         ResponseBuilder builder;
 
-        boolean hasPermission = this.permissionService.has(
+        boolean hasPermission = this.permissionService.hasRead(
             jwt.getSubject(),
-            Arrays.asList(application),
-            PermissionService.READ
+            Arrays.asList(application)
         );
 
         if (hasPermission) {
@@ -153,10 +152,9 @@ public class LogResource {
 
         ResponseBuilder builder;
 
-        boolean hasPermission = this.permissionService.has(
+        boolean hasPermission = this.permissionService.hasRead(
             jwt.getSubject(),
-            Arrays.asList(application),
-            PermissionService.READ
+            Arrays.asList(application)
         );
 
         if (hasPermission) {
@@ -209,10 +207,9 @@ public class LogResource {
 
         ResponseBuilder builder;
 
-        boolean hasPermission = this.permissionService.has(
+        boolean hasPermission = this.permissionService.hasRead(
             jwt.getSubject(),
-            Arrays.asList(application),
-            PermissionService.READ
+            Arrays.asList(application)
         );
 
         if (hasPermission) {

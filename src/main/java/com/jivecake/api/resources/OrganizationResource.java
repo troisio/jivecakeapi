@@ -6,13 +6,10 @@ import java.util.Calendar;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -23,7 +20,6 @@ import javax.ws.rs.GET;
 import javax.ws.rs.HeaderParam;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
-import javax.ws.rs.QueryParam;
 import javax.ws.rs.client.InvocationCallback;
 import javax.ws.rs.container.AsyncResponse;
 import javax.ws.rs.container.Suspended;
@@ -72,7 +68,6 @@ import com.jivecake.api.model.Permission;
 import com.jivecake.api.model.StripePaymentProfile;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.request.ErrorData;
-import com.jivecake.api.request.Paging;
 import com.jivecake.api.request.StripeAccountCredentials;
 import com.jivecake.api.request.StripeOAuthCode;
 import com.jivecake.api.service.ApplicationService;
@@ -81,7 +76,6 @@ import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.OrganizationService;
-import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.StripeService;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Account;
@@ -95,13 +89,11 @@ public class OrganizationResource {
     private final APIConfiguration configuration;
     private final OrganizationService organizationService;
     private final EventService eventService;
-    private final PermissionService permissionService;
     private final StripeService stripeService;
     private final NotificationService notificationService;
     private final EntityService entityService;
     private final Datastore datastore;
     private final long maximumOrganizationsPerUser = 10;
-    private final ExecutorService reindexExecutor = Executors.newSingleThreadExecutor();
 
     @Inject
     public OrganizationResource(
@@ -109,7 +101,6 @@ public class OrganizationResource {
         APIConfiguration configuration,
         OrganizationService organizationService,
         EventService eventService,
-        PermissionService permissionService,
         StripeService stripeService,
         NotificationService notificationService,
         EntityService entityService,
@@ -119,7 +110,6 @@ public class OrganizationResource {
         this.configuration = configuration;
         this.organizationService = organizationService;
         this.eventService = eventService;
-        this.permissionService = permissionService;
         this.stripeService = stripeService;
         this.notificationService = notificationService;
         this.entityService = entityService;
@@ -130,7 +120,7 @@ public class OrganizationResource {
     @Path("{id}/tree")
     @GZip
     @Authorized
-    @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.READ)
+    @HasPermission(clazz=Organization.class, id="id", read=true)
     public Response getOrganizationTree(
         @PathObject("id") Organization organization
     ) {
@@ -170,10 +160,8 @@ public class OrganizationResource {
     @GET
     @Path("{id}/invitation")
     @Authorized
-    @HasPermission(id="id", clazz=Organization.class, permission=PermissionService.READ)
-    public Response getInvitations(
-        @PathObject("id") Organization organization
-    ) {
+    @HasPermission(id="id", clazz=Organization.class, read=true)
+    public Response getInvitations(@PathObject("id") Organization organization) {
         Calendar calendar = Calendar.getInstance();
         calendar.add(Calendar.DATE, -7);
 
@@ -193,7 +181,7 @@ public class OrganizationResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Path("{id}/invitation")
     @Authorized
-    @HasPermission(id="id", clazz=Organization.class, permission=PermissionService.WRITE)
+    @HasPermission(id="id", clazz=Organization.class, write=true)
     public Response inviteUser(
         @PathObject("id") Organization organization,
         @ValidEntity OrganizationInvitation invitation
@@ -251,7 +239,7 @@ public class OrganizationResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Path("{id}/consent")
     @Authorized
-    @HasPermission(id="id", clazz=Organization.class, permission=PermissionService.WRITE)
+    @HasPermission(id="id", clazz=Organization.class, write=true)
     public Response createConsent(
         @PathObject("id") Organization organization,
         @HeaderParam("Content-Type") String contentType,
@@ -335,7 +323,7 @@ public class OrganizationResource {
     @Path("{id}/payment/profile/stripe")
     @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
-    @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
+    @HasPermission(clazz=Organization.class, id="id", write=true)
     public void createStripeProfile(
         @PathObject("id") Organization organization,
         @Suspended AsyncResponse asyncResponse,
@@ -403,58 +391,10 @@ public class OrganizationResource {
     }
 
     @POST
-    @Path("{id}/permission")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Authorized
-    @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
-    public Response updatePermission(
-        @PathObject("id") Organization organization,
-        List<Permission> permissions
-    ) {
-        boolean valid = permissions != null &&
-            permissions.stream()
-            .map(permission -> PermissionService.isValid(permission))
-            .reduce((a, b) -> a && b)
-            .orElse(false);
-
-        ResponseBuilder builder;
-
-        if (valid) {
-            Date currentTime = new Date();
-
-            for (Permission permission : permissions) {
-                permission.id = null;
-                permission.objectId = organization.id;
-                permission.timeCreated = currentTime;
-                permission.objectClass = this.organizationService.getPermissionObjectClass();
-
-                if (permission.permissions == null) {
-                    permission.permissions = new HashSet<>();
-                }
-            }
-
-            this.permissionService.write(permissions);
-            this.notificationService.notify(new ArrayList<>(permissions), "permission.write");
-            this.entityService.cascadeLastActivity(Arrays.asList(organization), currentTime);
-
-            List<Permission> entity = this.datastore.createQuery(Permission.class)
-                .field("objectId").equal(organization.id)
-                .field("objectClass").equal(this.organizationService.getPermissionObjectClass())
-                .asList();
-
-            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-        } else {
-            builder = Response.status(Status.BAD_REQUEST);
-        }
-
-        return builder.build();
-    }
-
-    @POST
     @Path("{id}/payment/profile/paypal")
     @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
-    @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
+    @HasPermission(clazz=Organization.class, id="id", write=true)
     public Response createPaypalPaymentProfile(
         @PathObject("id") Organization organization,
         @ValidEntity PaypalPaymentProfile profile
@@ -492,7 +432,7 @@ public class OrganizationResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Path("/{id}/event")
     @Authorized
-    @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
+    @HasPermission(clazz=Organization.class, id="id", write=true)
     public Response createEvent(
         @PathObject("id") Organization organization,
         @ValidEntity Event event
@@ -602,13 +542,11 @@ public class OrganizationResource {
             .count();
 
         if (sameEmailCount == 0) {
-            long userOrganizationPermissions = this.datastore.createQuery(Permission.class)
-                .field("user_id").equal(jwt.getSubject())
-                .field("objectClass").equal(Organization.class.getSimpleName())
-                .field("include").equal(PermissionService.ALL)
+            long organizationsCreatedByUser = this.datastore.createQuery(Organization.class)
+                .field("createdBy").equal(jwt.getSubject())
                 .count();
 
-            if (userOrganizationPermissions > this.maximumOrganizationsPerUser) {
+            if (organizationsCreatedByUser > this.maximumOrganizationsPerUser) {
                 ErrorData entity = new ErrorData();
                 entity.error = "limit";
                 builder = Response.status(Status.BAD_REQUEST)
@@ -619,8 +557,8 @@ public class OrganizationResource {
                 Date currentTime = new Date();
 
                 organization.id = null;
+                organization.createdBy = jwt.getSubject();
                 organization.parentId = rootOrganization.id;
-                organization.children = new ArrayList<>();
                 organization.emailConfirmed = false;
                 organization.timeCreated = currentTime;
                 organization.timeUpdated = null;
@@ -629,14 +567,14 @@ public class OrganizationResource {
                 Key<Organization> key = this.datastore.save(organization);
 
                 Permission permission = new Permission();
+                permission.write = true;
+                permission.read = true;
                 permission.user_id = jwt.getSubject();
-                permission.include = PermissionService.ALL;
-                permission.permissions = new HashSet<>();
-                permission.objectClass = this.organizationService.getPermissionObjectClass();
+                permission.objectClass = "Organization";
                 permission.objectId = (ObjectId)key.getId();
                 permission.timeCreated = currentTime;
 
-                this.permissionService.write(Arrays.asList(permission));
+                this.datastore.save(permission);
 
                 List<Object> entities = new ArrayList<>();
                 entities.add(organization);
@@ -646,83 +584,9 @@ public class OrganizationResource {
 
                 Organization entity = this.datastore.get(Organization.class, key.getId());
                 builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-
-                this.reindexExecutor.submit(new Runnable() {
-                    @Override
-                    public void run() {
-                        OrganizationResource.this.organizationService.reindex();
-                    }
-                });
             }
         } else {
             builder = Response.status(Status.CONFLICT);
-        }
-
-        return builder.build();
-    }
-
-    @GZip
-    @GET
-    @Authorized
-    public Response search(
-        @QueryParam("id") List<ObjectId> ids,
-        @QueryParam("name") String name,
-        @QueryParam("email") String email,
-        @QueryParam("order") String order,
-        @QueryParam("limit") Integer limit,
-        @QueryParam("offset") Integer offset,
-        @QueryParam("lastActivityGreaterThan") Long lastActivityGreaterThan,
-        @Context DecodedJWT jwt
-    ) {
-        Query<Organization> query = this.datastore.createQuery(Organization.class);
-
-        if (!ids.isEmpty()) {
-            query.field("id").in(ids);
-        }
-
-        if (name != null) {
-            query.field("name").startsWithIgnoreCase(name);
-        }
-
-        if (email != null) {
-            query.field("email").startsWithIgnoreCase(email);
-        }
-
-        if (lastActivityGreaterThan != null) {
-            query.field("lastActivity").greaterThan(new Date(lastActivityGreaterThan));
-        }
-
-        if (order != null) {
-            query.order(order);
-        }
-
-        FindOptions options = new FindOptions();
-
-        if (limit != null && limit > -1 && limit <= ApplicationService.LIMIT_DEFAULT) {
-            options.limit(limit);
-        } else {
-            options.limit(ApplicationService.LIMIT_DEFAULT);
-        }
-
-        if (offset != null && offset > -1) {
-            options.skip(offset);
-        }
-
-        List<Organization> organizations = query.asList(options);
-
-        boolean hasPermission = this.permissionService.has(
-            jwt.getSubject(),
-            organizations,
-            PermissionService.READ
-        );
-
-        ResponseBuilder builder;
-
-        if (hasPermission) {
-            Paging<Organization> entity = new Paging<>(organizations, query.count());
-            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-        } else {
-            builder = Response.status(Status.UNAUTHORIZED);
         }
 
         return builder.build();
@@ -732,7 +596,7 @@ public class OrganizationResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Path("{id}")
     @Authorized
-    @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
+    @HasPermission(clazz=Organization.class, id="id", write=true)
     public Response update(
         @PathObject("id") Organization searchedOrganization,
         @ValidEntity Organization organization
@@ -756,8 +620,8 @@ public class OrganizationResource {
                     .type(MediaType.APPLICATION_JSON);
             } else {
                 organization.id = searchedOrganization.id;
+                organization.createdBy = searchedOrganization.createdBy;
                 organization.emailConfirmed = searchedOrganization.emailConfirmed;
-                organization.children = searchedOrganization.children;
                 organization.timeCreated = searchedOrganization.timeCreated;
                 organization.timeUpdated = new Date();
 
@@ -766,7 +630,7 @@ public class OrganizationResource {
 
                 this.notificationService.notify(Arrays.asList(entity), "organization.update");
 
-                builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+                builder = Response.ok(entity, MediaType.APPLICATION_JSON);
             }
         } else {
             builder = Response.status(Status.CONFLICT);
@@ -794,7 +658,7 @@ public class OrganizationResource {
     @GET
     @Path("{id}/user")
     @Authorized
-    @HasPermission(id="id", clazz=Organization.class, permission=PermissionService.READ)
+    @HasPermission(id="id", clazz=Organization.class, read=true)
     public Response getUsers(@PathObject("id") Organization organization) throws Auth0Exception {
         String query = this.datastore.createQuery(Permission.class)
             .field("objectClass").equal("Organization")
@@ -819,7 +683,7 @@ public class OrganizationResource {
     @DELETE
     @Path("{id}")
     @Authorized
-    @HasPermission(clazz=Organization.class, id="id", permission=PermissionService.WRITE)
+    @HasPermission(clazz=Organization.class, id="id", write=true)
     public Response delete(@PathObject("id") Organization searchedOrganization) {
         ResponseBuilder builder;
 
@@ -840,7 +704,7 @@ public class OrganizationResource {
 
             Query<Permission> query = this.datastore.createQuery(Permission.class)
                 .field("objectId").equal(searchedOrganization.id)
-                .field("objectClass").equal(this.organizationService.getPermissionObjectClass());
+                .field("objectClass").equal("Organization");
 
             List<Permission> permisisons = query.asList();
 
@@ -848,19 +712,26 @@ public class OrganizationResource {
             entities.add(searchedOrganization);
             entities.addAll(permisisons);
 
-            this.notificationService.notify(entities, "organization.delete");
             this.datastore.delete(query);
+            this.notificationService.notify(entities, "organization.delete");
 
-            builder = Response.ok(searchedOrganization).type(MediaType.APPLICATION_JSON);
-
-            this.reindexExecutor.submit(new Runnable() {
-                @Override
-                public void run() {
-                    OrganizationResource.this.organizationService.reindex();
-                }
-            });
+            builder = Response.ok();
         }
 
         return builder.build();
+    }
+
+    @GET
+    @Path("{id}/payment/profile")
+    @GZip
+    @Authorized
+    @HasPermission(clazz=Organization.class, id="id", read=true)
+    public Response getPaymentProfiles(
+        @PathObject("id") Organization organization
+    ) {
+        List<PaymentProfile> profiles = this.datastore.createQuery(PaymentProfile.class)
+            .field("organizationId").equal(organization.id)
+            .asList();
+        return Response.ok(profiles, MediaType.APPLICATION_JSON).build();
     }
 }

@@ -14,6 +14,7 @@ import javax.ws.rs.core.MediaType;
 
 import org.bson.types.ObjectId;
 import org.glassfish.jersey.media.sse.OutboundEvent;
+import org.mongodb.morphia.Datastore;
 
 import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.EntityType;
@@ -28,18 +29,18 @@ import com.jivecake.api.model.Transaction;
 
 public class NotificationService {
     private final OrganizationService organizationService;
-    private final PermissionService permissionService;
     private final ClientConnectionService clientConnectionService;
+    private final Datastore datastore;
 
     @Inject
     public NotificationService(
         OrganizationService organizationService,
-        PermissionService permissionService,
+        Datastore datastore,
         ClientConnectionService clientConnectionService
     ) {
         this.organizationService = organizationService;
         this.clientConnectionService = clientConnectionService;
-        this.permissionService = permissionService;
+        this.datastore = datastore;
     }
 
     public void sendEvent(String userId, OutboundEvent chunk) {
@@ -119,9 +120,10 @@ public class NotificationService {
             }
         }
 
-        Map<ObjectId, List<Permission>> permissions = this.permissionService.getQueryWithPermission(PermissionService.READ)
+        Map<ObjectId, List<Permission>> permissions = this.datastore.createQuery(Permission.class)
             .field("objectClass").equal(this.organizationService.getPermissionObjectClass())
             .field("objectId").in(organizationToEntities.keySet())
+            .field("read").equal(true)
             .asList()
             .stream()
             .collect(Collectors.groupingBy(permission -> permission.objectId));

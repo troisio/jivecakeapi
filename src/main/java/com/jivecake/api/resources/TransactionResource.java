@@ -94,7 +94,6 @@ public class TransactionResource {
         @QueryParam("email") String email,
         @QueryParam("leaf") Boolean leaf,
         @QueryParam("limit") Integer limit,
-        @QueryParam("offset") Integer offset,
         @QueryParam("order") String order,
         @Context DecodedJWT jwt
     ) {
@@ -138,10 +137,6 @@ public class TransactionResource {
             options.limit(defaultLimit);
         }
 
-        if (offset != null && offset > -1) {
-            options.skip(offset);
-        }
-
         List<Transaction> transactions = query.asList(options);
 
         boolean hasPermission;
@@ -149,10 +144,10 @@ public class TransactionResource {
         if (jwt.getSubject().equals(userId)) {
             hasPermission = true;
         } else {
-            hasPermission = this.permissionService.has(
+System.out.println("transactions  " + transactions);
+            hasPermission = this.permissionService.hasRead(
                 jwt.getSubject(),
-                transactions,
-                PermissionService.READ
+                transactions
             );
         }
 
@@ -241,10 +236,9 @@ public class TransactionResource {
             .field("user_id").exists()
             .asList();
 
-        boolean hasPermission = this.permissionService.has(
+        boolean hasPermission = this.permissionService.hasRead(
             jwt.getSubject(),
-            transactions,
-            PermissionService.READ
+            transactions
         );
 
         ResponseBuilder builder;
@@ -288,10 +282,9 @@ public class TransactionResource {
             .filter(transaction -> !jwt.getSubject().equals(transaction.user_id))
             .count();
 
-        boolean hasTransactionPermission = this.permissionService.has(
+        boolean hasTransactionPermission = this.permissionService.hasRead(
             jwt.getSubject(),
-            transactions,
-            PermissionService.READ
+            transactions
         );
 
         boolean hasPermission = !transactions.isEmpty() &&
@@ -338,10 +331,9 @@ public class TransactionResource {
             builder = Response.status(Status.NOT_FOUND);
         } else {
             boolean hasPermission = jwt.getSubject().equals(transaction.user_id);
-            boolean hasOrganizationPermission = this.permissionService.has(
+            boolean hasOrganizationPermission = this.permissionService.hasRead(
                 jwt.getSubject(),
-                Arrays.asList(transaction),
-                PermissionService.READ
+                Arrays.asList(transaction)
             );
 
             if (hasPermission || hasOrganizationPermission) {
@@ -357,7 +349,7 @@ public class TransactionResource {
     @POST
     @Path("{id}/revoke")
     @Authorized
-    @HasPermission(clazz=Transaction.class, permission=PermissionService.WRITE, id="id")
+    @HasPermission(clazz=Transaction.class, write=true, id="id")
     public Response revoke(@PathObject("id") Transaction transaction) {
         ResponseBuilder builder;
 
@@ -410,7 +402,7 @@ public class TransactionResource {
     @DELETE
     @Path("{id}")
     @Authorized
-    @HasPermission(clazz=Transaction.class, id="id", permission=PermissionService.WRITE)
+    @HasPermission(clazz=Transaction.class, id="id", write=true)
     public Response delete(@PathObject("id") Transaction transaction) {
         ResponseBuilder builder;
 
@@ -464,7 +456,6 @@ public class TransactionResource {
 
         if (authorized) {
             Organization organization = this.datastore.createQuery(Organization.class)
-                .project("children", false)
                 .field("id").equal(transaction.organizationId)
                 .get();
             builder = Response.ok(organization, MediaType.APPLICATION_JSON);

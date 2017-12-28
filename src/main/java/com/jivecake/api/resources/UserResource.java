@@ -9,7 +9,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -19,7 +18,6 @@ import javax.ws.rs.HeaderParam;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
-import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
@@ -27,7 +25,6 @@ import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
 import org.apache.poi.util.IOUtils;
-import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
@@ -51,12 +48,9 @@ import com.jivecake.api.filter.LimitUserRequest;
 import com.jivecake.api.model.AssetType;
 import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.EntityType;
-import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.OrganizationInvitation;
-import com.jivecake.api.model.Permission;
 import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.NotificationService;
-import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.StripeService;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Subscription;
@@ -67,7 +61,6 @@ import com.stripe.model.Subscription;
 public class UserResource {
     private final Datastore datastore;
     private final StripeService stripeService;
-    private final OrganizationService organizationService;
     private final NotificationService notificationService;
     private final APIConfiguration configuration;
 
@@ -75,13 +68,11 @@ public class UserResource {
     public UserResource(
         Datastore datastore,
         StripeService stripeService,
-        OrganizationService organizationService,
         NotificationService notificationService,
         APIConfiguration configuration
     ) {
         this.datastore = datastore;
         this.stripeService = stripeService;
-        this.organizationService = organizationService;
         this.notificationService = notificationService;
         this.configuration = configuration;
     }
@@ -105,55 +96,6 @@ public class UserResource {
             options.limit(ApplicationService.LIMIT_DEFAULT);
 
             builder = Response.ok(query.asList(options), MediaType.APPLICATION_JSON);
-        } else {
-            builder = Response.status(Status.UNAUTHORIZED);
-        }
-
-        return builder.build();
-    }
-
-    @GZip
-    @GET
-    @Path("{user_id}/organization")
-    @Authorized
-    public Response getOrganizations(
-        @PathParam("user_id") String userId,
-        @QueryParam("order") String order,
-        @Context DecodedJWT jwt
-    ) {
-        boolean hasPermission = userId.equals(jwt.getSubject());
-
-        ResponseBuilder builder;
-
-        if (hasPermission) {
-            List<ObjectId> organizationIds = this.datastore.createQuery(Permission.class)
-                .field("user_id").equal(userId)
-                .field("objectClass").equal(this.organizationService.getPermissionObjectClass())
-                .asList()
-                .stream()
-                .map(permission -> permission.objectId)
-                .collect(Collectors.toList());
-
-            List<Organization> organizations = this.datastore.createQuery(Organization.class)
-                .field("id").in(organizationIds)
-                .asList();
-
-            List<ObjectId> childrenIds = organizations.stream()
-                .map(organization -> organization.children)
-                .flatMap(collection -> collection.stream())
-                .collect(Collectors.toList());
-
-            Query<Organization> query = this.datastore.createQuery(Organization.class);
-            query.or(
-                query.criteria("id").in(organizationIds),
-                query.criteria("id").in(childrenIds)
-            );
-
-            if (order != null) {
-                query.order(order);
-            }
-
-            builder = Response.ok(query.asList()).type(MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);
         }

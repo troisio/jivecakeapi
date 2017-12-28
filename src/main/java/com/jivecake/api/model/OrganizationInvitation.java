@@ -2,7 +2,6 @@ package com.jivecake.api.model;
 
 import java.util.Date;
 import java.util.List;
-import java.util.Set;
 
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.annotations.Entity;
@@ -26,8 +25,8 @@ public class OrganizationInvitation {
 
     @JsonSerialize(using=ObjectIdSerializer.class)
     public ObjectId organizationId;
-    public Set<Integer> permissions;
-    public int include;
+    public boolean read;
+    public boolean write;
     public String email;
     public List<String> userIds;
     public Date timeCreated;

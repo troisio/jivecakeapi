@@ -133,7 +133,7 @@ public class StripeResource {
     @Path("{id}/refund")
     @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
-    @HasPermission(id="id", clazz=Transaction.class, permission=PermissionService.WRITE)
+    @HasPermission(id="id", clazz=Transaction.class, write=true)
     public Response refund(@PathObject("id") Transaction transaction, @Context DecodedJWT jwt) {
         boolean canRefund = transaction.leaf = true &&
             transaction.status == TransactionService.SETTLED &&
@@ -374,10 +374,9 @@ public class StripeResource {
             String organizationId = subscription.getMetadata().get("organizationId");
             Organization organization = this.datastore.get(Organization.class, new ObjectId(organizationId));
 
-            boolean hasPermission = this.permissionService.has(
+            boolean hasPermission = this.permissionService.hasWrite(
                 jwt.getSubject(),
-                Arrays.asList(organization),
-                PermissionService.WRITE
+                Arrays.asList(organization)
             );
 
             if (hasPermission) {
@@ -409,7 +408,7 @@ public class StripeResource {
     @Path("{organizationId}/subscribe/{planId}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Authorized
-    @HasPermission(clazz=Organization.class, id="organizationId", permission=PermissionService.WRITE)
+    @HasPermission(clazz=Organization.class, id="organizationId", write=true)
     public Response subscribe(
         @PathObject("organizationId") Organization organization,
         @PathParam("planId") String planId,
@@ -539,11 +538,10 @@ public class StripeResource {
         }
 
         if (organizationId != null) {
-            isAuthorized = this.permissionService.has(
+            Organization organization = this.datastore.get(Organization.class, organizationId);
+            isAuthorized = this.permissionService.hasRead(
                 jwt.getSubject(),
-                Organization.class,
-                PermissionService.READ,
-                organizationId
+                Arrays.asList(organization)
             );
         }
 

@@ -10,7 +10,6 @@ import javax.inject.Inject;
 
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
-import org.mongodb.morphia.query.UpdateOperations;
 
 import com.jivecake.api.model.Organization;
 
@@ -38,21 +37,6 @@ public class OrganizationService {
             organization.name != null &&
             organization.name.length() > 0 &&
             organization.name.length() <= 100;
-    }
-
-    public void reindex() {
-        Map<Organization, List<Organization>> organizationToDescendants = this.getDescendants();
-
-        organizationToDescendants.forEach((organization, children) -> {
-            List<ObjectId> childIds = children.stream()
-                .map(org -> org.id)
-                .collect(Collectors.toList());
-
-            UpdateOperations<Organization> operations = this.datastore
-                .createUpdateOperations(Organization.class)
-                .set("children", childIds);
-            this.datastore.update(organization, operations);
-        });
     }
 
     public Map<Organization, List<Organization>> getDescendants() {

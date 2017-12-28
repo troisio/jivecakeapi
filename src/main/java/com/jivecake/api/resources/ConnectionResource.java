@@ -58,10 +58,9 @@ public class ConnectionResource {
         ResponseBuilder builder;
         Application application = this.applicationService.read();
 
-        boolean hasPermission = this.permissionService.has(
+        boolean hasPermission = this.permissionService.hasRead(
             jwt.getSubject(),
-            Arrays.asList(application),
-            PermissionService.READ
+            Arrays.asList(application)
         );
 
         if (hasPermission) {

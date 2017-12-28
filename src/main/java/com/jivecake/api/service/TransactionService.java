@@ -146,6 +146,7 @@ public class TransactionService {
             "Item",
             "Amount",
             "Currency",
+            "Status",
             "Time Created",
             "Payment System"
         };
@@ -197,8 +198,9 @@ public class TransactionService {
         Cell itemName = row.createCell(5);
         Cell amount = row.createCell(6);
         Cell currency = row.createCell(7);
-        Cell timeCreated = row.createCell(8);
-        Cell linkedObjectClass = row.createCell(9);
+        Cell status = row.createCell(8);
+        Cell timeCreated = row.createCell(9);
+        Cell linkedObjectClass = row.createCell(10);
 
         amount.setCellValue(subject.amount);
         currency.setCellValue(subject.currency);
@@ -217,6 +219,24 @@ public class TransactionService {
         if (subject.timeCreated != null) {
             timeCreated.setCellValue(subject.timeCreated);
         }
+
+        String statusString;
+
+        if (subject.status == TransactionService.SETTLED) {
+            statusString = "Settled";
+        } else if (subject.status == TransactionService.REFUNDED) {
+            statusString = "Refunded";
+        } else if (subject.status == TransactionService.PENDING) {
+            statusString = "Pending";
+        } else if (subject.status == TransactionService.USER_REVOKED) {
+            statusString = "Revoked";
+        } else if (subject.status == TransactionService.UNKNOWN) {
+            statusString = "UNKNOWN";
+        } else {
+            statusString = "";
+        }
+
+        status.setCellValue(statusString);
 
         timeCreated.setCellStyle(dateStyle);
 

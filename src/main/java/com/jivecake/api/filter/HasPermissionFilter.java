@@ -20,7 +20,7 @@ import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.PermissionService;
 
-@HasPermission(clazz=HasPermission.class, id="", permission=0)
+@HasPermission(clazz=HasPermission.class, id="")
 public class HasPermissionFilter implements ContainerRequestFilter {
     @Context
     private ResourceInfo resourceInfo;
@@ -73,7 +73,12 @@ public class HasPermissionFilter implements ContainerRequestFilter {
                     if (jwt == null) {
                         response = Response.status(Status.UNAUTHORIZED).build();
                     } else {
-                        boolean hasPermission = this.permissionService.has(jwt.getSubject(), entities, annotation.permission());
+                        boolean hasPermission = this.permissionService.has(
+                            jwt.getSubject(),
+                            entities,
+                            annotation.read(),
+                            annotation.write()
+                        );
 
                         if (hasPermission) {
                             response = null;

@@ -10,5 +10,6 @@ import javax.ws.rs.NameBinding;
 public @interface HasPermission {
     Class<?> clazz();
     String id();
-    int permission();
+    boolean read() default false;
+    boolean write() default false;
 }
