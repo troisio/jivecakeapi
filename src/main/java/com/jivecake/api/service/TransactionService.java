@@ -59,7 +59,7 @@ public class TransactionService {
         "ILS",
         "ISK",
         "NZD",
-        "RUS",
+        "RUB",
         "SEK",
         "TTD",
         "USD",

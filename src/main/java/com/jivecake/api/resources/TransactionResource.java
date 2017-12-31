@@ -144,7 +144,6 @@ public class TransactionResource {
         if (jwt.getSubject().equals(userId)) {
             hasPermission = true;
         } else {
-System.out.println("transactions  " + transactions);
             hasPermission = this.permissionService.hasRead(
                 jwt.getSubject(),
                 transactions
