@@ -139,7 +139,7 @@ public class PermissionResource {
         if (hasPermission) {
             List<Permission> entities = query.asList(options);
             Paging<Permission> entity = new Paging<>(entities, query.count());
-            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+            builder = Response.ok(entity, MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);
         }

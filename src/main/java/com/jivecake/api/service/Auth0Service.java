@@ -34,7 +34,7 @@ public class Auth0Service {
 
     @Inject
     public Auth0Service(
-            APIConfiguration configuration,
+        APIConfiguration configuration,
         ApplicationService applicationService
     ) {
         this.configuration = configuration;

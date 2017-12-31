@@ -29,6 +29,7 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
+import org.apache.commons.collections4.ListUtils;
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Key;
@@ -86,6 +87,7 @@ import com.stripe.model.Subscription;
 @Singleton
 public class OrganizationResource {
     private final Auth0Service auth0Service;
+    private final ApplicationService applicationService;
     private final APIConfiguration configuration;
     private final OrganizationService organizationService;
     private final EventService eventService;
@@ -98,6 +100,7 @@ public class OrganizationResource {
     @Inject
     public OrganizationResource(
         Auth0Service auth0Service,
+        ApplicationService applicationService,
         APIConfiguration configuration,
         OrganizationService organizationService,
         EventService eventService,
@@ -107,6 +110,7 @@ public class OrganizationResource {
         Datastore datastore
     ) {
         this.auth0Service = auth0Service;
+        this.applicationService = applicationService;
         this.configuration = configuration;
         this.organizationService = organizationService;
         this.eventService = eventService;
@@ -122,14 +126,26 @@ public class OrganizationResource {
     @Authorized
     @HasPermission(clazz=Organization.class, id="id", read=true)
     public Response getOrganizationTree(
-        @PathObject("id") Organization organization
-    ) {
+        @PathObject("id") Organization organization,
+        @Context DecodedJWT jwt
+    ) throws Auth0Exception {
         Calendar calendar = Calendar.getInstance();
         calendar.add(Calendar.YEAR, -1);
         Date oneYearPrevious = calendar.getTime();
 
         List<PaymentProfile> profiles = this.datastore.createQuery(PaymentProfile.class)
             .field("organizationId").equal(organization.id)
+            .asList();
+
+        List<EntityAsset> assets = this.datastore.createQuery(EntityAsset.class)
+            .field("entityId").equal(organization.id.toString())
+            .field("entityType").equal(EntityType.ORGANIZATION)
+            .field("assetType").in(
+                Arrays.asList(
+                    AssetType.ORGANIZATION_CONSENT_TEXT,
+                    AssetType.GOOGLE_CLOUD_STORAGE_CONSENT_PDF
+                )
+             )
             .asList();
 
         List<Event> events = this.datastore.createQuery(Event.class)
@@ -147,14 +163,60 @@ public class OrganizationResource {
             .field("timeCreated").greaterThan(oneYearPrevious)
             .asList();
 
+        List<String> userIds = transactions.stream()
+            .filter(transaction -> transaction.user_id != null)
+            .map(transaction -> transaction.user_id)
+            .distinct()
+            .collect(Collectors.toList());
+
+        ManagementAPI managementApi = new ManagementAPI(
+            this.configuration.oauth.domain,
+            this.auth0Service.getToken().get("access_token").asText()
+        );
+
+        List<com.auth0.json.mgmt.users.User> users =
+            ListUtils.partition(userIds, 55)
+            .stream()
+            .map(ids -> {
+                String query = userIds.stream()
+                    .map(id -> String.format("user_id: \"%s\"", id))
+                    .collect(Collectors.joining(" OR "));
+
+                List<com.auth0.json.mgmt.users.User> result;
+
+                try {
+                    result = managementApi
+                        .users()
+                        .list(new UserFilter().withQuery(query))
+                        .execute()
+                        .getItems();
+                } catch (Auth0Exception e) {
+                    e.printStackTrace();
+                    this.applicationService.saveException(e, jwt.getSubject());
+                    result = Arrays.asList();
+                }
+
+                return result;
+            })
+            .flatMap(List::stream)
+            .collect(Collectors.toList());
+
+        List<EntityAsset> transactionUserAssets = this.datastore.createQuery(EntityAsset.class)
+            .field("entityId").in(userIds)
+            .field("entityType").equal(EntityType.USER)
+            .asList();
+
         Map<String, Object> entity = new HashMap<>();
         entity.put("organization", organization);
-        entity.put("paymentProfile", profiles);
         entity.put("event", events);
         entity.put("item", items);
         entity.put("transaction", transactions);
+        entity.put("paymentProfile", profiles);
+        entity.put("organizationAsset", assets);
+        entity.put("transactionUser", users);
+        entity.put("transactionUserAsset", transactionUserAssets);
 
-        return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
+        return Response.ok(entity, MediaType.APPLICATION_JSON).build();
     }
 
     @GET
@@ -512,6 +574,7 @@ public class OrganizationResource {
             event.userData = new ArrayList<>();
             event.hash = this.eventService.getHash();
             event.organizationId = organization.id;
+            event.timeUpdated = currentTime;
             event.timeCreated = currentTime;
             event.lastActivity = currentTime;
 
@@ -561,7 +624,7 @@ public class OrganizationResource {
                 organization.parentId = rootOrganization.id;
                 organization.emailConfirmed = false;
                 organization.timeCreated = currentTime;
-                organization.timeUpdated = null;
+                organization.timeUpdated = new Date();
                 organization.lastActivity = currentTime;
 
                 Key<Organization> key = this.datastore.save(organization);
@@ -620,10 +683,12 @@ public class OrganizationResource {
                     .type(MediaType.APPLICATION_JSON);
             } else {
                 organization.id = searchedOrganization.id;
+                organization.parentId = searchedOrganization.parentId;
                 organization.createdBy = searchedOrganization.createdBy;
                 organization.emailConfirmed = searchedOrganization.emailConfirmed;
                 organization.timeCreated = searchedOrganization.timeCreated;
                 organization.timeUpdated = new Date();
+                organization.lastActivity = new Date();
 
                 Key<Organization> key = this.datastore.save(organization);
                 Organization entity = this.datastore.get(Organization.class, key.getId());

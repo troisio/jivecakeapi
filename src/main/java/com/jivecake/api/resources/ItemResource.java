@@ -227,15 +227,15 @@ public class ItemResource {
                     transaction.timeCreated = currentTime;
 
                     Key<Transaction> key = ItemResource.this.datastore.save(transaction);
-                    Transaction entity = ItemResource.this.datastore.get(Transaction.class, key.getId());
+                    Transaction newTransaction = ItemResource.this.datastore.get(Transaction.class, key.getId());
 
                     List<Object> results = this.entityService.cascadeLastActivity(
-                        Arrays.asList(entity),
+                        Arrays.asList(newTransaction),
                         currentTime
                     );
 
                     ItemResource.this.notificationService.notify(
-                        Arrays.asList(entity),
+                        Arrays.asList(newTransaction),
                         "transaction.create"
                     );
 
@@ -260,7 +260,7 @@ public class ItemResource {
                         "organization.update"
                     );
 
-                    builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+                    builder = Response.ok(newTransaction).type(MediaType.APPLICATION_JSON);
                 } else {
                     ErrorData error = new ErrorData();
                     error.error = "user";

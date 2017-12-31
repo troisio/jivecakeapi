@@ -158,6 +158,7 @@ public class APIApplication extends Application<APIConfiguration> {
             rootOrganization.id = rootId;
             rootOrganization.name = "JiveCake";
             rootOrganization.email = "luis@trois.io";
+            rootOrganization.createdBy = "google-oauth2|105220434348009698992";
             rootOrganization.lastActivity = new Date();
             rootOrganization.timeCreated = new Date();
             datastore.save(rootOrganization);

@@ -309,7 +309,7 @@ public class EventResource {
         item.eventId = event.id;
         item.organizationId = event.organizationId;
         item.timeCreated = currentTime;
-        item.timeUpdated = null;
+        item.timeUpdated = currentTime;
         item.countAmounts = null;
         item.lastActivity = currentTime;
 
