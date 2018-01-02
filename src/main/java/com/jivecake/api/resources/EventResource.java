@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -142,7 +143,7 @@ public class EventResource {
                 }
             }
 
-            builder = Response.ok(group).type(MediaType.APPLICATION_JSON);
+            builder = Response.ok(group, MediaType.APPLICATION_JSON);
         } else {
             ErrorData error = new ErrorData();
             error.error = "status";
@@ -167,9 +168,11 @@ public class EventResource {
             .field("status").equal(EventService.STATUS_ACTIVE);
 
         if (text != null && !text.isEmpty()) {
+            String pattern = Pattern.quote(text);
+
             List<ObjectId> organizationIds = this.datastore.createQuery(Organization.class)
                 .project("id", true)
-                .field("name").containsIgnoreCase(text)
+                .field("name").containsIgnoreCase(pattern)
                 .asList()
                 .stream()
                 .map(organization -> organization.id)
@@ -178,7 +181,7 @@ public class EventResource {
             query.and(
                 query.or(
                     query.criteria("organizationId").in(organizationIds),
-                    query.criteria("name").containsIgnoreCase(text)
+                    query.criteria("name").containsIgnoreCase(pattern)
                 )
             );
         }
