@@ -57,7 +57,6 @@ import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.MandrillService;
 import com.jivecake.api.service.NotificationService;
-import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.TransactionService;
 import com.paypal.api.payments.Amount;
 import com.paypal.api.payments.Details;
@@ -85,7 +84,6 @@ public class PaypalResource {
     private final EventService eventService;
     private final EntityService entityService;
     private final NotificationService notificationService;
-    private final PermissionService permissionService;
     private final TransactionService transactionService;
     private final APIConfiguration configuration;
     private final APIContext context;
@@ -99,7 +97,6 @@ public class PaypalResource {
         EventService eventService,
         EntityService entityService,
         NotificationService notificationService,
-        PermissionService permissionService,
         TransactionService transactionService,
         APIConfiguration configuration
     ) {
@@ -109,7 +106,6 @@ public class PaypalResource {
         this.eventService = eventService;
         this.entityService = entityService;
         this.notificationService = notificationService;
-        this.permissionService = permissionService;
         this.transactionService = transactionService;
         this.configuration = configuration;
 
@@ -491,40 +487,31 @@ public class PaypalResource {
     @GET
     @Path("{id}/payment")
     @Authorized
+    @HasPermission(id="id", clazz=Transaction.class, read=true)
     public Response getPayment(
         @PathObject("id") Transaction transaction,
         @Context DecodedJWT jwt
     ) {
         ResponseBuilder builder;
 
-        if (transaction == null) {
-            builder = Response.status(Status.NOT_FOUND);
-        } else {
-            boolean hasPermission = jwt.getSubject().equals(transaction.user_id) ||
-                this.permissionService.hasRead(
-                    jwt.getSubject(),
-                    Arrays.asList(transaction)
-                );
+        if ("PaypalPayment".equals(transaction.linkedObjectClass)) {
+            PayPalRESTException exception = null;
+            Payment payment = null;
 
-            if (hasPermission) {
-                PayPalRESTException exception = null;
-                Payment payment = null;
-
-                try {
-                    payment = Payment.get(this.context, transaction.linkedId);
-                } catch (PayPalRESTException e) {
-                    exception = e;
-                }
-
-                if (exception == null) {
-                    builder = Response.ok(payment.toJSON()).type(MediaType.APPLICATION_JSON);
-                } else {
-                    exception.printStackTrace();
-                    builder = Response.status(Status.SERVICE_UNAVAILABLE);
-                }
-            } else {
-                builder = Response.status(Status.UNAUTHORIZED);
+            try {
+                payment = Payment.get(this.context, transaction.linkedId);
+            } catch (PayPalRESTException e) {
+                exception = e;
             }
+
+            if (exception == null) {
+                builder = Response.ok(payment.toJSON(), MediaType.APPLICATION_JSON);
+            } else {
+                exception.printStackTrace();
+                builder = Response.status(Status.SERVICE_UNAVAILABLE);
+            }
+        } else {
+            builder = Response.status(Status.BAD_REQUEST);
         }
 
         return builder.build();
@@ -598,7 +585,10 @@ public class PaypalResource {
                             .field("linkedId").equal(linkedId)
                             .asList();
 
-                        this.datastore.delete(transactions);
+                        for (Transaction transaction: transactions) {
+                            this.datastore.delete(transaction);
+                        }
+
                         this.notificationService.notify(new ArrayList<>(transactions), "transaction.delete");
                         this.entityService.cascadeLastActivity(new ArrayList<>(transactions), new Date());
                     }
