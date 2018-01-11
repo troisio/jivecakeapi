@@ -45,6 +45,7 @@ public class Event {
     public boolean requireOrganizationName;
     public boolean assignIntegerToRegistrant;
     public boolean requirePhoto;
+    public boolean qr;
     public String facebookEventId;
     public String twitterUrl;
     public String websiteUrl;
