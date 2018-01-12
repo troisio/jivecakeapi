@@ -449,7 +449,7 @@ public class TransactionResource {
         @PathObject("id") Transaction transaction,
         @Context DecodedJWT jwt
     ) {
-        boolean authorized = jwt.getSubject().equals(transaction.user_id);
+        boolean authorized = transaction != null && jwt.getSubject().equals(transaction.user_id);
 
         ResponseBuilder builder;
 
@@ -472,7 +472,7 @@ public class TransactionResource {
         @PathObject("id") Transaction transaction,
         @Context DecodedJWT jwt
     ) {
-        boolean authorized = jwt.getSubject().equals(transaction.user_id);
+        boolean authorized = transaction != null &&  jwt.getSubject().equals(transaction.user_id);
 
         ResponseBuilder builder;
 
@@ -493,7 +493,7 @@ public class TransactionResource {
         @PathObject("id") Transaction transaction,
         @Context DecodedJWT jwt
     ) {
-        boolean authorized = jwt.getSubject().equals(transaction.user_id);
+        boolean authorized = transaction != null && jwt.getSubject().equals(transaction.user_id);
 
         ResponseBuilder builder;
 
