@@ -8,6 +8,7 @@ import java.util.Objects;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import javax.ws.rs.Consumes;
+import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
@@ -45,11 +46,37 @@ public class Auth0Resource {
 
     @Inject
     public Auth0Resource(
-            APIConfiguration configuration,
+        APIConfiguration configuration,
         Auth0Service auth0Service
     ) {
         this.configuration = configuration;
         this.auth0Service = auth0Service;
+    }
+
+    @GET
+    @Path("api/v2/users/{id}")
+    @Authorized
+    public Response getUser(
+        @PathParam("id") String id,
+        @Context DecodedJWT jwt
+    ) throws Auth0Exception {
+        boolean authorized = jwt.getSubject().equals(id);
+
+        ResponseBuilder builder;
+
+        if (authorized) {
+            ManagementAPI api = new ManagementAPI(
+                this.configuration.oauth.domain,
+                this.auth0Service.getToken().get("access_token").asText()
+            );
+
+            User user = api.users().get(id, new UserFilter()).execute();
+            builder = Response.ok(user, MediaType.APPLICATION_JSON);
+        } else {
+            builder = Response.status(Status.UNAUTHORIZED);
+        }
+
+        return builder.build();
     }
 
     @POST
@@ -153,7 +180,7 @@ public class Auth0Resource {
                 managementApi.tickets().requestEmailVerification(ticket).execute();
             }
 
-            builder = Response.ok(userAferUpdate).type(MediaType.APPLICATION_JSON);
+            builder = Response.ok(userAferUpdate, MediaType.APPLICATION_JSON);;
         } else {
             builder = Response.status(Status.UNAUTHORIZED);
         }
