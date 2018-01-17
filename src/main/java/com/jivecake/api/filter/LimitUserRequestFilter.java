@@ -14,7 +14,6 @@ import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
-import com.auth0.jwk.JwkException;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.service.Auth0Service;
 
@@ -57,7 +56,7 @@ public class LimitUserRequestFilter implements ContainerRequestFilter {
 
                 try {
                     jwt = this.auth0Service.getClaimsFromToken(token);
-                } catch (JwkException e) {
+                } catch (Exception e) {
                     e.printStackTrace();
                 }
 

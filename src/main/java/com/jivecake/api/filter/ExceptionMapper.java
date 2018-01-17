@@ -1,11 +1,9 @@
 package com.jivecake.api.filter;
 
-import java.util.Date;
+import java.util.Calendar;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -20,28 +18,25 @@ import javax.ws.rs.NotSupportedException;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
-import javax.ws.rs.ext.ExceptionMapper;
 
 import org.mongodb.morphia.Datastore;
 
-import com.auth0.jwk.JwkException;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.APIConfiguration;
 import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.MandrillService;
 
-public class GenericExceptionMapper implements ExceptionMapper<Exception> {
+public class ExceptionMapper implements javax.ws.rs.ext.ExceptionMapper<Exception> {
     private final Datastore datastore;
     private final APIConfiguration apiConfiguration;
     private final Auth0Service auth0Service;
     private final MandrillService mandrillService;
     private final HttpServletRequest request;
     private final ApplicationService applicationService;
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     @Inject
-    public GenericExceptionMapper(
+    public ExceptionMapper(
         Datastore datastore,
         APIConfiguration apiConfiguration,
         Auth0Service auth0Service,
@@ -80,52 +75,46 @@ public class GenericExceptionMapper implements ExceptionMapper<Exception> {
         } else {
             applicationException.printStackTrace();
 
-            this.executor.execute(() -> {
-                long hour = 1000 * 60 * 60;
-                Date oneHourEarlier = new Date(new Date().getTime() - hour);
+            Calendar hourEarlier = Calendar.getInstance();
+            hourEarlier.add(Calendar.HOUR, -1);
 
-                long errorsInLastHour = this.datastore.createQuery(com.jivecake.api.model.Exception.class)
-                    .field("timeCreated").greaterThan(oneHourEarlier)
-                    .count();
+            long errorsInLastHour = this.datastore.createQuery(com.jivecake.api.model.Exception.class)
+                .field("timeCreated").greaterThan(hourEarlier.getTime())
+                .count();
 
-                if (errorsInLastHour == 0) {
-                    List<Map<String, String>> tos = this.apiConfiguration.errorRecipients.stream()
-                        .map(recipient -> {
-                            Map<String, String> to = new HashMap<>();
-                            to.put("email", recipient);
-                            to.put("type", "to");
-                            return to;
-                        })
-                        .collect(Collectors.toList());
+            if (errorsInLastHour == 0) {
+                List<Map<String, String>> tos = this.apiConfiguration.errorRecipients
+                    .stream()
+                    .map(recipient -> {
+                        Map<String, String> to = new HashMap<>();
+                        to.put("email", recipient);
+                        to.put("type", "to");
+                        return to;
+                    })
+                    .collect(Collectors.toList());
 
-                    Map<String, Object> message = new HashMap<>();
-                    message.put("text", "An exception has been thrown");
-                    message.put("subject", "JiveCake Exception");
-                    message.put("from_email", "noreply@jivecake.com");
-                    message.put("from_name", "JiveCake");
-                    message.put("to", tos);
+                Map<String, Object> message = new HashMap<>();
+                message.put("text", "An exception has been thrown");
+                message.put("subject", "JiveCake Exception");
+                message.put("from_email", "noreply@jivecake.com");
+                message.put("from_name", "JiveCake");
+                message.put("to", tos);
 
-                    this.mandrillService.send(message);
+                this.mandrillService.send(message);
+            }
+
+            String userId = null;
+
+            if (authorization != null && authorization.startsWith("Bearer ")) {
+                try {
+                    DecodedJWT jwt = this.auth0Service.getClaimsFromToken(authorization.substring("Bearer ".length()));
+                    userId = jwt.getSubject();
+                } catch (Exception e) {
+                    e.printStackTrace();
                 }
+            }
 
-                String userId = null;
-
-                if (authorization != null && authorization.startsWith("Bearer ")) {
-                    DecodedJWT jwt = null;
-
-                    try {
-                        jwt = this.auth0Service.getClaimsFromToken(authorization.substring("Bearer ".length()));
-                    } catch (JwkException e) {
-                        e.printStackTrace();
-                    }
-
-                    if (jwt != null) {
-                        userId = jwt.getSubject();
-                    }
-                }
-
-                this.applicationService.saveException(applicationException, userId);
-            });
+            this.applicationService.saveException(applicationException, userId);
 
             builder = Response.status(500);
         }

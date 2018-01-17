@@ -15,7 +15,6 @@ import javax.ws.rs.core.Response.Status;
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 
-import com.auth0.jwk.JwkException;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.PermissionService;
@@ -66,7 +65,7 @@ public class HasPermissionFilter implements ContainerRequestFilter {
 
                     try {
                         jwt = this.auth0Service.getClaimsFromToken(token);
-                    } catch (JwkException e) {
+                    } catch (Exception e) {
                         e.printStackTrace();
                     }
 
