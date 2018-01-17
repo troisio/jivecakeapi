@@ -3,6 +3,7 @@ package com.jivecake.api.resources;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
@@ -197,8 +198,14 @@ public class EventResource {
         FindOptions options = new FindOptions();
         options.limit(ApplicationService.LIMIT_DEFAULT);
 
+        List<Event> events = query.asList(options);
+
+        for (Event event: events) {
+            event.userData = new ArrayList<>();
+        }
+
         Paging<Event> entity = new Paging<>(query.asList(options), query.count());
-        return Response.ok(entity).type(MediaType.APPLICATION_JSON).build();
+        return Response.ok(entity, MediaType.APPLICATION_JSON).build();
     }
 
     @POST

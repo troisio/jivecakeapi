@@ -624,7 +624,7 @@ public class OrganizationResource {
                 organization.parentId = rootOrganization.id;
                 organization.emailConfirmed = false;
                 organization.timeCreated = currentTime;
-                organization.timeUpdated = new Date();
+                organization.timeUpdated = currentTime;
                 organization.lastActivity = currentTime;
 
                 Key<Organization> key = this.datastore.save(organization);
@@ -646,7 +646,7 @@ public class OrganizationResource {
                 this.notificationService.notify(entities, "organization.create");
 
                 Organization entity = this.datastore.get(Organization.class, key.getId());
-                builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+                builder = Response.ok(entity, MediaType.APPLICATION_JSON);
             }
         } else {
             builder = Response.status(Status.CONFLICT);

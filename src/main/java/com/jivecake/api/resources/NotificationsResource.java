@@ -14,6 +14,7 @@ import org.glassfish.jersey.media.sse.EventOutput;
 import org.glassfish.jersey.media.sse.SseFeature;
 
 import com.auth0.jwk.JwkException;
+import com.auth0.jwt.exceptions.JWTDecodeException;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.service.Auth0Service;
@@ -49,7 +50,7 @@ public class NotificationsResource {
 
             try {
                 jwt = this.auth0Service.getClaimsFromToken(token.substring("Bearer ".length()));
-            } catch (JwkException e) {
+            } catch (Exception e) {
                 e.printStackTrace();
             }
 

@@ -6,7 +6,7 @@ import java.util.concurrent.TimeUnit;
 import javax.ws.rs.container.AsyncResponse;
 import javax.ws.rs.container.TimeoutHandler;
 
-public class FakeAsyncResponse implements AsyncResponse {
+public class MockAsyncResponse implements AsyncResponse {
     @Override
     public boolean resume(Object response) {
         return false;

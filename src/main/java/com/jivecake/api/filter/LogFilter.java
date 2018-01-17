@@ -20,7 +20,6 @@ import javax.ws.rs.core.Context;
 import org.apache.commons.io.IOUtils;
 import org.mongodb.morphia.Datastore;
 
-import com.auth0.jwk.JwkException;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.model.Request;
 import com.jivecake.api.service.Auth0Service;
@@ -88,7 +87,7 @@ public class LogFilter implements ContainerRequestFilter {
 
             try {
                 jwt = this.auth0Service.getClaimsFromToken(token);
-            } catch (JwkException e) {
+            } catch (Exception e) {
                 e.printStackTrace();
             }
 
