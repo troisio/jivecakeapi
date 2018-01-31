@@ -4,6 +4,7 @@ public class PaypalAuthorizationPayload {
     public String intent;
     public String payerID;
     public String paymentID;
+    public String orderID;
     public String paymentToken;
     public String returnUrl;
 
