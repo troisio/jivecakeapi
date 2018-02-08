@@ -160,7 +160,7 @@ public class PaypalResource {
                         amount.setCurrency(currency);
                         amount.setTotal(
                             TransactionService.DEFAULT_DECIMAL_FORMAT.format(
-                                transaction.amount * transaction.quantity
+                                transaction.amount
                             )
                         );
 
@@ -175,7 +175,7 @@ public class PaypalResource {
                             refundTransaction.id = null;
                             refundTransaction.parentTransactionId = transaction.id;
                             refundTransaction.leaf = true;
-                            refundTransaction.amount = transaction.amount * transaction.quantity * -1;
+                            refundTransaction.amount = transaction.amount * -1;
                             refundTransaction.status = TransactionService.REFUNDED;
                             refundTransaction.timeCreated = new Date();
 
