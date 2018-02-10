@@ -10,7 +10,6 @@ import javax.ws.rs.client.Entity;
 import javax.ws.rs.core.MediaType;
 
 import com.auth0.jwk.Jwk;
-import com.auth0.jwk.JwkException;
 import com.auth0.jwk.JwkProvider;
 import com.auth0.jwk.UrlJwkProvider;
 import com.auth0.jwt.JWT;
@@ -43,7 +42,7 @@ public class Auth0Service {
         }
     }
 
-    public DecodedJWT getClaimsFromToken(String token) throws JwkException {
+    public DecodedJWT getClaimsFromToken(String token) throws Exception {
         DecodedJWT decoded = JWT.decode(token);
         JwkProvider jwkProvider = new UrlJwkProvider("https://" + this.configuration.oauth.domain + "/.well-known/jwks.json");
         Jwk jwk = jwkProvider.get(decoded.getHeaderClaim("kid").asString());
@@ -68,6 +67,7 @@ public class Auth0Service {
 
         return JWT.require(Algorithm.RSA256(provider))
             .withIssuer(String.format("https://%s/", this.configuration.oauth.domain))
+            .withAudience(this.configuration.oauth.audience)
             .build()
             .verify(token);
     }

@@ -16,7 +16,7 @@ public class ConfigurationTest {
     @Test
     public void defaultConfigurationLoads() throws IOException, ConfigurationException {
         ConfigurationFactoryFactory<APIConfiguration> factory = new DefaultConfigurationFactoryFactory<>();
-        File file = new File("docker/settings.yml");
+        File file = new File("docker/settings-test.yml");
         ConfigurationFactory<APIConfiguration> configFactory = factory.create(APIConfiguration.class, BaseValidator.newValidator(), Jackson.newObjectMapper(), "");
         configFactory.build(file);
     }
