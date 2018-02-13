@@ -3,18 +3,14 @@ FROM centos:7
 ENV TERM xterm
 ENV SOURCE_DIRECTORY /root/jivecakeapi
 ENV SETTINGS_FILE /root/settings.yml
-ENV JAVA_HOME /usr/java/jdk1.8.0_151
 ENV GRADLE_HOME /opt/gradle-4.4.1
+ENV JAVA_HOME /usr/lib/jvm/java-1.8.0-openjdk-1.8.0.161-0.b14.el7_4.x86_64
 ENV GOOGLE_APPLICATION_CREDENTIALS /root/gcp-credentials.json
 
 ADD init.sh /init.sh
 
 RUN yum -y update && \
-    yum install -y man-pages man nano wget curl git-all unzip && \
-
-  wget -c --header "Cookie: oraclelicense=accept-securebackup-cookie" http://download.oracle.com/otn-pub/java/jdk/8u151-b12/e758a0de34e24606bca991d704f6dcbf/jdk-8u151-linux-x64.rpm && \
-  yum -y install jdk-8u151-linux-x64.rpm && \
-  rm jdk-8u151-linux-x64.rpm && \
+    yum install -y man-pages man nano wget curl git-all unzip java-1.8.0-openjdk-devel && \
 
   wget --directory-prefix=/opt https://services.gradle.org/distributions/gradle-4.4.1-bin.zip && \
   unzip -d /opt /opt/gradle-4.4.1-bin.zip && \
