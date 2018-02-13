@@ -21,7 +21,7 @@ import javax.servlet.http.HttpSession;
 import javax.servlet.http.HttpUpgradeHandler;
 import javax.servlet.http.Part;
 
-class MockHttpServeltRequest implements javax.servlet.http.HttpServletRequest {
+class MockHttpServletRequest implements javax.servlet.http.HttpServletRequest {
     @Override
     public Object getAttribute(String name) {
         return null;

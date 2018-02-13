@@ -52,7 +52,6 @@ import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.request.ItemData;
 import com.jivecake.api.request.OrderData;
 import com.jivecake.api.request.PaypalAuthorizationPayload;
-import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.MandrillService;
@@ -74,13 +73,17 @@ import com.paypal.base.Constants;
 import com.paypal.base.rest.APIContext;
 import com.paypal.base.rest.PayPalRESTException;
 
+import io.sentry.SentryClient;
+import io.sentry.event.EventBuilder;
+import io.sentry.event.interfaces.ExceptionInterface;
+
 @Path("paypal")
 @CORS
 @Singleton
 public class PaypalResource {
+    private SentryClient sentry;
     private final Datastore datastore;
     private final MandrillService mandrillService;
-    private final ApplicationService applicationService;
     private final EventService eventService;
     private final EntityService entityService;
     private final NotificationService notificationService;
@@ -93,7 +96,6 @@ public class PaypalResource {
     public PaypalResource(
         Datastore datastore,
         MandrillService mandrillService,
-        ApplicationService applicationService,
         EventService eventService,
         EntityService entityService,
         NotificationService notificationService,
@@ -102,7 +104,6 @@ public class PaypalResource {
     ) {
         this.datastore = datastore;
         this.mandrillService = mandrillService;
-        this.applicationService = applicationService;
         this.eventService = eventService;
         this.entityService = entityService;
         this.notificationService = notificationService;
@@ -347,7 +348,18 @@ public class PaypalResource {
                 builder = Response.ok(body).type(MediaType.APPLICATION_JSON);
             }
         } else {
-            exception.printStackTrace();
+            EventBuilder eventBuilder = new EventBuilder()
+                .withEnvironment(this.sentry.getEnvironment())
+                .withMessage(exception.getMessage())
+                .withLevel(io.sentry.event.Event.Level.WARNING)
+                .withSentryInterface(new ExceptionInterface(exception));
+
+            if (jwt != null) {
+                eventBuilder.withExtra("sub", jwt.getSubject());
+            }
+
+            this.sentry.sendEvent(eventBuilder.build());
+
             builder = Response.status(Status.SERVICE_UNAVAILABLE);
         }
 
@@ -470,8 +482,18 @@ public class PaypalResource {
 
                     builder = Response.ok(body).type(MediaType.APPLICATION_JSON);
                 } else {
-                    exception.printStackTrace();
-                    this.applicationService.saveException(exception, userId);
+                    EventBuilder eventBuilder = new EventBuilder()
+                        .withEnvironment(this.sentry.getEnvironment())
+                        .withMessage(exception.getMessage())
+                        .withLevel(io.sentry.event.Event.Level.ERROR)
+                        .withSentryInterface(new ExceptionInterface(exception))
+                        .withExtra("sub", jwt.getSubject());
+
+                    if (jwt.getSubject() != null) {
+                        eventBuilder.withExtra("sub", jwt.getSubject());
+                    }
+
+                    this.sentry.sendEvent(eventBuilder.build());
                     builder = Response.status(Status.SERVICE_UNAVAILABLE);
                 }
             } else {

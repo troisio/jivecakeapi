@@ -25,26 +25,35 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jivecake.api.APIConfiguration;
 
+import io.sentry.SentryClient;
+import io.sentry.event.Event;
+import io.sentry.event.EventBuilder;
+import io.sentry.event.interfaces.ExceptionInterface;
+
 public class Auth0Service {
     private final ObjectMapper mapper = new ObjectMapper();
     private final APIConfiguration configuration;
-    private final ApplicationService applicationService;
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private JsonNode token = null;
 
     @Inject
     public Auth0Service(
         APIConfiguration configuration,
-        ApplicationService applicationService
+        SentryClient sentry
     ) {
         this.configuration = configuration;
-        this.applicationService = applicationService;
-
         this.executor.scheduleAtFixedRate(() -> {
             try {
                 this.token = this.getNewToken();
             } catch (IOException e) {
-                this.applicationService.saveException(e, null);
+                sentry.sendEvent(
+                    new EventBuilder()
+                        .withEnvironment(sentry.getEnvironment())
+                        .withMessage(e.getMessage())
+                        .withLevel(Event.Level.ERROR)
+                        .withSentryInterface(new ExceptionInterface(e))
+                        .build()
+                );
             }
         }, 0, 1, TimeUnit.HOURS);
     }

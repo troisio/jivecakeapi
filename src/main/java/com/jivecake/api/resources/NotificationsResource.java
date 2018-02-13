@@ -13,8 +13,6 @@ import javax.ws.rs.core.Response.Status;
 import org.glassfish.jersey.media.sse.EventOutput;
 import org.glassfish.jersey.media.sse.SseFeature;
 
-import com.auth0.jwk.JwkException;
-import com.auth0.jwt.exceptions.JWTDecodeException;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.service.Auth0Service;

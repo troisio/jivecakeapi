@@ -76,6 +76,8 @@ import io.dropwizard.Application;
 import io.dropwizard.jersey.DropwizardResourceConfig;
 import io.dropwizard.jersey.setup.JerseyEnvironment;
 import io.dropwizard.setup.Environment;
+import io.sentry.Sentry;
+import io.sentry.SentryClient;
 
 public class APIApplication extends Application<APIConfiguration> {
     private final List<Class<?>> filters = Arrays.asList(
@@ -164,7 +166,6 @@ public class APIApplication extends Application<APIConfiguration> {
             datastore.save(rootOrganization);
         }
 
-        ApplicationService applicationService = new ApplicationService(application, datastore);
         PermissionService permissionService = new PermissionService(datastore);
 
         if (configuration.rootOAuthIds != null) {
@@ -186,7 +187,11 @@ public class APIApplication extends Application<APIConfiguration> {
             protected void configure() {
                 this.bind(new HashDateCount()).to(HashDateCount.class);
 
-                this.bind(applicationService).to(ApplicationService.class);
+                SentryClient client = Sentry.init(configuration.sentry.dsn);
+                client.setEnvironment(configuration.sentry.environment);
+
+                this.bind(client).to(SentryClient.class);
+                this.bind(new ApplicationService(application)).to(ApplicationService.class);
                 this.bind(datastore).to(Datastore.class);
                 this.bind(configuration).to(APIConfiguration.class);
 

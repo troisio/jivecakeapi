@@ -12,7 +12,6 @@ import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
-import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 
 @CORS
@@ -21,7 +20,6 @@ import com.jivecake.api.filter.CORS;
 public class ToolsResource {
     @GET
     @Path("echo")
-    @Authorized
     public Response echo(@Context ContainerRequestContext context, @Context HttpServletRequest request) {
         Map<String, Object> entity = new HashMap<>();
         entity.put("headers", context.getHeaders());

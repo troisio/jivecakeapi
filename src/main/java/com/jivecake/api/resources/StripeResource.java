@@ -52,7 +52,6 @@ import com.jivecake.api.request.EntityQuantity;
 import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.request.ItemData;
 import com.jivecake.api.request.StripeOrderPayload;
-import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
@@ -71,13 +70,17 @@ import com.stripe.model.Token;
 import com.stripe.net.RequestOptions;
 import com.stripe.net.Webhook;
 
+import io.sentry.SentryClient;
+import io.sentry.event.EventBuilder;
+import io.sentry.event.interfaces.ExceptionInterface;
+
 @CORS
 @Path("stripe")
 @Singleton
 public class StripeResource {
+    private final SentryClient sentry;
     private final APIConfiguration apiConfiguration;
     private final Auth0Service auth0Service;
-    private final ApplicationService applicationService;
     private final MandrillService mandrillService;
     private final StripeService stripeService;
     private final TransactionService transactionService;
@@ -89,9 +92,9 @@ public class StripeResource {
 
     @Inject
     public StripeResource(
+        SentryClient sentry,
         APIConfiguration apiConfiguration,
         Auth0Service auth0Service,
-        ApplicationService applicationService,
         MandrillService mandrillService,
         StripeService stripeService,
         TransactionService transactionService,
@@ -101,9 +104,9 @@ public class StripeResource {
         NotificationService notificationService,
         Datastore datastore
     ) {
+        this.sentry = sentry;
         this.apiConfiguration = apiConfiguration;
         this.auth0Service = auth0Service;
-        this.applicationService = applicationService;
         this.mandrillService = mandrillService;
         this.stripeService = stripeService;
         this.transactionService = transactionService;
@@ -177,7 +180,16 @@ public class StripeResource {
 
                 builder = Response.ok(refundTransaction).type(MediaType.APPLICATION_JSON);
             } else {
-                this.applicationService.saveException(exception, jwt.getSubject());
+                this.sentry.sendEvent(
+                    new EventBuilder()
+                        .withEnvironment(this.sentry.getEnvironment())
+                        .withMessage(exception.getMessage())
+                        .withEnvironment(this.apiConfiguration.sentry.environment)
+                        .withLevel(io.sentry.event.Event.Level.ERROR)
+                        .withSentryInterface(new ExceptionInterface(exception))
+                        .withExtra("sub", jwt.getSubject())
+                        .build()
+                );
                 builder = Response.status(Status.SERVICE_UNAVAILABLE);
             }
         } else {
@@ -323,20 +335,47 @@ public class StripeResource {
                                     "event.update"
                                 );
                             } catch (InterruptedException | ExecutionException e) {
-                                e.printStackTrace();
-                                this.applicationService.saveException(e, userId);
+                                EventBuilder eventBuilder = new EventBuilder()
+                                    .withEnvironment(this.sentry.getEnvironment())
+                                    .withMessage(e.getMessage())
+                                    .withLevel(io.sentry.event.Event.Level.ERROR)
+                                    .withSentryInterface(new ExceptionInterface(e));
+
+                                if (jwt.getSubject() != null) {
+                                    eventBuilder.withExtra("sub", jwt.getSubject());
+                                }
+
+                                this.sentry.sendEvent(eventBuilder.build());
                             }
                         }
 
                         builder = Response.ok();
                     } else {
-                        exception.printStackTrace();
-                        this.applicationService.saveException(exception, userId);
+                        EventBuilder eventBuilder = new EventBuilder()
+                            .withEnvironment(this.sentry.getEnvironment())
+                            .withMessage(exception.getMessage())
+                            .withLevel(io.sentry.event.Event.Level.WARNING)
+                            .withSentryInterface(new ExceptionInterface(exception));
+
+                        if (jwt != null) {
+                            eventBuilder.withExtra("sub", jwt.getSubject());
+                        }
+
+                        this.sentry.sendEvent(eventBuilder.build());
                         builder = Response.status(Status.SERVICE_UNAVAILABLE);
                     }
                 } else {
-                    tokenException.printStackTrace();
-                    this.applicationService.saveException(tokenException, userId);
+                    EventBuilder eventBuilder = new EventBuilder()
+                        .withEnvironment(this.sentry.getEnvironment())
+                        .withMessage(tokenException.getMessage())
+                        .withLevel(io.sentry.event.Event.Level.WARNING)
+                        .withSentryInterface(new ExceptionInterface(tokenException));
+
+                    if (jwt != null) {
+                        eventBuilder.withExtra("sub", jwt.getSubject());
+                    }
+
+                    this.sentry.sendEvent(eventBuilder.build());
                     builder = Response.status(Status.SERVICE_UNAVAILABLE);
                 }
             } else {
@@ -368,7 +407,14 @@ public class StripeResource {
         }
 
         if (stripeException != null) {
-            this.applicationService.saveException(stripeException, jwt.getSubject());
+            this.sentry.sendEvent(
+                new EventBuilder()
+                    .withMessage(stripeException.getMessage())
+                    .withEnvironment(this.sentry.getEnvironment())
+                    .withLevel(io.sentry.event.Event.Level.ERROR)
+                    .withSentryInterface(new ExceptionInterface(stripeException))
+                    .withExtra("sub", jwt.getSubject()).build()
+            );
             builder = Response.status(Status.SERVICE_UNAVAILABLE);
         } else {
             String organizationId = subscription.getMetadata().get("organizationId");
@@ -393,7 +439,15 @@ public class StripeResource {
                     this.entityService.cascadeLastActivity(Arrays.asList(organization), new Date());
                     builder = Response.ok();
                 } else {
-                    this.applicationService.saveException(exception, jwt.getSubject());
+                    this.sentry.sendEvent(
+                        new EventBuilder()
+                            .withEnvironment(this.sentry.getEnvironment())
+                            .withMessage(exception.getMessage())
+                            .withLevel(io.sentry.event.Event.Level.ERROR)
+                            .withSentryInterface(new ExceptionInterface(exception))
+                            .withExtra("sub", jwt.getSubject())
+                            .build()
+                    );
                     builder = Response.status(Status.SERVICE_UNAVAILABLE);
                 }
             } else {

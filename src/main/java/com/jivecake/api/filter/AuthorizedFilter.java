@@ -8,14 +8,22 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
 import com.auth0.jwt.interfaces.DecodedJWT;
+import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.service.Auth0Service;
+
+import io.sentry.SentryClient;
+import io.sentry.event.Event;
+import io.sentry.event.EventBuilder;
+import io.sentry.event.interfaces.ExceptionInterface;
 
 @Authorized
 public class AuthorizedFilter implements ContainerRequestFilter {
+    private final SentryClient sentry;
     private final Auth0Service auth0Service;
 
     @Inject
-    public AuthorizedFilter(Auth0Service auth0Service) {
+    public AuthorizedFilter(SentryClient sentry, Auth0Service auth0Service) {
+        this.sentry = sentry;
         this.auth0Service = auth0Service;
     }
 
@@ -32,12 +40,22 @@ public class AuthorizedFilter implements ContainerRequestFilter {
             try {
                 decoded = this.auth0Service.getClaimsFromToken(token);
             } catch (Exception e) {
+                this.sentry.sendEvent(
+                    new EventBuilder()
+                        .withEnvironment(this.sentry.getEnvironment())
+                        .withMessage(e.getMessage())
+                        .withLevel(Event.Level.WARNING)
+                        .withSentryInterface(new ExceptionInterface(e))
+                        .build()
+                );
             }
 
             if (decoded == null) {
-                aborted = Response.status(Status.BAD_REQUEST)
+                ErrorData errorData = new ErrorData();
+                errorData.error = "invalid_grant";
+                aborted = Response.status(Status.UNAUTHORIZED)
                     .type(MediaType.APPLICATION_JSON)
-                    .entity("{\"error\": \"invalid_grant\"}")
+                    .entity(errorData)
                     .build();
             }
         } else {
