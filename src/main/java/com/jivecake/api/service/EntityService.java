@@ -17,6 +17,7 @@ import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.PaymentProfile;
+import com.jivecake.api.model.Permission;
 import com.jivecake.api.model.Transaction;
 
 public class EntityService {
@@ -50,6 +51,14 @@ public class EntityService {
             } else if (entity instanceof Organization) {
                 Organization organization = (Organization)entity;
                 organizationIds.add(organization.id);
+            } else if (entity instanceof Permission) {
+                Permission permission = (Permission)entity;
+
+                if ("Organization".equals(permission.objectClass)) {
+                    organizationIds.add(permission.objectId);
+                } else {
+                    throw new IllegalArgumentException(entity.getClass() + " is not a valid class for cascadeLastActivity");
+                }
             } else if (entity instanceof PaymentProfile) {
                 PaymentProfile profile = (PaymentProfile)entity;
                 organizationIds.add(profile.organizationId);

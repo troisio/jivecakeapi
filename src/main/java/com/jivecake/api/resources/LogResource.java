@@ -139,57 +139,6 @@ public class LogResource {
 
     @GZip
     @GET
-    @Path("exception")
-    @Authorized
-    public Response searchExceptions(
-        @QueryParam("userId") String userId,
-        @QueryParam("order") String order,
-        @QueryParam("timeCreatedLessThan") Long timeCreatedLessThan,
-        @QueryParam("timeCreatedGreaterThan") Long timeCreatedGreaterThan,
-        @Context DecodedJWT jwt
-    ) {
-        Application application = this.applicationService.read();
-
-        ResponseBuilder builder;
-
-        boolean hasPermission = this.permissionService.hasRead(
-            jwt.getSubject(),
-            Arrays.asList(application)
-        );
-
-        if (hasPermission) {
-            Query<com.jivecake.api.model.Exception> query = this.datastore.createQuery(com.jivecake.api.model.Exception.class);
-
-            if (userId != null) {
-                query.field("userId").equal(userId);
-            }
-
-            if (timeCreatedGreaterThan != null) {
-                query.field("timeCreated").greaterThan(new Date(timeCreatedGreaterThan));
-            }
-
-            if (timeCreatedLessThan != null) {
-                query.field("timeCreated").lessThan(new Date(timeCreatedLessThan));
-            }
-
-            if (order != null) {
-                query.order(order);
-            }
-
-            FindOptions options = new FindOptions();
-            options.limit(ApplicationService.LIMIT_DEFAULT);
-
-            Paging<com.jivecake.api.model.Exception> entity = new Paging<>(query.asList(options), query.count());
-            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
-        } else {
-            builder = Response.status(Status.UNAUTHORIZED);
-        }
-
-        return builder.build();
-    }
-
-    @GZip
-    @GET
     @Path("ui")
     @Authorized
     public Response searchUIInteractions(

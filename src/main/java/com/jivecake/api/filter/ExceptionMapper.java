@@ -1,11 +1,5 @@
 package com.jivecake.api.filter;
 
-import java.util.Calendar;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
-
 import javax.inject.Inject;
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.BadRequestException;
@@ -19,103 +13,76 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
+import org.glassfish.jersey.server.ParamException.QueryParamException;
 import org.mongodb.morphia.Datastore;
 
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.jivecake.api.APIConfiguration;
-import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.MandrillService;
 
+import io.sentry.SentryClient;
+import io.sentry.event.Event;
+import io.sentry.event.EventBuilder;
+import io.sentry.event.interfaces.ExceptionInterface;
+
 public class ExceptionMapper implements javax.ws.rs.ext.ExceptionMapper<Exception> {
-    private final Datastore datastore;
-    private final APIConfiguration apiConfiguration;
+    private final SentryClient sentry;
     private final Auth0Service auth0Service;
-    private final MandrillService mandrillService;
     private final HttpServletRequest request;
-    private final ApplicationService applicationService;
 
     @Inject
     public ExceptionMapper(
+        SentryClient sentry,
         Datastore datastore,
         APIConfiguration apiConfiguration,
         Auth0Service auth0Service,
         MandrillService mandrillService,
-        HttpServletRequest request,
-        ApplicationService applicationService
+        HttpServletRequest request
     ) {
-        this.datastore = datastore;
-        this.apiConfiguration = apiConfiguration;
+        this.sentry = sentry;
         this.auth0Service = auth0Service;
-        this.mandrillService = mandrillService;
         this.request = request;
-        this.applicationService = applicationService;
     }
 
     @Override
-    public Response toResponse(Exception applicationException) {
-        String authorization = this.request.getHeader("Authorization");
-
+    public Response toResponse(Exception exception) {
         ResponseBuilder builder;
 
-        if (applicationException instanceof NotFoundException) {
+        if (exception instanceof NotFoundException) {
             builder = Response.status(Status.NOT_FOUND);
-        } else if (applicationException instanceof NotAllowedException) {
+        } else if (exception instanceof NotAllowedException) {
             builder = Response.status(Status.METHOD_NOT_ALLOWED);
-        } else if (applicationException instanceof BadRequestException) {
+        } else if (exception instanceof BadRequestException) {
             builder = Response.status(Status.BAD_REQUEST);
-        } else if (applicationException instanceof ForbiddenException) {
+        } else if (exception instanceof ForbiddenException) {
             builder = Response.status(Status.FORBIDDEN);
-        } else if (applicationException instanceof NotAuthorizedException) {
+        } else if (exception instanceof NotAuthorizedException) {
             builder = Response.status(Status.UNAUTHORIZED);
-        } else if (applicationException instanceof NotSupportedException) {
+        } else if (exception instanceof NotSupportedException) {
             builder = Response.status(Status.UNSUPPORTED_MEDIA_TYPE);
-        } else if (applicationException instanceof NotAcceptableException) {
+        } else if (exception instanceof NotAcceptableException) {
             builder = Response.status(Status.NOT_ACCEPTABLE);
+        } else if (exception instanceof QueryParamException) {
+            builder = Response.status(Status.BAD_REQUEST);
         } else {
-            applicationException.printStackTrace();
+            EventBuilder eventBuilder = new EventBuilder()
+                .withEnvironment(this.sentry.getEnvironment())
+                .withMessage(exception.getMessage())
+                .withLevel(Event.Level.ERROR)
+                .withSentryInterface(new ExceptionInterface(exception));
 
-            Calendar hourEarlier = Calendar.getInstance();
-            hourEarlier.add(Calendar.HOUR, -1);
-
-            long errorsInLastHour = this.datastore.createQuery(com.jivecake.api.model.Exception.class)
-                .field("timeCreated").greaterThan(hourEarlier.getTime())
-                .count();
-
-            if (errorsInLastHour == 0) {
-                List<Map<String, String>> tos = this.apiConfiguration.errorRecipients
-                    .stream()
-                    .map(recipient -> {
-                        Map<String, String> to = new HashMap<>();
-                        to.put("email", recipient);
-                        to.put("type", "to");
-                        return to;
-                    })
-                    .collect(Collectors.toList());
-
-                Map<String, Object> message = new HashMap<>();
-                message.put("text", "An exception has been thrown");
-                message.put("subject", "JiveCake Exception");
-                message.put("from_email", "noreply@jivecake.com");
-                message.put("from_name", "JiveCake");
-                message.put("to", tos);
-
-                this.mandrillService.send(message);
-            }
-
-            String userId = null;
+            String authorization = this.request.getHeader("Authorization");
 
             if (authorization != null && authorization.startsWith("Bearer ")) {
                 try {
                     DecodedJWT jwt = this.auth0Service.getClaimsFromToken(authorization.substring("Bearer ".length()));
-                    userId = jwt.getSubject();
+                    eventBuilder.withExtra("sub", jwt.getSubject());
                 } catch (Exception e) {
-                    e.printStackTrace();
                 }
             }
 
-            this.applicationService.saveException(applicationException, userId);
-
+            this.sentry.sendEvent(eventBuilder.build());
             builder = Response.status(500);
         }
 

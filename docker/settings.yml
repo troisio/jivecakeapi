@@ -19,6 +19,10 @@ paypal:
   clientSecret: "default"
   mode: production
 
+sentry:
+  dsn: https://1:1@sentry.io/1
+  environment: development
+
 mandrill:
   mock: true
   key: "default"

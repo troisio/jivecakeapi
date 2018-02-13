@@ -82,12 +82,16 @@ import com.stripe.exception.StripeException;
 import com.stripe.model.Account;
 import com.stripe.model.Subscription;
 
+import io.sentry.SentryClient;
+import io.sentry.event.EventBuilder;
+import io.sentry.event.interfaces.ExceptionInterface;
+
 @CORS
 @Path("organization")
 @Singleton
 public class OrganizationResource {
+    private final SentryClient sentry;
     private final Auth0Service auth0Service;
-    private final ApplicationService applicationService;
     private final APIConfiguration configuration;
     private final OrganizationService organizationService;
     private final EventService eventService;
@@ -99,8 +103,8 @@ public class OrganizationResource {
 
     @Inject
     public OrganizationResource(
+        SentryClient sentry,
         Auth0Service auth0Service,
-        ApplicationService applicationService,
         APIConfiguration configuration,
         OrganizationService organizationService,
         EventService eventService,
@@ -109,8 +113,8 @@ public class OrganizationResource {
         EntityService entityService,
         Datastore datastore
     ) {
+        this.sentry = sentry;
         this.auth0Service = auth0Service;
-        this.applicationService = applicationService;
         this.configuration = configuration;
         this.organizationService = organizationService;
         this.eventService = eventService;
@@ -191,8 +195,15 @@ public class OrganizationResource {
                         .execute()
                         .getItems();
                 } catch (Auth0Exception e) {
-                    e.printStackTrace();
-                    this.applicationService.saveException(e, jwt.getSubject());
+                    this.sentry.sendEvent(
+                        new EventBuilder()
+                            .withMessage(e.getMessage())
+                            .withEnvironment(this.sentry.getEnvironment())
+                            .withLevel(io.sentry.event.Event.Level.ERROR)
+                            .withSentryInterface(new ExceptionInterface(e))
+                            .withExtra("sub", jwt.getSubject())
+                            .build()
+                    );
                     result = Arrays.asList();
                 }
 

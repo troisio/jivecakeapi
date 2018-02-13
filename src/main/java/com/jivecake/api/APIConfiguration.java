@@ -15,4 +15,5 @@ public class APIConfiguration extends Configuration {
     public List<String> corsOrigins;
     public PaypalConfiguration paypal;
     public MandrillConfiguration mandrill;
+    public SentryConfiguration sentry;
 }
