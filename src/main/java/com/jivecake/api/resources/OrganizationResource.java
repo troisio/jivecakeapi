@@ -179,12 +179,13 @@ public class OrganizationResource {
         );
 
         List<com.auth0.json.mgmt.users.User> users =
-            ListUtils.partition(userIds, 55)
+            ListUtils.partition(userIds, 50)
             .stream()
             .map(ids -> {
-                String query = ids.stream()
-                    .map(id -> String.format("user_id: \"%s\"", id))
+                String ors = ids.stream()
+                    .map(id -> String.format("\"%s\"", id))
                     .collect(Collectors.joining(" OR "));
+                String query = String.format("user_id: (%s)", ors);
 
                 List<com.auth0.json.mgmt.users.User> result;
 
