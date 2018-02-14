@@ -182,7 +182,7 @@ public class OrganizationResource {
             ListUtils.partition(userIds, 55)
             .stream()
             .map(ids -> {
-                String query = userIds.stream()
+                String query = ids.stream()
                     .map(id -> String.format("user_id: \"%s\"", id))
                     .collect(Collectors.joining(" OR "));
 
