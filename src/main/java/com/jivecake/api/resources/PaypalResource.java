@@ -81,7 +81,7 @@ import io.sentry.event.interfaces.ExceptionInterface;
 @CORS
 @Singleton
 public class PaypalResource {
-    private SentryClient sentry;
+    private final SentryClient sentry;
     private final Datastore datastore;
     private final MandrillService mandrillService;
     private final EventService eventService;
@@ -94,6 +94,7 @@ public class PaypalResource {
 
     @Inject
     public PaypalResource(
+        SentryClient sentry,
         Datastore datastore,
         MandrillService mandrillService,
         EventService eventService,
@@ -102,6 +103,7 @@ public class PaypalResource {
         TransactionService transactionService,
         APIConfiguration configuration
     ) {
+        this.sentry = sentry;
         this.datastore = datastore;
         this.mandrillService = mandrillService;
         this.eventService = eventService;
