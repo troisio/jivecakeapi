@@ -45,15 +45,19 @@ public class Auth0Service {
         this.executor.scheduleAtFixedRate(() -> {
             try {
                 this.token = this.getNewToken();
-            } catch (IOException e) {
-                sentry.sendEvent(
-                    new EventBuilder()
-                        .withEnvironment(sentry.getEnvironment())
-                        .withMessage(e.getMessage())
-                        .withLevel(Event.Level.ERROR)
-                        .withSentryInterface(new ExceptionInterface(e))
-                        .build()
-                );
+            } catch (Exception exception) {
+                try {
+                    sentry.sendEvent(
+                        new EventBuilder()
+                            .withEnvironment(sentry.getEnvironment())
+                            .withMessage(exception.getMessage())
+                            .withLevel(Event.Level.ERROR)
+                            .withSentryInterface(new ExceptionInterface(exception))
+                            .build()
+                    );
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
             }
         }, 0, 1, TimeUnit.HOURS);
     }
@@ -82,7 +86,7 @@ public class Auth0Service {
         };
 
         return JWT.require(Algorithm.RSA256(provider))
-            .withIssuer(String.format("https://%s/", "jivecake.auth0.com"))
+            .withIssuer(String.format("https://%s/", this.configuration.oauth.domain))
             .build()
             .verify(token);
     }
