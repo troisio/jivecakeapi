@@ -4,36 +4,21 @@ import java.util.Arrays;
 import java.util.Date;
 
 import org.bson.types.ObjectId;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.mongodb.morphia.Datastore;
-import org.mongodb.morphia.Morphia;
 
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.service.EntityService;
-import com.mongodb.MongoClient;
-import com.mongodb.ServerAddress;
 
-public class CascaseActivityTest {
-    private Datastore datastore;
-    private MongoClient client;
+public class CascaseActivityTest extends DatastoreTest {
     private EntityService entityService;
 
     @Before
-    public void connect() {
-        this.client = new MongoClient(Arrays.asList(new ServerAddress(System.getProperty("db"))));
-        this.datastore = new Morphia().createDatastore(this.client, "test");
-        this.entityService = new EntityService(this.datastore);
-    }
-
-    @After
-    public void disconnect() {
-        this.client.dropDatabase("test");
-        this.client.close();
+    public void before() {
+        this.entityService = new EntityService(super.datastore);
     }
 
     @Test

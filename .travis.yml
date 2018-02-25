@@ -3,6 +3,6 @@ jdk:
   - oraclejdk8
 install: true
 script:
-  - gradle test -Ddb=127.0.0.1:27017
+  - gradle test
 services:
   - mongodb

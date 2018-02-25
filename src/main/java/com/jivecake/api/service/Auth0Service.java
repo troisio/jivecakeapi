@@ -3,9 +3,6 @@ package com.jivecake.api.service;
 import java.io.IOException;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 import javax.inject.Inject;
 import javax.ws.rs.client.ClientBuilder;
@@ -26,15 +23,11 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jivecake.api.APIConfiguration;
 
 import io.sentry.SentryClient;
-import io.sentry.event.Event;
-import io.sentry.event.EventBuilder;
-import io.sentry.event.interfaces.ExceptionInterface;
 
 public class Auth0Service {
     private final ObjectMapper mapper = new ObjectMapper();
     private final APIConfiguration configuration;
-    private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
-    private JsonNode token = null;
+    public JsonNode token = null;
 
     @Inject
     public Auth0Service(
@@ -42,24 +35,12 @@ public class Auth0Service {
         SentryClient sentry
     ) {
         this.configuration = configuration;
-        this.executor.scheduleAtFixedRate(() -> {
-            try {
-                this.token = this.getNewToken();
-            } catch (Exception exception) {
-                try {
-                    sentry.sendEvent(
-                        new EventBuilder()
-                            .withEnvironment(sentry.getEnvironment())
-                            .withMessage(exception.getMessage())
-                            .withLevel(Event.Level.ERROR)
-                            .withSentryInterface(new ExceptionInterface(exception))
-                            .build()
-                    );
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-        }, 0, 1, TimeUnit.HOURS);
+
+        try {
+            this.token = this.getNewToken();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     public DecodedJWT getClaimsFromToken(String token) throws JwkException {

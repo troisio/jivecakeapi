@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import javax.inject.Singleton;
 
@@ -16,10 +15,10 @@ import org.glassfish.jersey.server.spi.internal.ValueFactoryProvider;
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.FindAndModifyOptions;
 import org.mongodb.morphia.Morphia;
-import org.mongodb.morphia.mapping.MapperOptions;
 import org.mongodb.morphia.query.UpdateOpsImpl;
 
 import com.auth0.jwt.interfaces.DecodedJWT;
+import com.jivecake.api.cron.Hourly;
 import com.jivecake.api.filter.AuthorizedFilter;
 import com.jivecake.api.filter.CORSFilter;
 import com.jivecake.api.filter.ClaimsFactory;
@@ -57,6 +56,7 @@ import com.jivecake.api.resources.UserResource;
 import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.ClientConnectionService;
+import com.jivecake.api.service.CronService;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.GoogleCloudPlatformService;
@@ -70,7 +70,6 @@ import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.StripeService;
 import com.jivecake.api.service.TransactionService;
 import com.mongodb.MongoClient;
-import com.mongodb.ServerAddress;
 
 import io.dropwizard.Application;
 import io.dropwizard.jersey.DropwizardResourceConfig;
@@ -116,6 +115,7 @@ public class APIApplication extends Application<APIConfiguration> {
         ApplicationService.class,
         Auth0Service.class,
         ClientConnectionService.class,
+        CronService.class,
         EntityService.class,
         EventService.class,
         GoogleCloudPlatformService.class,
@@ -136,18 +136,9 @@ public class APIApplication extends Application<APIConfiguration> {
 
     @Override
     public void run(APIConfiguration configuration, Environment environment) {
-        MongoClient client = new MongoClient(configuration.databases
-            .stream()
-            .map(url -> new ServerAddress(url))
-            .collect(Collectors.toList())
-        );
-        Morphia morphia = new Morphia();
-        morphia.mapPackage("com.jivecake.api.model");
-        MapperOptions options = morphia.getMapper().getOptions();
-        options.setStoreEmpties(true);
-
-        Datastore datastore = morphia.createDatastore(client, "jiveCakeMorphia");
-        datastore.ensureIndexes();
+        MongoClient client = ApplicationService.getClient(configuration);
+        Morphia morphia = ApplicationService.getMorphia(client);
+        Datastore datastore = ApplicationService.getDatastore(morphia, client, "jiveCakeMorphia");
 
         com.jivecake.api.model.Application application = new com.jivecake.api.model.Application();
         application.id = new ObjectId("55865027c1fcce003aa0aa43");
@@ -194,6 +185,7 @@ public class APIApplication extends Application<APIConfiguration> {
                 this.bind(new ApplicationService(application)).to(ApplicationService.class);
                 this.bind(datastore).to(Datastore.class);
                 this.bind(configuration).to(APIConfiguration.class);
+                this.bind(Hourly.class).to(Hourly.class).in(Singleton.class);
 
                 for (Class<?> clazz: APIApplication.this.services) {
                     this.bind(clazz).to(clazz).in(Singleton.class);
