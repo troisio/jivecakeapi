@@ -6,12 +6,9 @@ import java.util.Arrays;
 import java.util.Date;
 
 import org.bson.types.ObjectId;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.FindAndModifyOptions;
-import org.mongodb.morphia.Morphia;
 import org.mongodb.morphia.query.UpdateOperations;
 import org.mongodb.morphia.query.UpdateOpsImpl;
 
@@ -19,27 +16,13 @@ import com.jivecake.api.model.Application;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.Permission;
 import com.jivecake.api.service.PermissionService;
-import com.mongodb.MongoClient;
-import com.mongodb.ServerAddress;
 
-public class PermissionServiceTest {
+public class PermissionServiceTest extends DatastoreTest {
     private PermissionService permissionService;
-    private Datastore datastore;
-    private Morphia morphia;
-    private MongoClient client;
 
     @Before
-    public void connect() {
-        this.morphia = new Morphia();
-        this.client = new MongoClient(Arrays.asList(new ServerAddress(System.getProperty("db"))));
-        this.datastore = this.morphia.createDatastore(this.client, "test");
-        this.permissionService = new PermissionService(this.datastore);
-    }
-
-    @After
-    public void disconnect() {
-        this.client.dropDatabase("test");
-        this.client.close();
+    public void before() {
+        this.permissionService = new PermissionService(super.datastore);
     }
 
     @Test
@@ -163,7 +146,7 @@ public class PermissionServiceTest {
         newPermission.write = true;
         newPermission.timeCreated = new Date();
 
-        UpdateOperations<Permission> operations =  new UpdateOpsImpl<>(Permission.class, morphia.getMapper())
+        UpdateOperations<Permission> operations =  new UpdateOpsImpl<>(Permission.class, super.morphia.getMapper())
             .set("user_id", newPermission.user_id)
             .set("objectId", newPermission.objectId)
             .set("objectClass", newPermission.objectClass)
@@ -173,7 +156,7 @@ public class PermissionServiceTest {
 
         Permission searchedPermission = this.datastore.findAndModify(
             this.datastore.createQuery(Permission.class)
-                .field("objectClass").equal("Organization")
+                .field("objectClass").equal(original.objectClass)
                 .field("objectId").equal(original.objectId)
                 .field("user_id").equal(original.user_id),
             operations,

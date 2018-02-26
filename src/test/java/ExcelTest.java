@@ -7,37 +7,21 @@ import java.util.List;
 
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.bson.types.ObjectId;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.mongodb.morphia.Datastore;
-import org.mongodb.morphia.Morphia;
 
 import com.auth0.json.mgmt.users.User;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Transaction;
 import com.jivecake.api.service.TransactionService;
-import com.mongodb.MongoClient;
-import com.mongodb.ServerAddress;
 
-public class ExcelTest {
+public class ExcelTest extends DatastoreTest {
     private TransactionService transactionService;
-    private Datastore datastore;
-    private MongoClient client;
 
     @Before
-    public void connect() {
-        this.client = new MongoClient(Arrays.asList(new ServerAddress(System.getProperty("db"))));
-        this.datastore = new Morphia().createDatastore(this.client, "test");
-
-        this.transactionService = new TransactionService(this.datastore);
-    }
-
-    @After
-    public void disconnect() {
-        this.client.dropDatabase("test");
-        this.client.close();
+    public void before() {
+        this.transactionService = new TransactionService(super.datastore);
     }
 
     @Test

@@ -1,7 +1,6 @@
 import static org.junit.Assert.assertEquals;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -9,40 +8,19 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.mongodb.morphia.Datastore;
-import org.mongodb.morphia.Morphia;
-import org.mongodb.morphia.mapping.MapperOptions;
 
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.UserData;
 import com.jivecake.api.service.EventService;
-import com.mongodb.MongoClient;
-import com.mongodb.ServerAddress;
 
-public class EventUserNumberTest {
-    private Datastore datastore;
-    private MongoClient client;
+public class EventUserNumberTest extends DatastoreTest {
     private EventService eventService;
 
     @Before
-    public void connect() {
-        Morphia morphia = new Morphia();
-        morphia.map(Event.class);
-        MapperOptions options = morphia.getMapper().getOptions();
-        options.setStoreEmpties(true);
-
-        this.client = new MongoClient(Arrays.asList(new ServerAddress(System.getProperty("db"))));
-        this.datastore = morphia.createDatastore(this.client, "test");
-        this.eventService = new EventService(this.datastore);
-    }
-
-    @After
-    public void disconnect() {
-        this.client.dropDatabase("test");
-        this.client.close();
+    public void before() {
+        this.eventService = new EventService(super.datastore);
     }
 
     @Test

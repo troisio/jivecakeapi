@@ -32,6 +32,7 @@ import com.jivecake.api.request.Auth0UserUpdateEntity;
 import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.request.UserEmailVerificationBody;
 import com.jivecake.api.service.Auth0Service;
+import com.jivecake.api.service.CronService;
 
 import io.dropwizard.jersey.PATCH;
 
@@ -47,10 +48,18 @@ public class Auth0Resource {
     @Inject
     public Auth0Resource(
         APIConfiguration configuration,
-        Auth0Service auth0Service
+        Auth0Service auth0Service,
+        CronService cronService
     ) {
         this.configuration = configuration;
         this.auth0Service = auth0Service;
+
+        /*
+         * This does not belong here
+         * Temporary until we find a way to construct objects with
+         * dependency injection on application start
+         * */
+        cronService.start();
     }
 
     @GET
