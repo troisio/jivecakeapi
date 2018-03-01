@@ -32,6 +32,10 @@ import javax.ws.rs.core.Response.Status;
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 
+import com.auth0.client.mgmt.ManagementAPI;
+import com.auth0.client.mgmt.filter.UserFilter;
+import com.auth0.exception.Auth0Exception;
+import com.auth0.json.mgmt.users.User;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -52,6 +56,7 @@ import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.request.ItemData;
 import com.jivecake.api.request.OrderData;
 import com.jivecake.api.request.PaypalAuthorizationPayload;
+import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.MandrillService;
@@ -89,6 +94,7 @@ public class PaypalResource {
     private final NotificationService notificationService;
     private final TransactionService transactionService;
     private final APIConfiguration configuration;
+    private final Auth0Service auth0Service;
     private final APIContext context;
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -101,7 +107,8 @@ public class PaypalResource {
         EntityService entityService,
         NotificationService notificationService,
         TransactionService transactionService,
-        APIConfiguration configuration
+        APIConfiguration configuration,
+        Auth0Service auth0Service
     ) {
         this.sentry = sentry;
         this.datastore = datastore;
@@ -111,6 +118,7 @@ public class PaypalResource {
         this.notificationService = notificationService;
         this.transactionService = transactionService;
         this.configuration = configuration;
+        this.auth0Service = auth0Service;
 
         this.context = new APIContext(
             this.configuration.paypal.clientId,
@@ -371,12 +379,12 @@ public class PaypalResource {
     @POST
     @Path("{eventId}/order")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response order(
+    public synchronized Response order(
         @HeaderParam("Origin") String origin,
         @PathObject("eventId") Event event,
         @Context DecodedJWT jwt,
         @ValidEntity OrderData order
-    ) {
+    ) throws Auth0Exception {
         ResponseBuilder builder;
 
         if (event == null) {
@@ -384,15 +392,21 @@ public class PaypalResource {
         } else {
             Date date = new Date();
 
-            String userId = jwt == null ? null : jwt.getSubject();
             AggregatedEvent aggregated = this.eventService.getAggregatedaEventData(
                 event,
                 this.transactionService,
                 date
             );
+
+            ManagementAPI api = new ManagementAPI(
+                this.configuration.oauth.domain,
+                this.auth0Service.getToken().get("access_token").asText()
+            );
+
+            User user = jwt == null ? null : api.users().get(jwt.getSubject(), new UserFilter()).execute();
             List<ErrorData> dataError = this.eventService.getErrorsFromOrderRequest(
-                userId,
                 order,
+                user,
                 aggregated
             );
 

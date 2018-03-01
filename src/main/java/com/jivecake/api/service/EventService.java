@@ -20,6 +20,7 @@ import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.query.UpdateOperations;
 
+import com.auth0.json.mgmt.users.User;
 import com.jivecake.api.model.AssetType;
 import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.Event;
@@ -60,74 +61,74 @@ public class EventService {
     }
 
     public AggregatedEvent getAggregatedaEventData(
-            Event event,
-            TransactionService transactionService,
-            Date currentTime
-        ) {
-            List<PaymentProfile> profiles = this.datastore.createQuery(PaymentProfile.class)
-                .field("id").equal(event.paymentProfileId)
-                .asList();
+        Event event,
+        TransactionService transactionService,
+        Date currentTime
+    ) {
+        List<PaymentProfile> profiles = this.datastore.createQuery(PaymentProfile.class)
+            .field("id").equal(event.paymentProfileId)
+            .asList();
 
-            List<Transaction> leafTransactions = this.datastore.createQuery(Transaction.class)
-                .field("eventId").equal(event.id)
-                .field("leaf").equal(true)
-                .asList();
-            List<Item> items = this.datastore.createQuery(Item.class)
-                .field("eventId").equal(event.id)
-                .asList();
+        List<Transaction> leafTransactions = this.datastore.createQuery(Transaction.class)
+            .field("eventId").equal(event.id)
+            .field("leaf").equal(true)
+            .asList();
+        List<Item> items = this.datastore.createQuery(Item.class)
+            .field("eventId").equal(event.id)
+            .asList();
 
-            Map<ObjectId, List<Transaction>> itemToTransactions = items.stream()
-                .collect(Collectors.toMap(item -> item.id, item -> new ArrayList<>()));
+        Map<ObjectId, List<Transaction>> itemToTransactions = items.stream()
+            .collect(Collectors.toMap(item -> item.id, item -> new ArrayList<>()));
 
-            for (Transaction transaction: leafTransactions) {
-                itemToTransactions.get(transaction.itemId).add(transaction);
-            }
-
-            List<ItemData> itemData = items.stream().map(item -> {
-                ItemData result = new ItemData();
-                result.item = item;
-                result.transactions = itemToTransactions.get(item.id);
-
-                Double amount;
-
-                if (item.countAmounts != null) {
-                    long count = result.transactions.stream()
-                        .filter(TransactionService.usedForCountFilter)
-                        .map(transaction -> transaction.quantity)
-                         .reduce(0L, Long::sum);
-
-                    amount = item.getDerivedAmountFromCounts(count);
-                } else if (item.timeAmounts != null) {
-                    amount = item.getDerivedAmountFromTime(currentTime);
-                } else {
-                    amount = item.amount;
-                }
-
-                result.amount = amount;
-
-                return result;
-            }).collect(Collectors.toList());
-
-            List<EntityAsset> assets = this.datastore.createQuery(EntityAsset.class)
-                .field("id").equal(event.entityAssetConsentId)
-                .asList();
-
-            AggregatedEvent group = new AggregatedEvent();
-            group.organization = this.datastore.get(Organization.class, event.organizationId);
-            group.event = event;
-            group.itemData = itemData;
-            group.assets = assets;
-
-            if (profiles.size() == 1) {
-                group.profile = profiles.get(0);
-            }
-
-            return group;
+        for (Transaction transaction: leafTransactions) {
+            itemToTransactions.get(transaction.itemId).add(transaction);
         }
 
+        List<ItemData> itemData = items.stream().map(item -> {
+            ItemData result = new ItemData();
+            result.item = item;
+            result.transactions = itemToTransactions.get(item.id);
+
+            Double amount;
+
+            if (item.countAmounts != null) {
+                long count = result.transactions.stream()
+                    .filter(TransactionService.usedForCountFilter)
+                    .map(transaction -> transaction.quantity)
+                    .reduce(0L, Long::sum);
+
+                amount = item.getDerivedAmountFromCounts(count);
+            } else if (item.timeAmounts != null) {
+                amount = item.getDerivedAmountFromTime(currentTime);
+            } else {
+                amount = item.amount;
+            }
+
+            result.amount = amount;
+
+            return result;
+        }).collect(Collectors.toList());
+
+        List<EntityAsset> assets = this.datastore.createQuery(EntityAsset.class)
+            .field("id").equal(event.entityAssetConsentId)
+            .asList();
+
+        AggregatedEvent group = new AggregatedEvent();
+        group.organization = this.datastore.get(Organization.class, event.organizationId);
+        group.event = event;
+        group.itemData = itemData;
+        group.assets = assets;
+
+        if (profiles.size() == 1) {
+            group.profile = profiles.get(0);
+        }
+
+        return group;
+    }
+
     public List<ErrorData> getErrorsFromOrderRequest(
-        String userId,
         OrderData order,
+        User user,
         AggregatedEvent aggregated
     ) {
         List<ErrorData> errors = new ArrayList<>();
@@ -140,11 +141,11 @@ public class EventService {
         boolean photoViolation;
 
         if (aggregated.event.requirePhoto) {
-            if (userId == null) {
+            if (user == null) {
                 photoViolation = true;
             } else {
                 long count = this.datastore.createQuery(EntityAsset.class)
-                    .field("entityId").equal(userId)
+                    .field("entityId").equal(user.getId())
                     .field("assetType").equal(AssetType.GOOGLE_CLOUD_STORAGE_BLOB_FACE)
                     .count();
 
@@ -154,21 +155,29 @@ public class EventService {
             photoViolation = false;
         }
 
-        /*
-          Need to actually get an Auth0 user in this method to check first name / last name
-          instead of just seeing if user has an account
-         */
+        boolean nameViolation = false;
 
-        boolean nameViolation = aggregated.event.requireName && (
-            userId == null && (
-                order.firstName == null || order.firstName.isEmpty() ||
-                order.lastName == null || order.lastName.isEmpty()
-            )
-        );
+        if (aggregated.event.requireName) {
+            if (user == null) {
+                nameViolation = order.firstName == null ||
+                    order.firstName.isEmpty() ||
+                    order.lastName == null ||
+                    order.lastName.isEmpty();
+            } else {
+                Map<String, Object> meta = user.getUserMetadata();
+
+                boolean hasNaturalName = user.getFamilyName() != null &&
+                    !"".equals(user.getFamilyName()) &&
+                    user.getGivenName() != null &&
+                    !"".equals(user.getGivenName());
+                boolean hasMetaDataName = meta != null && meta.get("given_name") != null && meta.get("family_name") != null;
+                nameViolation = !(hasMetaDataName || hasNaturalName);
+            }
+        }
 
         boolean organizationNameViolation = aggregated.event.requireOrganizationName &&
             (order.organizationName == null || order.organizationName.isEmpty());
-        boolean emailViolation = userId == null && (order.email == null || order.email.isEmpty());
+        boolean emailViolation = user == null && (order.email == null || order.email.isEmpty());
         boolean eventIsActive = aggregated.event.status == EventService.STATUS_ACTIVE;
         boolean userIdViolation = false;
         boolean itemsAreActive = true;
@@ -192,7 +201,7 @@ public class EventService {
                     .filter(TransactionService.usedForCountFilter)
                     .collect(Collectors.toList());
 
-                if (itemData.item.amount == 0 && userId == null) {
+                if (itemData.item.amount == 0 && user == null) {
                     userIdViolation = true;
                 }
 
@@ -205,11 +214,11 @@ public class EventService {
                 }
 
                 if (itemData.item.maximumPerUser != null) {
-                    if (userId == null) {
+                    if (user == null) {
                         userIdViolation = true;
                     } else {
                         long count = countedTransactions.stream()
-                            .filter(transaction -> userId.equals(transaction.user_id))
+                            .filter(transaction -> user.getId().equals(transaction.user_id))
                             .map(transaction -> transaction.quantity)
                             .reduce(0L, Long::sum);
 

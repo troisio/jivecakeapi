@@ -12,6 +12,7 @@ oauth:
   nonInteractiveClientId: "default"
   nonInteractiveSecret: "default"
   domain: "default"
+  audience: http://127.0.0.1:8080/
 
 paypal:
   webhookId: "default"

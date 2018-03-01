@@ -4,4 +4,5 @@ public class OAuthConfiguration {
     public String nonInteractiveClientId;
     public String nonInteractiveSecret;
     public String domain;
+    public String audience;
 }

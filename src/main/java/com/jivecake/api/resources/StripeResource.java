@@ -202,11 +202,11 @@ public class StripeResource {
     @POST
     @Path("{eventId}/order")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response order(
+    public synchronized Response order(
         @PathObject("eventId") Event event,
         @ValidEntity StripeOrderPayload payload,
         @Context DecodedJWT jwt
-    ) {
+    ) throws Auth0Exception {
         ResponseBuilder builder;
 
         if (event == null) {
@@ -214,15 +214,21 @@ public class StripeResource {
         } else {
             Date date = new Date();
 
-            String userId = jwt == null ? null : jwt.getSubject();
             AggregatedEvent aggregated = this.eventService.getAggregatedaEventData(
                 event,
                 this.transactionService,
                 date
             );
+
+            ManagementAPI api = new ManagementAPI(
+                this.apiConfiguration.oauth.domain,
+                this.auth0Service.getToken().get("access_token").asText()
+            );
+
+            User user = jwt == null ? null : api.users().get(jwt.getSubject(), new UserFilter()).execute();
             List<ErrorData> dataError = this.eventService.getErrorsFromOrderRequest(
-                userId,
                 payload.data,
+                user,
                 aggregated
             );
 
@@ -296,12 +302,12 @@ public class StripeResource {
                             transaction.leaf = true;
                             transaction.timeCreated = date;
 
-                            if (userId == null) {
+                            if (user == null) {
                                 transaction.email = token.getEmail();
                                 transaction.given_name = payload.data.firstName;
                                 transaction.family_name = payload.data.lastName;
                             } else {
-                                transaction.user_id = userId;
+                                transaction.user_id = user.getId();
                             }
 
                             completedTransactions.add(transaction);
@@ -314,7 +320,7 @@ public class StripeResource {
                             "transaction.create"
                         );
 
-                        if (userId == null) {
+                        if (user == null) {
                             List<Item> items = aggregated.itemData.stream()
                                 .map(data -> data.item)
                                 .collect(Collectors.toList());
@@ -329,7 +335,9 @@ public class StripeResource {
                             this.mandrillService.send(message);
                         } else {
                             try {
-                                Event updatedEvent = this.eventService.assignNumberToUserSafely(userId, event).get();
+                                Event updatedEvent = this.eventService
+                                    .assignNumberToUserSafely(user == null ? null : user.getId(), event)
+                                    .get();
                                 this.notificationService.notify(
                                     Arrays.asList(updatedEvent),
                                     "event.update"
@@ -346,6 +354,7 @@ public class StripeResource {
                                 }
 
                                 this.sentry.sendEvent(eventBuilder.build());
+
                             }
                         }
 
