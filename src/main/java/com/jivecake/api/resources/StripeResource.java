@@ -178,7 +178,7 @@ public class StripeResource {
                 this.notificationService.notify(Arrays.asList(refundTransaction), "transaction.create");
                 this.entityService.cascadeLastActivity(Arrays.asList(transaction, refundTransaction), new Date());
 
-                builder = Response.ok(refundTransaction).type(MediaType.APPLICATION_JSON);
+                builder = Response.ok(refundTransaction, MediaType.APPLICATION_JSON);
             } else {
                 this.sentry.sendEvent(
                     new EventBuilder()
