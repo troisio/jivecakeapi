@@ -13,6 +13,8 @@ import javax.ws.rs.client.ClientBuilder;
 import javax.ws.rs.client.Entity;
 import javax.ws.rs.core.Response;
 
+import com.auth0.json.mgmt.tickets.EmailVerificationTicket;
+import com.auth0.json.mgmt.users.User;
 import com.jivecake.api.APIConfiguration;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.Item;
@@ -89,6 +91,25 @@ public class MandrillService {
         to.put("type", "to");
 
         message.put("to", Arrays.asList(to));
+        return message;
+    }
+
+    public Map<String, Object> getEmailConfirmation(User user, EmailVerificationTicket ticket) {
+        Map<String, Object> message = new HashMap<>();
+
+        Map<String, String> to = new HashMap<>();
+        to.put("email", user.getEmail());
+        to.put("type", "to");
+        message.put("to", Arrays.asList(to));
+
+        message.put(
+            "html",
+            String.format("<a href=\"%s\">%s</a><br /><br />-JiveCake", ticket.getTicket(), ticket.getTicket())
+        );
+        message.put("subject", "JiveCake Confirm Your Email");
+        message.put("from_email", "noreply@jivecake.com");
+        message.put("from_name", "JiveCake");
+
         return message;
     }
 }

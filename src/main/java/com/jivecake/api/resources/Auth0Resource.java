@@ -33,6 +33,7 @@ import com.jivecake.api.request.ErrorData;
 import com.jivecake.api.request.UserEmailVerificationBody;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.CronService;
+import com.jivecake.api.service.MandrillService;
 
 import io.dropwizard.jersey.PATCH;
 
@@ -41,6 +42,7 @@ import io.dropwizard.jersey.PATCH;
 @Singleton
 public class Auth0Resource {
     private final APIConfiguration configuration;
+    private final MandrillService mandrillService;
     private final Map<String, Date> lastEmailTime = new HashMap<>();
     private final long emailLimitTime = 1000 * 60 * 5;
     private final Auth0Service auth0Service;
@@ -48,10 +50,12 @@ public class Auth0Resource {
     @Inject
     public Auth0Resource(
         APIConfiguration configuration,
+        MandrillService mandrillService,
         Auth0Service auth0Service,
         CronService cronService
     ) {
         this.configuration = configuration;
+        this.mandrillService = mandrillService;
         this.auth0Service = auth0Service;
 
         /*
@@ -161,10 +165,10 @@ public class Auth0Resource {
             boolean emailChange = !Objects.equals(user.getEmail(), entity.email);
 
             if (emailChange) {
-                boolean emailAvailible = managementApi.users()
-                    .list( new UserFilter().withQuery("email: \""+ user.getEmail() +"\""))
+                boolean emailAvailible = managementApi
+                    .users()
+                    .listByEmail(entity.email, new UserFilter())
                     .execute()
-                    .getItems()
                     .isEmpty();
 
                 if (!emailAvailible) {
@@ -174,22 +178,31 @@ public class Auth0Resource {
                 user.setEmailVerified(false);
             }
 
+            User updateUser = new User();
+
             Map<String, Object> metaData = new HashMap<>();
             metaData.put("given_name", entity.user_metadata.given_name);
             metaData.put("family_name", entity.user_metadata.family_name);
 
-            User updateUser = new User();
-            updateUser.setEmail(entity.email);
             updateUser.setUserMetadata(metaData);
+            updateUser.setEmail(entity.email);
 
-            User userAferUpdate = managementApi.users().update(id, updateUser).execute();
+            User userAferUpdate = managementApi
+                .users()
+                .update(id, updateUser)
+                .execute();
 
             if (emailChange) {
-                EmailVerificationTicket ticket = new EmailVerificationTicket(id);
-                managementApi.tickets().requestEmailVerification(ticket).execute();
+                EmailVerificationTicket ticket = managementApi
+                    .tickets()
+                    .requestEmailVerification(new EmailVerificationTicket(id))
+                    .execute();
+
+                Map<String, Object> message = this.mandrillService.getEmailConfirmation(user, ticket);
+                this.mandrillService.send(message);
             }
 
-            builder = Response.ok(userAferUpdate, MediaType.APPLICATION_JSON);;
+            builder = Response.ok(userAferUpdate, MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);
         }
