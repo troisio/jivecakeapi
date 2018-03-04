@@ -4,7 +4,7 @@ plugins {
     id 'com.github.johnrengelman.shadow' version '2.0.2'
 }
 
-version = '0.2.0'
+version = '0.2.1'
 mainClassName = 'com.jivecake.api.APIApplication'
 
 compileJava {
@@ -26,7 +26,7 @@ repositories {
 dependencies {
     compile(
         'com.auth0:java-jwt:3.3.0',
-        'com.auth0:auth0:1.5.0',
+        'com.auth0:auth0:1.5.1',
         'com.auth0:jwks-rsa:0.3.0',
         'com.github.jengelman.gradle.plugins:shadow:2.0.2',
         'com.google.cloud:google-cloud-storage:1.12.0',
