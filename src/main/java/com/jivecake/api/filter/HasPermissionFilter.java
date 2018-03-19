@@ -64,7 +64,7 @@ public class HasPermissionFilter implements ContainerRequestFilter {
                     DecodedJWT jwt = null;
 
                     try {
-                        jwt = this.auth0Service.getClaimsFromToken(token);
+                        jwt = this.auth0Service.getDecodedJWT(token);
                     } catch (Exception e) {
                         e.printStackTrace();
                     }

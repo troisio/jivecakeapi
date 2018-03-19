@@ -40,8 +40,8 @@ import com.jivecake.api.resources.AssetResource;
 import com.jivecake.api.resources.Auth0Resource;
 import com.jivecake.api.resources.ConnectionResource;
 import com.jivecake.api.resources.EventResource;
-import com.jivecake.api.resources.FaceBookResource;
 import com.jivecake.api.resources.ItemResource;
+import com.jivecake.api.resources.LocalisationResource;
 import com.jivecake.api.resources.LogResource;
 import com.jivecake.api.resources.NotificationsResource;
 import com.jivecake.api.resources.OrganizationInvitationResource;
@@ -96,8 +96,8 @@ public class APIApplication extends Application<APIConfiguration> {
         AssetResource.class,
         ConnectionResource.class,
         EventResource.class,
-        FaceBookResource.class,
         ItemResource.class,
+        LocalisationResource.class,
         LogResource.class,
         NotificationsResource.class,
         OrganizationInvitationResource.class,

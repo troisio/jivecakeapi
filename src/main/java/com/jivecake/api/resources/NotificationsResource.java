@@ -47,7 +47,7 @@ public class NotificationsResource {
             DecodedJWT jwt = null;
 
             try {
-                jwt = this.auth0Service.getClaimsFromToken(token.substring("Bearer ".length()));
+                jwt = this.auth0Service.getDecodedJWT(token.substring("Bearer ".length()));
             } catch (Exception e) {
                 e.printStackTrace();
             }

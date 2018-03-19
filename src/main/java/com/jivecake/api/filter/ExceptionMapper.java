@@ -76,7 +76,7 @@ public class ExceptionMapper implements javax.ws.rs.ext.ExceptionMapper<Exceptio
 
             if (authorization != null && authorization.startsWith("Bearer ")) {
                 try {
-                    DecodedJWT jwt = this.auth0Service.getClaimsFromToken(authorization.substring("Bearer ".length()));
+                    DecodedJWT jwt = this.auth0Service.getDecodedJWT(authorization.substring("Bearer ".length()));
                     eventBuilder.withExtra("sub", jwt.getSubject());
                 } catch (Exception e) {
                 }

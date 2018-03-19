@@ -1,7 +1,5 @@
 rootOAuthIds:
   - ""
-errorRecipients:
-  - ""
 
 facebook:
   messengerWebhookVerifyToken: "default"

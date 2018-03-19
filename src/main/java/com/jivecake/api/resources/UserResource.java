@@ -2,6 +2,8 @@ package com.jivecake.api.resources;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.security.NoSuchAlgorithmException;
+import java.security.spec.InvalidKeySpecException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
@@ -29,7 +31,9 @@ import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.query.FindOptions;
 import org.mongodb.morphia.query.Query;
 
+import com.auth0.client.mgmt.filter.UserFilter;
 import com.auth0.jwt.interfaces.DecodedJWT;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.cloud.storage.Acl;
 import com.google.cloud.storage.Acl.Role;
 import com.google.cloud.storage.Acl.User;
@@ -45,12 +49,15 @@ import com.jivecake.api.filter.Authorized;
 import com.jivecake.api.filter.CORS;
 import com.jivecake.api.filter.GZip;
 import com.jivecake.api.filter.LimitUserRequest;
+import com.jivecake.api.model.Application;
 import com.jivecake.api.model.AssetType;
 import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.EntityType;
 import com.jivecake.api.model.OrganizationInvitation;
 import com.jivecake.api.service.ApplicationService;
+import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.NotificationService;
+import com.jivecake.api.service.PermissionService;
 import com.jivecake.api.service.StripeService;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Subscription;
@@ -62,6 +69,9 @@ public class UserResource {
     private final Datastore datastore;
     private final StripeService stripeService;
     private final NotificationService notificationService;
+    private final PermissionService permissionService;
+    private final ApplicationService applicationService;
+    private final Auth0Service auth0Service;
     private final APIConfiguration configuration;
 
     @Inject
@@ -69,11 +79,17 @@ public class UserResource {
         Datastore datastore,
         StripeService stripeService,
         NotificationService notificationService,
+        PermissionService permissionService,
+        ApplicationService applicationService,
+        Auth0Service auth0Service,
         APIConfiguration configuration
     ) {
         this.datastore = datastore;
         this.stripeService = stripeService;
         this.notificationService = notificationService;
+        this.permissionService = permissionService;
+        this.applicationService = applicationService;
+        this.auth0Service = auth0Service;
         this.configuration = configuration;
     }
 
@@ -198,7 +214,8 @@ public class UserResource {
             query.put("status", "all");
             query.put("limit", "100");
 
-            Iterable<Subscription> subscriptions = Subscription.list(query, this.stripeService.getRequestOptions())
+            Iterable<Subscription> subscriptions = Subscription
+                .list(query, this.stripeService.getRequestOptions())
                 .autoPagingIterable();
 
             List<Subscription> result = new ArrayList<>();
@@ -215,5 +232,37 @@ public class UserResource {
         }
 
         return builder.build();
+    }
+
+    @POST
+    @Authorized
+    @Path("{userId}/token")
+    public Response getToken(
+        @PathParam("userId") String userId,
+        @Context DecodedJWT jwt
+    ) throws NoSuchAlgorithmException, InvalidKeySpecException, IOException {
+        Application application = this.applicationService.read();
+
+        boolean hasPermission = this.permissionService.hasWrite(
+            jwt.getSubject(),
+            Arrays.asList(application)
+        );
+
+        if (!hasPermission) {
+            return Response.status(Status.UNAUTHORIZED).build();
+        }
+
+        com.auth0.json.mgmt.users.User user = this.auth0Service.getManagementApi()
+            .users()
+            .get(userId, new UserFilter())
+            .execute();
+
+        if (user == null) {
+            return Response.status(Status.NOT_FOUND).build();
+        }
+
+        String value = new ObjectMapper().writeValueAsString(this.auth0Service.getSignedJWT(user));
+
+        return Response.ok(value, MediaType.APPLICATION_JSON).build();
     }
 }
