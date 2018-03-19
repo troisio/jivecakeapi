@@ -24,10 +24,15 @@ public class ClaimsFactory implements Factory<DecodedJWT> {
        DecodedJWT jwt = null;
 
        if (authorization != null && authorization.startsWith("Bearer ")) {
-           try {
-               jwt = this.auth0Service.getClaimsFromToken(authorization.substring("Bearer ".length()));
-           } catch (Exception e) {
-               e.printStackTrace();
+           String token = authorization.substring("Bearer ".length());
+           int parts = token.split("\\.").length;
+
+           if (parts == 3) {
+               try {
+                   jwt = this.auth0Service.getDecodedJWT(token);
+               } catch (Exception e) {
+                   e.printStackTrace();
+               }
            }
        }
 

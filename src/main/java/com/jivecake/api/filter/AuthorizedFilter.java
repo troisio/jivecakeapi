@@ -37,22 +37,34 @@ public class AuthorizedFilter implements ContainerRequestFilter {
             String token = header.substring("Bearer ".length());
             DecodedJWT decoded = null;
 
-            try {
-                decoded = this.auth0Service.getClaimsFromToken(token);
-            } catch (Exception e) {
-                this.sentry.sendEvent(
-                    new EventBuilder()
-                        .withEnvironment(this.sentry.getEnvironment())
-                        .withMessage(e.getMessage())
-                        .withLevel(Event.Level.WARNING)
-                        .withSentryInterface(new ExceptionInterface(e))
-                        .build()
-                );
-            }
+            boolean isJWT = token.split("\\.").length == 3;
 
-            if (decoded == null) {
+            if (isJWT) {
+                try {
+                    decoded = this.auth0Service.getDecodedJWT(token);
+                } catch (Exception e) {
+                    this.sentry.sendEvent(
+                        new EventBuilder()
+                            .withEnvironment(this.sentry.getEnvironment())
+                            .withMessage(e.getMessage())
+                            .withLevel(Event.Level.WARNING)
+                            .withSentryInterface(new ExceptionInterface(e))
+                            .build()
+                    );
+                }
+
+                if (decoded == null) {
+                    ErrorData errorData = new ErrorData();
+                    errorData.error = "invalid_grant";
+                    aborted = Response.status(Status.UNAUTHORIZED)
+                        .type(MediaType.APPLICATION_JSON)
+                        .entity(errorData)
+                        .build();
+                }
+            } else {
                 ErrorData errorData = new ErrorData();
                 errorData.error = "invalid_grant";
+                errorData.data = "not a jwt";
                 aborted = Response.status(Status.UNAUTHORIZED)
                     .type(MediaType.APPLICATION_JSON)
                     .entity(errorData)
