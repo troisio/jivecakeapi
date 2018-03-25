@@ -6,6 +6,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -43,6 +44,8 @@ import com.jivecake.api.filter.Log;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.filter.ValidEntity;
 import com.jivecake.api.model.Event;
+import com.jivecake.api.model.FormField;
+import com.jivecake.api.model.FormFieldResponse;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.StripePaymentProfile;
@@ -55,6 +58,7 @@ import com.jivecake.api.request.StripeOrderPayload;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
+import com.jivecake.api.service.FormService;
 import com.jivecake.api.service.MandrillService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.PermissionService;
@@ -79,6 +83,7 @@ import io.sentry.event.interfaces.ExceptionInterface;
 @Singleton
 public class StripeResource {
     private final SentryClient sentry;
+    private final FormService formService;
     private final APIConfiguration apiConfiguration;
     private final Auth0Service auth0Service;
     private final MandrillService mandrillService;
@@ -93,6 +98,7 @@ public class StripeResource {
     @Inject
     public StripeResource(
         SentryClient sentry,
+        FormService formService,
         APIConfiguration apiConfiguration,
         Auth0Service auth0Service,
         MandrillService mandrillService,
@@ -105,6 +111,7 @@ public class StripeResource {
         Datastore datastore
     ) {
         this.sentry = sentry;
+        this.formService = formService;
         this.apiConfiguration = apiConfiguration;
         this.auth0Service = auth0Service;
         this.mandrillService = mandrillService;
@@ -207,178 +214,230 @@ public class StripeResource {
         @ValidEntity StripeOrderPayload payload,
         @Context DecodedJWT jwt
     ) throws Auth0Exception {
-        ResponseBuilder builder;
-
         if (event == null) {
-            builder = Response.status(Status.NOT_FOUND);
-        } else {
-            Date date = new Date();
+            return Response.status(Status.NOT_FOUND).build();
+        }
 
-            AggregatedEvent aggregated = this.eventService.getAggregatedaEventData(
+        ResponseBuilder builder;
+        Date date = new Date();
+
+        AggregatedEvent aggregated = this.eventService.getAggregatedaEventData(
+            event,
+            this.transactionService,
+            date
+        );
+
+        ManagementAPI api = this.auth0Service.getManagementApi();
+
+        User user = jwt == null ? null : api
+            .users()
+            .get(jwt.getSubject(), new UserFilter())
+            .execute();
+
+        List<FormFieldResponse> previousUserEventResponses = user == null ?
+            new ArrayList<>() :
+            this.formService.getPreviousEventResponses(user, event);
+
+        Set<ObjectId> previousUserEventResponseIds = previousUserEventResponses
+            .stream()
+            .map(response -> response.formFieldId)
+            .collect(Collectors.toSet());
+
+        List<FormField> candidateFields = this.formService.getRequestedFormFields(
+            aggregated,
+            payload.data.order
+        );
+
+        List<FormField> fieldsToValidate = candidateFields.stream()
+            .filter(field -> !previousUserEventResponseIds.contains(field.id))
+            .collect(Collectors.toList());
+
+        List<FormFieldResponse> previousResponsesWithPayloadResponses = new ArrayList<>();
+        previousResponsesWithPayloadResponses.addAll(previousUserEventResponses);
+        previousResponsesWithPayloadResponses.addAll(payload.data.responses);
+
+        List<FormField> invalidFields = this.formService.getInvalidResponses(
+            fieldsToValidate,
+            previousResponsesWithPayloadResponses
+        );
+
+        if (invalidFields.size() > 0) {
+            ErrorData entity = new ErrorData();
+            entity.error = "formField";
+            entity.data = invalidFields;
+            return Response.status(Status.BAD_REQUEST)
+                .entity(entity)
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+        }
+
+        for (FormFieldResponse response: payload.data.responses) {
+            FormService.writeDefaultFields(
+                response,
                 event,
-                this.transactionService,
                 date
             );
+        }
 
-            ManagementAPI api = new ManagementAPI(
-                this.apiConfiguration.oauth.domain,
-                this.auth0Service.getToken().get("access_token").asText()
-            );
+        List<ErrorData> dataError = this.eventService.getErrorsFromOrderRequest(
+            payload.data,
+            user,
+            aggregated
+        );
 
-            User user = jwt == null ? null : api.users().get(jwt.getSubject(), new UserFilter()).execute();
-            List<ErrorData> dataError = this.eventService.getErrorsFromOrderRequest(
-                payload.data,
-                user,
-                aggregated
-            );
+        if (!(aggregated.profile instanceof StripePaymentProfile)) {
+            ErrorData error = new ErrorData();
+            error.error = "profile";
+            dataError.add(error);
+        }
 
-            if (!(aggregated.profile instanceof StripePaymentProfile)) {
-                ErrorData error = new ErrorData();
-                error.error = "profile";
-                dataError.add(error);
+        if (dataError.isEmpty()) {
+            Map<ObjectId, ItemData> itemIdToItemData = aggregated.itemData.stream()
+                .collect(
+                    Collectors.toMap(data -> data.item.id, Function.identity())
+                );
+
+            double total = 0;
+
+            for (EntityQuantity<ObjectId> entityQuantity: payload.data.order) {
+                ItemData itemData = itemIdToItemData.get(entityQuantity.entity);
+                total += entityQuantity.quantity * itemData.amount;
             }
 
-            if (dataError.isEmpty()) {
-                Map<ObjectId, ItemData> itemIdToItemData = aggregated.itemData.stream()
-                    .collect(
-                        Collectors.toMap(data -> data.item.id, Function.identity())
-                    );
+            String string = TransactionService.DEFAULT_DECIMAL_FORMAT.format(total);
+            double amountAsDouble = new Double(string);
+            int amount = (int)(amountAsDouble * 100);
 
-                double total = 0;
+            StripeException tokenException = null;
+            Token token = null;
 
-                for (EntityQuantity<ObjectId> entityQuantity: payload.data.order) {
-                    ItemData itemData = itemIdToItemData.get(entityQuantity.entity);
-                    total += entityQuantity.quantity * itemData.amount;
-                }
+            try {
+                token = Token.retrieve(payload.token.id, this.stripeService.getRequestOptions());
+            } catch (StripeException e) {
+                tokenException = e;
+            }
 
-                String string = TransactionService.DEFAULT_DECIMAL_FORMAT.format(total);
-                double amountAsDouble = new Double(string);
-                int amount = (int)(amountAsDouble * 100);
+            if (tokenException == null) {
+                Map<String, Object> params = new HashMap<>();
+                params.put("amount", amount);
+                params.put("currency", event.currency);
+                params.put("description", event.name + " / JiveCake");
+                params.put("source", token.getId());
 
-                StripeException tokenException = null;
-                Token token = null;
+                StripeException exception = null;
+                Charge charge;
 
                 try {
-                    token = Token.retrieve(payload.token.id, this.stripeService.getRequestOptions());
+                    charge = Charge.create(params, this.stripeService.getRequestOptions());
                 } catch (StripeException e) {
-                    tokenException = e;
+                    exception = e;
+                    charge = null;
                 }
 
-                if (tokenException == null) {
-                    Map<String, Object> params = new HashMap<>();
-                    params.put("amount", amount);
-                    params.put("currency", event.currency);
-                    params.put("description", event.name + " / JiveCake");
-                    params.put("source", token.getId());
+                if (exception == null) {
+                    this.datastore.save(payload.data.responses);
 
-                    StripeException exception = null;
-                    Charge charge;
+                    List<Transaction> completedTransactions = new ArrayList<>();
 
-                    try {
-                        charge = Charge.create(params, this.stripeService.getRequestOptions());
-                    } catch (StripeException e) {
-                        exception = e;
-                        charge = null;
-                    }
+                    for (EntityQuantity<ObjectId> entityQuantity: payload.data.order) {
+                        ItemData itemData = itemIdToItemData.get(entityQuantity.entity);
 
-                    if (exception == null) {
-                        List<Transaction> completedTransactions = new ArrayList<>();
-
-                        for (EntityQuantity<ObjectId> entityQuantity: payload.data.order) {
-                            ItemData itemData = itemIdToItemData.get(entityQuantity.entity);
-
-                            Transaction transaction = new Transaction();
-                            transaction.organizationId = itemData.item.organizationId;
-                            transaction.eventId = itemData.item.eventId;
-                            transaction.itemId = itemData.item.id;
-                            transaction.quantity = entityQuantity.quantity;
-                            transaction.amount = itemData.amount * transaction.quantity;
-                            transaction.status = TransactionService.SETTLED;
-                            transaction.paymentStatus = TransactionService.PAYMENT_EQUAL;
-                            transaction.linkedId = charge.getId();
-                            transaction.organizationName = payload.data.organizationName;
-                            transaction.linkedObjectClass = "StripeCharge";
-                            transaction.currency = charge.getCurrency().toUpperCase();
-                            transaction.leaf = true;
-                            transaction.timeCreated = date;
-
-                            if (user == null) {
-                                transaction.email = token.getEmail();
-                                transaction.given_name = payload.data.firstName;
-                                transaction.family_name = payload.data.lastName;
-                            } else {
-                                transaction.user_id = user.getId();
-                            }
-
-                            completedTransactions.add(transaction);
-                        }
-
-                        this.datastore.save(completedTransactions);
-                        this.entityService.cascadeLastActivity(completedTransactions, date);
-                        this.notificationService.notify(
-                            new ArrayList<>(completedTransactions),
-                            "transaction.create"
-                        );
+                        Transaction transaction = new Transaction();
+                        transaction.organizationId = itemData.item.organizationId;
+                        transaction.eventId = itemData.item.eventId;
+                        transaction.itemId = itemData.item.id;
+                        transaction.quantity = entityQuantity.quantity;
+                        transaction.amount = itemData.amount * transaction.quantity;
+                        transaction.status = TransactionService.SETTLED;
+                        transaction.paymentStatus = TransactionService.PAYMENT_EQUAL;
+                        transaction.linkedId = charge.getId();
+                        transaction.organizationName = payload.data.organizationName;
+                        transaction.linkedObjectClass = "StripeCharge";
+                        transaction.currency = charge.getCurrency().toUpperCase();
+                        transaction.leaf = true;
+                        transaction.timeCreated = date;
 
                         if (user == null) {
-                            List<Item> items = aggregated.itemData.stream()
-                                .map(data -> data.item)
-                                .collect(Collectors.toList());
-
-                            Map<String, Object> message = this.mandrillService.getTransactionConfirmation(
-                                token,
-                                event,
-                                items,
-                                completedTransactions
-                            );
-
-                            this.mandrillService.send(message);
+                            transaction.email = token.getEmail();
+                            transaction.given_name = payload.data.firstName;
+                            transaction.family_name = payload.data.lastName;
                         } else {
-                            try {
-                                Event updatedEvent = this.eventService
-                                    .assignNumberToUserSafely(user == null ? null : user.getId(), event)
-                                    .get();
-                                this.notificationService.notify(
-                                    Arrays.asList(updatedEvent),
-                                    "event.update"
-                                );
-                            } catch (InterruptedException | ExecutionException e) {
-                                EventBuilder eventBuilder = new EventBuilder()
-                                    .withEnvironment(this.sentry.getEnvironment())
-                                    .withMessage(e.getMessage())
-                                    .withLevel(io.sentry.event.Event.Level.ERROR)
-                                    .withSentryInterface(new ExceptionInterface(e));
-
-                                if (jwt.getSubject() != null) {
-                                    eventBuilder.withExtra("sub", jwt.getSubject());
-                                }
-
-                                this.sentry.sendEvent(eventBuilder.build());
-
-                            }
+                            transaction.user_id = user.getId();
                         }
 
-                        builder = Response.ok();
-                    } else {
-                        EventBuilder eventBuilder = new EventBuilder()
-                            .withEnvironment(this.sentry.getEnvironment())
-                            .withMessage(exception.getMessage())
-                            .withLevel(io.sentry.event.Event.Level.WARNING)
-                            .withSentryInterface(new ExceptionInterface(exception));
-
-                        if (jwt != null) {
-                            eventBuilder.withExtra("sub", jwt.getSubject());
-                        }
-
-                        this.sentry.sendEvent(eventBuilder.build());
-                        builder = Response.status(Status.SERVICE_UNAVAILABLE);
+                        completedTransactions.add(transaction);
                     }
+
+                    List<Transaction> transactionWithResponses = this.formService.transactionsWithResponses(
+                        completedTransactions,
+                        candidateFields,
+                        previousResponsesWithPayloadResponses
+                    );
+
+                    this.datastore.save(transactionWithResponses);
+                    this.entityService.cascadeLastActivity(transactionWithResponses, date);
+                    this.notificationService.notify(
+                        new ArrayList<>(transactionWithResponses),
+                        "transaction.create"
+                    );
+                    this.notificationService.notify(
+                        new ArrayList<>(payload.data.responses),
+                        "formFieldResponse.create"
+                    );
+
+                    if (user == null) {
+                        List<Item> items = aggregated.itemData.stream()
+                            .map(data -> data.item)
+                            .collect(Collectors.toList());
+
+                        Map<String, Object> message = this.mandrillService.getTransactionConfirmation(
+                            token,
+                            event,
+                            items,
+                            transactionWithResponses
+                        );
+
+                        this.mandrillService.send(message);
+                    } else {
+                        List<Transaction> unionedTransactions = this.formService.unionEventResponses(
+                            event,
+                            user
+                        );
+                        this.notificationService.notify(
+                            new ArrayList<>(unionedTransactions),
+                            "transaction.update"
+                        );
+
+                        try {
+                            Event updatedEvent = this.eventService
+                                .assignNumberToUserSafely(user == null ? null : user.getId(), event)
+                                .get();
+                            this.notificationService.notify(
+                                Arrays.asList(updatedEvent),
+                                "event.update"
+                            );
+                        } catch (InterruptedException | ExecutionException e) {
+                            EventBuilder eventBuilder = new EventBuilder()
+                                .withEnvironment(this.sentry.getEnvironment())
+                                .withMessage(e.getMessage())
+                                .withLevel(io.sentry.event.Event.Level.ERROR)
+                                .withSentryInterface(new ExceptionInterface(e));
+
+                            if (jwt.getSubject() != null) {
+                                eventBuilder.withExtra("sub", jwt.getSubject());
+                            }
+
+                            this.sentry.sendEvent(eventBuilder.build());
+                        }
+                    }
+
+                    builder = Response.ok();
                 } else {
                     EventBuilder eventBuilder = new EventBuilder()
                         .withEnvironment(this.sentry.getEnvironment())
-                        .withMessage(tokenException.getMessage())
+                        .withMessage(exception.getMessage())
                         .withLevel(io.sentry.event.Event.Level.WARNING)
-                        .withSentryInterface(new ExceptionInterface(tokenException));
+                        .withSentryInterface(new ExceptionInterface(exception));
 
                     if (jwt != null) {
                         eventBuilder.withExtra("sub", jwt.getSubject());
@@ -388,10 +447,23 @@ public class StripeResource {
                     builder = Response.status(Status.SERVICE_UNAVAILABLE);
                 }
             } else {
-                builder = Response.status(Status.BAD_REQUEST)
-                    .entity(dataError)
-                    .type(MediaType.APPLICATION_JSON);
+                EventBuilder eventBuilder = new EventBuilder()
+                    .withEnvironment(this.sentry.getEnvironment())
+                    .withMessage(tokenException.getMessage())
+                    .withLevel(io.sentry.event.Event.Level.WARNING)
+                    .withSentryInterface(new ExceptionInterface(tokenException));
+
+                if (jwt != null) {
+                    eventBuilder.withExtra("sub", jwt.getSubject());
+                }
+
+                this.sentry.sendEvent(eventBuilder.build());
+                builder = Response.status(Status.SERVICE_UNAVAILABLE);
             }
+        } else {
+            builder = Response.status(Status.BAD_REQUEST)
+                .entity(dataError)
+                .type(MediaType.APPLICATION_JSON);
         }
 
         return builder.build();

@@ -3,8 +3,11 @@ package com.jivecake.api.resources;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -41,6 +44,8 @@ import com.jivecake.api.filter.QueryRestrict;
 import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.EntityType;
 import com.jivecake.api.model.Event;
+import com.jivecake.api.model.FormField;
+import com.jivecake.api.model.FormFieldResponse;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.Transaction;
@@ -154,7 +159,7 @@ public class TransactionResource {
 
         if (hasPermission) {
             Paging<Transaction> entity = new Paging<>(transactions, query.count());
-            builder = Response.ok(entity).type(MediaType.APPLICATION_JSON);
+            builder = Response.ok(entity, MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);
         }
@@ -358,8 +363,10 @@ public class TransactionResource {
             .count() > 0;
 
         if (hasChildTransaction) {
+            ErrorData errorData = new ErrorData();
+            errorData.error = "childtransaction";
             builder = Response.status(Status.BAD_REQUEST)
-                .entity("{\"error\": \"childtransaction\"}")
+                .entity(errorData)
                 .type(MediaType.APPLICATION_JSON);
         } else {
             if (targetIsCompleted) {
@@ -418,7 +425,16 @@ public class TransactionResource {
 
         if (canDelete) {
             this.datastore.delete(Transaction.class, transaction.id);
+
+            List<FormFieldResponse> responses = this.datastore.get(
+                FormFieldResponse.class,
+                transaction.formFieldResponseIds
+            ).asList();
+
+            this.datastore.delete(Transaction.class, responses);
+
             this.notificationService.notify(Arrays.asList(transaction), "transaction.delete");
+            this.notificationService.notify(new ArrayList<>(responses), "formFieldResponse.delete");
 
             Transaction parentTransaction = this.datastore.get(Transaction.class, transaction.parentTransactionId);
 
@@ -500,6 +516,57 @@ public class TransactionResource {
         if (authorized) {
             Item item = this.datastore.get(Item.class, transaction.itemId);
             builder = Response.ok(item, MediaType.APPLICATION_JSON);
+        } else {
+            builder = Response.status(Status.UNAUTHORIZED);
+        }
+
+        return builder.build();
+    }
+
+    @GET
+    @Path("/{id}/response")
+    @Authorized
+    public Response getResponses(
+        @PathObject("id") Transaction transaction,
+        @Context DecodedJWT jwt
+    ) {
+        boolean userAuthorized = transaction != null && jwt.getSubject().equals(transaction.user_id);
+        boolean organizationAuthorized = this.permissionService.hasRead(
+            jwt.getSubject(),
+            Arrays.asList(transaction)
+        );
+
+        ResponseBuilder builder;
+
+        if (userAuthorized || organizationAuthorized) {
+            List<FormFieldResponse> responses = this.datastore.createQuery(FormFieldResponse.class)
+                .field("id")
+                .in(transaction.formFieldResponseIds)
+                .asList();
+
+            List<ObjectId> formFieldIds = responses
+                .stream()
+                .map(field -> field.formFieldId)
+                .collect(Collectors.toList());
+
+            Map<ObjectId, FormField> idToField = this.datastore.createQuery(FormField.class)
+                .field("id")
+                .in(formFieldIds)
+                .asList()
+                .stream()
+                .collect(Collectors.toMap(field -> field.id, Function.identity()));
+
+            List<Map<String, Object>> entity = new ArrayList<>();
+
+            for (FormFieldResponse response: responses) {
+                Map<String, Object> object = new HashMap<>();
+                object.put("response", response);
+                object.put("field", idToField.get(response.formFieldId));
+
+                entity.add(object);
+            }
+
+            builder = Response.ok(entity, MediaType.APPLICATION_JSON);
         } else {
             builder = Response.status(Status.UNAUTHORIZED);
         }

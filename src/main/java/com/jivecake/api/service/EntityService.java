@@ -14,6 +14,8 @@ import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.query.Query;
 
 import com.jivecake.api.model.Event;
+import com.jivecake.api.model.FormField;
+import com.jivecake.api.model.FormFieldResponse;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.PaymentProfile;
@@ -51,6 +53,16 @@ public class EntityService {
             } else if (entity instanceof Organization) {
                 Organization organization = (Organization)entity;
                 organizationIds.add(organization.id);
+            } else if (entity instanceof FormField) {
+                FormField field = (FormField)entity;
+                Event event = this.datastore.get(Event.class, field.eventId);
+                organizationIds.add(event.organizationId);
+                eventIds.add(event.id);
+            } else if (entity instanceof FormFieldResponse) {
+                FormFieldResponse response = (FormFieldResponse)entity;
+                Event event = this.datastore.get(Event.class, response.eventId);
+                organizationIds.add(event.organizationId);
+                eventIds.add(event.id);
             } else if (entity instanceof Permission) {
                 Permission permission = (Permission)entity;
 

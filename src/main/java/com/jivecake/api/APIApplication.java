@@ -40,6 +40,7 @@ import com.jivecake.api.resources.AssetResource;
 import com.jivecake.api.resources.Auth0Resource;
 import com.jivecake.api.resources.ConnectionResource;
 import com.jivecake.api.resources.EventResource;
+import com.jivecake.api.resources.FormResource;
 import com.jivecake.api.resources.ItemResource;
 import com.jivecake.api.resources.LocalisationResource;
 import com.jivecake.api.resources.LogResource;
@@ -59,11 +60,12 @@ import com.jivecake.api.service.ClientConnectionService;
 import com.jivecake.api.service.CronService;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
+import com.jivecake.api.service.ExcelService;
+import com.jivecake.api.service.FormService;
 import com.jivecake.api.service.GoogleCloudPlatformService;
 import com.jivecake.api.service.HttpService;
 import com.jivecake.api.service.ItemService;
 import com.jivecake.api.service.MandrillService;
-import com.jivecake.api.service.MessengerService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.OrganizationService;
 import com.jivecake.api.service.PermissionService;
@@ -96,6 +98,7 @@ public class APIApplication extends Application<APIConfiguration> {
         AssetResource.class,
         ConnectionResource.class,
         EventResource.class,
+        FormResource.class,
         ItemResource.class,
         LocalisationResource.class,
         LogResource.class,
@@ -118,11 +121,12 @@ public class APIApplication extends Application<APIConfiguration> {
         CronService.class,
         EntityService.class,
         EventService.class,
+        ExcelService.class,
+        FormService.class,
         GoogleCloudPlatformService.class,
         HttpService.class,
         ItemService.class,
         MandrillService.class,
-        MessengerService.class,
         NotificationService.class,
         OrganizationService.class,
         PermissionService.class,

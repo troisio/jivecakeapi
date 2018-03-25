@@ -24,6 +24,7 @@ import com.auth0.json.mgmt.users.User;
 import com.jivecake.api.model.AssetType;
 import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.Event;
+import com.jivecake.api.model.FormField;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.PaymentProfile;
@@ -77,6 +78,10 @@ public class EventService {
             .field("eventId").equal(event.id)
             .asList();
 
+        List<FormField> fields = this.datastore.createQuery(FormField.class)
+            .field("eventId").equal(event.id)
+            .asList();
+
         Map<ObjectId, List<Transaction>> itemToTransactions = items.stream()
             .collect(Collectors.toMap(item -> item.id, item -> new ArrayList<>()));
 
@@ -84,30 +89,37 @@ public class EventService {
             itemToTransactions.get(transaction.itemId).add(transaction);
         }
 
-        List<ItemData> itemData = items.stream().map(item -> {
-            ItemData result = new ItemData();
-            result.item = item;
-            result.transactions = itemToTransactions.get(item.id);
+        List<ItemData> itemData = items
+            .stream()
+            .map(item -> {
+                ItemData result = new ItemData();
+                result.item = item;
+                result.transactions = itemToTransactions.get(item.id);
+                result.fields = fields
+                    .stream()
+                    .filter(field -> item.id.equals(field.item))
+                    .collect(Collectors.toList());
 
-            Double amount;
+                Double amount;
 
-            if (item.countAmounts != null) {
-                long count = result.transactions.stream()
-                    .filter(TransactionService.usedForCountFilter)
-                    .map(transaction -> transaction.quantity)
-                    .reduce(0L, Long::sum);
+                if (item.countAmounts != null) {
+                    long count = result.transactions.stream()
+                        .filter(TransactionService.usedForCountFilter)
+                        .map(transaction -> transaction.quantity)
+                        .reduce(0L, Long::sum);
 
-                amount = item.getDerivedAmountFromCounts(count);
-            } else if (item.timeAmounts != null) {
-                amount = item.getDerivedAmountFromTime(currentTime);
-            } else {
-                amount = item.amount;
+                    amount = item.getDerivedAmountFromCounts(count);
+                } else if (item.timeAmounts != null) {
+                    amount = item.getDerivedAmountFromTime(currentTime);
+                } else {
+                    amount = item.amount;
+                }
+
+                result.amount = amount;
+
+                return result;
             }
-
-            result.amount = amount;
-
-            return result;
-        }).collect(Collectors.toList());
+        ).collect(Collectors.toList());
 
         List<EntityAsset> assets = this.datastore.createQuery(EntityAsset.class)
             .field("id").equal(event.entityAssetConsentId)
@@ -118,6 +130,9 @@ public class EventService {
         group.event = event;
         group.itemData = itemData;
         group.assets = assets;
+        group.fields = fields.stream()
+            .filter(field -> event.id.equals(field.event))
+            .collect(Collectors.toList());
 
         if (profiles.size() == 1) {
             group.profile = profiles.get(0);

@@ -1,6 +1,8 @@
 package com.jivecake.api.model;
 
 import java.util.Date;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.annotations.Entity;
@@ -10,6 +12,7 @@ import org.mongodb.morphia.annotations.Index;
 import org.mongodb.morphia.annotations.Indexes;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.jivecake.api.serializer.ObjectIdCollectionSerializer;
 import com.jivecake.api.serializer.ObjectIdSerializer;
 
 @Indexes({
@@ -18,20 +21,7 @@ import com.jivecake.api.serializer.ObjectIdSerializer;
     @Index(fields = @Field("eventId")),
     @Index(fields = @Field("organizationId")),
     @Index(fields = @Field("user_id")),
-    @Index(fields = @Field("timeCreated")),
-    @Index(fields={
-        @Field("given_name")
-    }),
-    @Index(fields={
-        @Field("family_name")
-    }),
-    @Index(fields={
-        @Field("given_name"),
-        @Field("family_name")
-    }),
-    @Index(fields={
-        @Field("email")
-    })
+    @Index(fields = @Field("timeCreated"))
 })
 @Entity
 public class Transaction {
@@ -51,8 +41,10 @@ public class Transaction {
     @JsonSerialize(using=ObjectIdSerializer.class)
     public ObjectId organizationId;
 
-    public String user_id;
+    @JsonSerialize(using=ObjectIdCollectionSerializer.class)
+    public Set<ObjectId> formFieldResponseIds;
 
+    public String user_id;
     public String linkedId;
     public String linkedObjectClass;
     public int status;
@@ -92,5 +84,7 @@ public class Transaction {
         this.email = transaction.email;
         this.leaf = transaction.leaf;
         this.timeCreated = transaction.timeCreated;
+        this.formFieldResponseIds = transaction.formFieldResponseIds == null ?
+                null : new HashSet<>(transaction.formFieldResponseIds);
     }
 }

@@ -9,6 +9,8 @@ import javax.validation.ConstraintValidatorContext;
 import javax.validation.Payload;
 
 import com.jivecake.api.model.Event;
+import com.jivecake.api.model.FormField;
+import com.jivecake.api.model.FormFieldResponse;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.OrganizationInvitation;
@@ -20,11 +22,11 @@ import com.jivecake.api.request.OrderData;
 import com.jivecake.api.request.PaypalAuthorizationPayload;
 import com.jivecake.api.request.StripeOAuthCode;
 import com.jivecake.api.request.StripeOrderPayload;
+import com.jivecake.api.request.TransactionResponse;
 import com.jivecake.api.request.UserEmailVerificationBody;
 import com.jivecake.api.service.EventService;
 import com.jivecake.api.service.ItemService;
 import com.jivecake.api.service.OrganizationService;
-import com.jivecake.api.service.TransactionService;
 import com.jivecake.api.service.ValidationService;
 
 @Retention(RetentionPolicy.RUNTIME)
@@ -54,11 +56,7 @@ public @interface ValidEntity {
             }
 
             if (object instanceof Transaction) {
-                return TransactionService.isValid((Transaction)object);
-            }
-
-            if (object instanceof Transaction) {
-                return TransactionService.isValid((Transaction)object);
+                return ValidationService.isValid((Transaction)object);
             }
 
             if (object instanceof UserEmailVerificationBody) {
@@ -95,6 +93,18 @@ public @interface ValidEntity {
 
             if (object instanceof StripeOrderPayload) {
                 return ValidationService.isValid((StripeOrderPayload)object);
+            }
+
+            if (object instanceof FormFieldResponse) {
+                return ValidationService.isValid((FormFieldResponse)object);
+            }
+
+            if (object instanceof FormField) {
+                return ValidationService.isValid((FormField)object);
+            }
+
+            if (object instanceof TransactionResponse) {
+                return ValidationService.isValid((TransactionResponse)object);
             }
 
             return true;

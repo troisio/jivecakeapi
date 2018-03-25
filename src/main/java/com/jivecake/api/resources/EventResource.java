@@ -54,6 +54,8 @@ import com.jivecake.api.model.AssetType;
 import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.EntityType;
 import com.jivecake.api.model.Event;
+import com.jivecake.api.model.FormField;
+import com.jivecake.api.model.FormFieldResponse;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.PaymentProfile;
@@ -66,6 +68,7 @@ import com.jivecake.api.service.ApplicationService;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
+import com.jivecake.api.service.ExcelService;
 import com.jivecake.api.service.ItemService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.StripeService;
@@ -114,44 +117,55 @@ public class EventResource {
         @PathObject("eventId") Event event,
         @Context DecodedJWT jwt
     ) {
-        ResponseBuilder builder;
-
         if (event == null) {
-            builder = Response.status(Status.NOT_FOUND);
-        } else if (event.status == EventService.STATUS_ACTIVE) {
-            AggregatedEvent group = this.eventService.getAggregatedaEventData(
-                event,
-                this.transactionService,
-                new Date()
-            );
-
-            group.event.userData = null;
-            group.itemData = group.itemData.stream()
-                .filter(itemData -> itemData.item.status == ItemService.STATUS_ACTIVE)
-                .collect(Collectors.toList());
-
-            for (ItemData datum: group.itemData) {
-                for (Transaction transaction: datum.transactions) {
-                    if (jwt == null || !jwt.getSubject().equals(transaction.user_id)) {
-                        transaction.user_id = null;
-                    }
-
-                    transaction.given_name = null;
-                    transaction.middleName = null;
-                    transaction.family_name = null;
-                }
-            }
-
-            builder = Response.ok(group, MediaType.APPLICATION_JSON);
-        } else {
-            ErrorData error = new ErrorData();
-            error.error = "status";
-            builder = Response.status(Status.BAD_REQUEST)
-                .entity(error)
-                .type(MediaType.APPLICATION_JSON);
+            return Response.status(Status.NOT_FOUND).build();
         }
 
-        return builder.build();
+        if (event.status != EventService.STATUS_ACTIVE) {
+            ErrorData error = new ErrorData();
+            error.error = "status";
+            return Response.status(Status.BAD_REQUEST)
+                .entity(error)
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+        }
+
+        AggregatedEvent group = this.eventService.getAggregatedaEventData(
+            event,
+            this.transactionService,
+            new Date()
+        );
+
+        group.fields = group.fields
+            .stream()
+            .filter(field -> field.active)
+            .collect(Collectors.toList());
+
+        for (ItemData itemData: group.itemData) {
+            itemData.fields = itemData.fields
+                .stream()
+                .filter(field -> field.active)
+                .collect(Collectors.toList());
+        }
+
+        group.event.userData = null;
+        group.itemData = group.itemData.stream()
+            .filter(itemData -> itemData.item.status == ItemService.STATUS_ACTIVE)
+            .collect(Collectors.toList());
+
+        for (ItemData datum: group.itemData) {
+            for (Transaction transaction: datum.transactions) {
+                if (jwt == null || !jwt.getSubject().equals(transaction.user_id)) {
+                    transaction.user_id = null;
+                }
+
+                transaction.given_name = null;
+                transaction.middleName = null;
+                transaction.family_name = null;
+            }
+        }
+
+        return Response.ok(group, MediaType.APPLICATION_JSON).build();
     }
 
     @GZip
@@ -374,8 +388,10 @@ public class EventResource {
         File file = File.createTempFile("transactions", ".xlsx");
 
         Query<Transaction> query = this.datastore.createQuery(Transaction.class)
-            .field("eventId").equal(event.id)
-            .field("leaf").equal(true);
+            .field("eventId")
+            .equal(event.id)
+            .field("leaf")
+            .equal(true);
 
         if (itemId != null) {
             query.field("itemId").equal(itemId);
@@ -386,6 +402,7 @@ public class EventResource {
         List<String> userIds = transactions.stream()
             .filter(transaction -> transaction.user_id != null)
             .map(transaction -> transaction.user_id)
+            .distinct()
             .collect(Collectors.toList());
 
         List<com.auth0.json.mgmt.users.User> users = this.auth0Service.getUsers(userIds);
@@ -420,6 +437,146 @@ public class EventResource {
         EventResource.this.datastore.save(asset);
         EventResource.this.notificationService.notify(Arrays.asList(asset), "asset.create");
 
-        return Response.ok(asset).type(MediaType.APPLICATION_JSON).build();
+        return Response.ok(asset, MediaType.APPLICATION_JSON).build();
+    }
+
+    @GET
+    @Path("{id}/response/excel")
+    @HasPermission(id="id", clazz=Event.class, read=true)
+    public Response requestExcel(
+        @PathObject("id") Event event,
+        @Context DecodedJWT jwt
+    ) throws IOException {
+        File file = File.createTempFile("transactions", ".xlsx");
+
+        List<Item> items = this.datastore.createQuery(Item.class)
+            .field("eventId").equal(event.id)
+            .asList();
+
+        List<Transaction> transactions = this.datastore.createQuery(Transaction.class)
+            .field("eventId").equal(event.id)
+            .asList();
+
+        List<FormField> fields = this.datastore.createQuery(FormField.class)
+            .field("eventId").equal(event.id)
+            .asList();
+
+        List<FormFieldResponse> responses = this.datastore.createQuery(FormFieldResponse.class)
+            .field("eventId").equal(event.id)
+            .asList();
+
+        List<String> userIds = transactions.stream()
+            .filter(transaction -> transaction.user_id != null)
+            .map(transaction -> transaction.user_id)
+            .distinct()
+            .collect(Collectors.toList());
+
+        List<com.auth0.json.mgmt.users.User> users = this.auth0Service.getUsers(userIds);
+
+        File writeFile = file;
+
+        ExcelService.writeResponsesToExcel(
+            writeFile,
+            Arrays.asList(event),
+            items,
+            responses,
+            fields,
+            transactions,
+            users
+        );
+
+        Storage storage = StorageOptions.getDefaultInstance().getService();
+        String name = UUID.randomUUID().toString();
+        BlobInfo info = BlobInfo.newBuilder(BlobId.of(EventResource.this.configuration.gcp.bucket, name))
+            .setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            .setAcl(Arrays.asList(Acl.of(User.ofAllUsers(), Role.READER)))
+            .setStorageClass(StorageClass.REGIONAL)
+            .build();
+
+        byte[] bytes = Files.readAllBytes(writeFile.toPath());
+        Blob blob = storage.create(info, bytes);
+
+        EntityAsset asset = new EntityAsset();
+        asset.assetId = blob.getBucket() + "/" + blob.getName();
+        asset.assetType = AssetType.ORGANIZATION_EXCEL;
+        asset.entityId = event.organizationId.toString();
+        asset.entityType = EntityType.ORGANIZATION;
+        asset.timeCreated = new Date();
+
+        EventResource.this.datastore.save(asset);
+        EventResource.this.notificationService.notify(Arrays.asList(asset), "asset.create");
+
+        return Response.ok(asset, MediaType.APPLICATION_JSON).build();
+    }
+
+    @POST
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Authorized
+    @Path("{id}/field")
+    @HasPermission(clazz=Event.class, id="id", write=true)
+    public Response createFormField(
+        @PathObject(value = "id") Event event,
+        @ValidEntity FormField field
+    ) {
+        long count = this.datastore.createQuery(FormField.class)
+            .field("eventId").equal(event.id)
+            .field("event").equal(event.id)
+            .count();
+
+        if (count > 10) {
+            ErrorData entity = new ErrorData();
+            entity.error = "limit";
+            return Response.status(Status.BAD_REQUEST)
+                .entity(entity)
+                .build();
+        }
+
+        Date date = new Date();
+
+        field.id = null;
+        field.eventId = event.id;
+        field.event = event.id;
+        field.item = null;
+        field.timeUpdated = null;
+        field.timeCreated = date;
+
+        Key<FormField> key = this.datastore.save(field);
+        FormField after = this.datastore.getByKey(
+            FormField.class,
+            key
+        );
+
+        this.notificationService.notify(Arrays.asList(after), "formField.created");
+        this.entityService.cascadeLastActivity(Arrays.asList(after), date);
+
+        return Response.ok(after, MediaType.APPLICATION_JSON).build();
+    }
+
+    @GET
+    @Authorized
+    @Path("{id}/form/field")
+    @HasPermission(clazz=Event.class, id="id", read=true)
+    public Response getFormFields(
+        @PathObject(value="id") Event event
+    ) {
+        List<FormField> entity = this.datastore.createQuery(FormField.class)
+            .field("eventId").equal(event.id)
+            .asList();
+
+        return Response.ok(entity, MediaType.APPLICATION_JSON).build();
+    }
+
+    @GET
+    @Authorized
+    @Path("{id}/form/field/response")
+    @HasPermission(clazz=Event.class, id="id", read=true)
+    public Response getFormFieldResponses(
+        @PathObject(value="id") Event event
+    ) {
+        List<FormFieldResponse> entity = this.datastore.createQuery(FormFieldResponse.class)
+            .field("eventId").equal(event.id)
+            .asList();
+
+        return Response.ok(entity, MediaType.APPLICATION_JSON).build();
     }
 }

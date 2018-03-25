@@ -1,11 +1,6 @@
 rootOAuthIds:
   - ""
 
-facebook:
-  messengerWebhookVerifyToken: "default"
-  secret: "default"
-  accessToken: "default"
-
 oauth:
   nonInteractiveClientId: "default"
   nonInteractiveSecret: "default"

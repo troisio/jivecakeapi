@@ -15,6 +15,7 @@ import java.util.Base64;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -256,5 +257,41 @@ public class Auth0Service {
             })
             .flatMap(List::stream)
             .collect(Collectors.toList());
+    }
+
+    public static String getGivenName(User user) {
+        if (user == null) {
+            return null;
+        }
+
+        if (user.getGivenName() != null) {
+            return user.getGivenName();
+        }
+
+        Map<String, Object> meta = user.getUserMetadata();
+
+        if (meta.containsKey("given_name")) {
+            return (String) meta.get("given_name");
+        }
+
+        return null;
+    }
+
+    public static String getFamilyName(User user) {
+        if (user == null) {
+            return null;
+        }
+
+        if (user.getGivenName() != null) {
+            return user.getGivenName();
+        }
+
+        Map<String, Object> meta = user.getUserMetadata();
+
+        if (meta.containsKey("family_name")) {
+            return (String) meta.get("family_name");
+        }
+
+        return null;
     }
 }
