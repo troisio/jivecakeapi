@@ -29,7 +29,6 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.ResponseBuilder;
 import javax.ws.rs.core.Response.Status;
 
-import org.apache.commons.collections4.ListUtils;
 import org.bson.types.ObjectId;
 import org.mongodb.morphia.Datastore;
 import org.mongodb.morphia.Key;
@@ -82,15 +81,10 @@ import com.stripe.exception.StripeException;
 import com.stripe.model.Account;
 import com.stripe.model.Subscription;
 
-import io.sentry.SentryClient;
-import io.sentry.event.EventBuilder;
-import io.sentry.event.interfaces.ExceptionInterface;
-
 @CORS
 @Path("organization")
 @Singleton
 public class OrganizationResource {
-    private final SentryClient sentry;
     private final Auth0Service auth0Service;
     private final APIConfiguration configuration;
     private final OrganizationService organizationService;
@@ -103,7 +97,6 @@ public class OrganizationResource {
 
     @Inject
     public OrganizationResource(
-        SentryClient sentry,
         Auth0Service auth0Service,
         APIConfiguration configuration,
         OrganizationService organizationService,
@@ -113,7 +106,6 @@ public class OrganizationResource {
         EntityService entityService,
         Datastore datastore
     ) {
-        this.sentry = sentry;
         this.auth0Service = auth0Service;
         this.configuration = configuration;
         this.organizationService = organizationService;
@@ -173,45 +165,7 @@ public class OrganizationResource {
             .distinct()
             .collect(Collectors.toList());
 
-        ManagementAPI managementApi = new ManagementAPI(
-            this.configuration.oauth.domain,
-            this.auth0Service.getToken().get("access_token").asText()
-        );
-
-        List<com.auth0.json.mgmt.users.User> users =
-            ListUtils.partition(userIds, 50)
-            .stream()
-            .map(ids -> {
-                String ors = ids.stream()
-                    .map(id -> String.format("\"%s\"", id))
-                    .collect(Collectors.joining(" OR "));
-                String query = String.format("user_id: (%s)", ors);
-
-                List<com.auth0.json.mgmt.users.User> result;
-
-                try {
-                    result = managementApi
-                        .users()
-                        .list(new UserFilter().withQuery(query))
-                        .execute()
-                        .getItems();
-                } catch (Auth0Exception e) {
-                    this.sentry.sendEvent(
-                        new EventBuilder()
-                            .withMessage(e.getMessage())
-                            .withEnvironment(this.sentry.getEnvironment())
-                            .withLevel(io.sentry.event.Event.Level.ERROR)
-                            .withSentryInterface(new ExceptionInterface(e))
-                            .withExtra("sub", jwt.getSubject())
-                            .build()
-                    );
-                    result = Arrays.asList();
-                }
-
-                return result;
-            })
-            .flatMap(List::stream)
-            .collect(Collectors.toList());
+        List<com.auth0.json.mgmt.users.User> users = this.auth0Service.getUsers(userIds);
 
         List<EntityAsset> transactionUserAssets = this.datastore.createQuery(EntityAsset.class)
             .field("entityId").in(userIds)
@@ -271,7 +225,8 @@ public class OrganizationResource {
         UserFilter filter = new UserFilter();
         filter.withQuery(query);
 
-        List<com.auth0.json.mgmt.users.User> users = api.users()
+        List<com.auth0.json.mgmt.users.User> users = api
+            .users()
             .list(filter)
             .execute()
             .getItems();

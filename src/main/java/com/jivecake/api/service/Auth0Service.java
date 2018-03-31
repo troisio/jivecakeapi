@@ -10,6 +10,7 @@ import java.security.interfaces.RSAPublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Calendar;
 import java.util.Date;
@@ -21,7 +22,11 @@ import javax.ws.rs.client.ClientBuilder;
 import javax.ws.rs.client.Entity;
 import javax.ws.rs.core.MediaType;
 
+import org.apache.commons.collections4.ListUtils;
+
 import com.auth0.client.mgmt.ManagementAPI;
+import com.auth0.client.mgmt.filter.UserFilter;
+import com.auth0.exception.Auth0Exception;
 import com.auth0.json.mgmt.users.User;
 import com.auth0.jwk.Jwk;
 import com.auth0.jwk.JwkException;
@@ -39,16 +44,23 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.io.Files;
 import com.jivecake.api.APIConfiguration;
 
+import io.sentry.SentryClient;
+import io.sentry.event.EventBuilder;
+import io.sentry.event.interfaces.ExceptionInterface;
+
 public class Auth0Service {
     private final ObjectMapper mapper = new ObjectMapper();
     private final APIConfiguration configuration;
+    private final SentryClient sentry;
     public JsonNode token = null;
 
     @Inject
     public Auth0Service(
-        APIConfiguration configuration
+        APIConfiguration configuration,
+        SentryClient sentry
     ) {
         this.configuration = configuration;
+        this.sentry = sentry;
 
         try {
             this.token = this.getNewToken();
@@ -207,5 +219,42 @@ public class Auth0Service {
                 return null;
             }
         });
+    }
+
+    public List<User> getUsers(List<String> userIds) {
+        ManagementAPI api = this.getManagementApi();
+
+        return ListUtils.partition(userIds, 50)
+            .stream()
+            .map(ids -> {
+                String ors = ids.stream()
+                    .map(id -> String.format("\"%s\"", id))
+                    .collect(Collectors.joining(" OR "));
+                String query = String.format("user_id: (%s)", ors);
+
+                List<com.auth0.json.mgmt.users.User> result;
+
+                try {
+                    result = api
+                        .users()
+                        .list(new UserFilter().withQuery(query))
+                        .execute()
+                        .getItems();
+                } catch (Auth0Exception e) {
+                    this.sentry.sendEvent(
+                        new EventBuilder()
+                            .withMessage(e.getMessage())
+                            .withEnvironment(this.sentry.getEnvironment())
+                            .withLevel(io.sentry.event.Event.Level.ERROR)
+                            .withSentryInterface(new ExceptionInterface(e))
+                            .build()
+                    );
+                    result = Arrays.asList();
+                }
+
+                return result;
+            })
+            .flatMap(List::stream)
+            .collect(Collectors.toList());
     }
 }
