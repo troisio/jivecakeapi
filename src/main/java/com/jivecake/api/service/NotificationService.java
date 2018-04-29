@@ -20,6 +20,8 @@ import com.jivecake.api.model.EntityAsset;
 import com.jivecake.api.model.EntityType;
 import com.jivecake.api.model.Event;
 import com.jivecake.api.model.EventBroadcaster;
+import com.jivecake.api.model.FormField;
+import com.jivecake.api.model.FormFieldResponse;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.Organization;
 import com.jivecake.api.model.OrganizationInvitation;
@@ -76,6 +78,14 @@ public class NotificationService {
                 organizationId = ((Organization)entity).id;
             } else if (entity instanceof PaymentProfile) {
                 organizationId = ((PaymentProfile)entity).organizationId;
+            } else if (entity instanceof FormField) {
+                FormField field = (FormField)entity;
+                Event event = this.datastore.get(Event.class, field.eventId);
+                organizationId = event.organizationId;
+            } else if (entity instanceof FormFieldResponse) {
+                FormFieldResponse field = (FormFieldResponse)entity;
+                Event event = this.datastore.get(Event.class, field.eventId);
+                organizationId = event.organizationId;
             } else if (entity instanceof Transaction) {
                 Transaction transaction = (Transaction)entity;
                 organizationId = transaction.organizationId;

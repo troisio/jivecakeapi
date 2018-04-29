@@ -11,6 +11,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -47,6 +48,8 @@ import com.jivecake.api.filter.Log;
 import com.jivecake.api.filter.PathObject;
 import com.jivecake.api.filter.ValidEntity;
 import com.jivecake.api.model.Event;
+import com.jivecake.api.model.FormField;
+import com.jivecake.api.model.FormFieldResponse;
 import com.jivecake.api.model.Item;
 import com.jivecake.api.model.PaypalPaymentProfile;
 import com.jivecake.api.model.Transaction;
@@ -59,6 +62,7 @@ import com.jivecake.api.request.PaypalAuthorizationPayload;
 import com.jivecake.api.service.Auth0Service;
 import com.jivecake.api.service.EntityService;
 import com.jivecake.api.service.EventService;
+import com.jivecake.api.service.FormService;
 import com.jivecake.api.service.MandrillService;
 import com.jivecake.api.service.NotificationService;
 import com.jivecake.api.service.TransactionService;
@@ -89,6 +93,7 @@ public class PaypalResource {
     private final SentryClient sentry;
     private final Datastore datastore;
     private final MandrillService mandrillService;
+    private final FormService formService;
     private final EventService eventService;
     private final EntityService entityService;
     private final NotificationService notificationService;
@@ -103,6 +108,7 @@ public class PaypalResource {
         SentryClient sentry,
         Datastore datastore,
         MandrillService mandrillService,
+        FormService formService,
         EventService eventService,
         EntityService entityService,
         NotificationService notificationService,
@@ -113,6 +119,7 @@ public class PaypalResource {
         this.sentry = sentry;
         this.datastore = datastore;
         this.mandrillService = mandrillService;
+        this.formService = formService;
         this.eventService = eventService;
         this.entityService = entityService;
         this.notificationService = notificationService;
@@ -234,10 +241,10 @@ public class PaypalResource {
     @POST
     @Path("payment/execute")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response execute(
+    public synchronized Response execute(
         @Context DecodedJWT jwt,
         @ValidEntity PaypalAuthorizationPayload payload
-    ) {
+    ) throws Auth0Exception {
         ResponseBuilder builder;
 
         PaymentExecution execution = new PaymentExecution();
@@ -260,6 +267,70 @@ public class PaypalResource {
             com.paypal.api.payments.Transaction paypalTransaction = complete.getTransactions().get(0);
             List<com.paypal.api.payments.Item> items = paypalTransaction.getItemList().getItems();
 
+            Item eventLookupItem = this.datastore.get(
+                Item.class,
+                new ObjectId(items.get(0).getSku())
+            );
+            Event event = this.datastore.get(Event.class, eventLookupItem.eventId);
+
+            AggregatedEvent aggregated = this.eventService.getAggregatedaEventData(
+                event,
+                this.transactionService,
+                date
+            );
+
+            ManagementAPI api = this.auth0Service.getManagementApi();
+            User user = jwt == null ? null : api
+                .users()
+                .get(jwt.getSubject(), new UserFilter())
+                .execute();
+
+            List<FormFieldResponse> previousUserEventResponses = user == null ?
+                new ArrayList<>() :
+                this.formService.getPreviousEventResponses(user, event);
+
+            Set<ObjectId> previousUserEventResponseIds = previousUserEventResponses
+                .stream()
+                .map(response -> response.formFieldId)
+                .collect(Collectors.toSet());
+
+            List<FormField> candidateFields = this.formService.getRequestedFormFields(
+                aggregated,
+                paypalTransaction
+            );
+
+            List<FormField> fieldsToValidate = candidateFields
+                .stream()
+                .filter(field -> !previousUserEventResponseIds.contains(field.id))
+                .collect(Collectors.toList());
+
+            List<FormFieldResponse> previousResponsesWithPayloadResponses = new ArrayList<>();
+            previousResponsesWithPayloadResponses.addAll(previousUserEventResponses);
+            previousResponsesWithPayloadResponses.addAll(payload.responses);
+
+            List<FormField> invalidFields = this.formService.getInvalidResponses(
+                fieldsToValidate,
+                payload.responses
+            );
+
+            if (invalidFields.size() > 0) {
+                ErrorData entity = new ErrorData();
+                entity.error = "formField";
+                entity.data = invalidFields;
+                return Response.status(Status.BAD_REQUEST)
+                    .entity(entity)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+            }
+
+            for (FormFieldResponse response: payload.responses) {
+                FormService.writeDefaultFields(
+                    response,
+                    event,
+                    date
+                );
+            }
+
             if ("created".equals(complete.getState()) || "approved".equals(complete.getState())) {
                 List<Transaction> transactions = new ArrayList<>();
 
@@ -268,6 +339,8 @@ public class PaypalResource {
                     .filter(Objects::nonNull)
                     .findFirst()
                     .get();
+
+                this.datastore.save(payload.responses);
 
                 for (com.paypal.api.payments.Item paypalItem: items) {
                     Item item = this.datastore.get(Item.class, new ObjectId(paypalItem.getSku()));
@@ -310,23 +383,38 @@ public class PaypalResource {
                             transaction.family_name = payload.lastName;
                         }
                     } else {
-                        transaction.user_id = jwt.getSubject();
+                        transaction.user_id = user.getId();
                     }
 
                     transactions.add(transaction);
                 }
 
+                transactions = this.formService.transactionsWithResponses(
+                    transactions,
+                    candidateFields,
+                    previousResponsesWithPayloadResponses
+                );
+
                 this.datastore.save(transactions);
-                this.notificationService.notify(new ArrayList<>(transactions), "transaction.create");
-                this.entityService.cascadeLastActivity(new ArrayList<>(transactions), date);
+                this.notificationService.notify(
+                    new ArrayList<>(transactions),
+                    "transaction.create"
+                );
+                this.notificationService.notify(
+                    new ArrayList<>(payload.responses),
+                    "formFieldResponse.create"
+                );
+                this.entityService.cascadeLastActivity(
+                    new ArrayList<>(transactions),
+                    date
+                );
 
-                Event event = this.datastore.get(Event.class, transactions.get(0).eventId);
-
-                if (jwt == null) {
+                if (user == null) {
                     List<ObjectId> itemIds = transactions.stream()
                         .map(transaction -> transaction.itemId)
                         .collect(Collectors.toList());
-                    List<Item> transactionItems = this.datastore.get(Item.class, itemIds).asList();
+                    List<Item> transactionItems = this.datastore.get(Item.class, itemIds)
+                        .asList();
 
                     Map<String, Object> message = this.mandrillService.getTransactionConfirmation(
                         complete,
@@ -337,6 +425,12 @@ public class PaypalResource {
 
                     this.mandrillService.send(message);
                 } else {
+                    List<Transaction> unionedTransactions = this.formService.unionEventResponses(event, user);
+                    this.notificationService.notify(
+                        new ArrayList<>(unionedTransactions),
+                        "transaction.update"
+                    );
+
                     this.eventService.assignNumberToUserSafely(jwt.getSubject(), event).thenAcceptAsync((updatedEvent) -> {
                         this.notificationService.notify(
                             Arrays.asList(updatedEvent),
@@ -350,12 +444,12 @@ public class PaypalResource {
                 Map<String, Object> body = new HashMap<>();
                 body.put("failureReason", payment.getFailureReason());
 
-                builder = Response.ok(body).type(MediaType.APPLICATION_JSON);
+                builder = Response.ok(body, MediaType.APPLICATION_JSON);
             } else {
                 Map<String, Object> body = new HashMap<>();
                 body.put("state", payment.getState());
 
-                builder = Response.ok(body).type(MediaType.APPLICATION_JSON);
+                builder = Response.ok(body, MediaType.APPLICATION_JSON);
             }
         } else {
             EventBuilder eventBuilder = new EventBuilder()
@@ -398,10 +492,7 @@ public class PaypalResource {
                 date
             );
 
-            ManagementAPI api = new ManagementAPI(
-                this.configuration.oauth.domain,
-                this.auth0Service.getToken().get("access_token").asText()
-            );
+            ManagementAPI api = this.auth0Service.getManagementApi();
 
             User user = jwt == null ? null : api.users().get(jwt.getSubject(), new UserFilter()).execute();
             List<ErrorData> dataError = this.eventService.getErrorsFromOrderRequest(
@@ -433,7 +524,7 @@ public class PaypalResource {
                     Item item = itemData.item;
 
                     paypalItem.setPrice(TransactionService.DEFAULT_DECIMAL_FORMAT.format(itemData.amount));
-                    paypalItem.setQuantity(Integer.toString(entityQuantity.quantity));
+                    paypalItem.setQuantity(Long.toString(entityQuantity.quantity));
                     paypalItem.setName(item.name);
                     paypalItem.setSku(item.id.toString());
                     paypalItem.setCurrency(aggregated.event.currency);

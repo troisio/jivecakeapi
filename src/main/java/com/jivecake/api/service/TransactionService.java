@@ -92,25 +92,6 @@ public class TransactionService {
         return query;
     }
 
-    public static boolean isValid(Transaction transaction) {
-        return transaction != null &&
-            transaction.quantity > 0 &&
-            (transaction.given_name == null || transaction.given_name.length() <= 100) &&
-            (transaction.middleName == null || transaction.middleName.length() <= 100) &&
-            (transaction.family_name == null || transaction.family_name.length() <= 100) &&
-            (transaction.email == null || (transaction.email.contains("@") && transaction.email.length() <= 100)) &&
-            TransactionService.CURRENCIES.contains(transaction.currency) &&
-            (
-                transaction.status == TransactionService.PENDING ||
-                transaction.status == TransactionService.REFUNDED ||
-                transaction.status == TransactionService.SETTLED ||
-                transaction.status == TransactionService.USER_REVOKED
-            ) &&
-            (
-                transaction.paymentStatus == TransactionService.PAYMENT_EQUAL
-            );
-    }
-
     public void writeToExcel(
         Event event,
         List<User> users,
@@ -272,5 +253,33 @@ public class TransactionService {
     public boolean isVendorTransaction(Transaction transaction) {
         return "PaypalPayment".equals(transaction.linkedObjectClass) ||
           "StripeCharge".equals(transaction.linkedObjectClass);
+    }
+
+    public static String getGivenName(Transaction transaction, User user) {
+        String givenName = Auth0Service.getGivenName(user);
+
+        if (givenName == null) {
+            givenName = transaction.given_name;
+        }
+
+        return givenName;
+    }
+
+    public static String getFamilyName(Transaction transaction, User user) {
+        String givenName = Auth0Service.getFamilyName(user);
+
+        if (givenName == null) {
+            givenName = transaction.given_name;
+        }
+
+        return givenName;
+    }
+
+    public static String getEmail(Transaction transaction, User user) {
+        if (user == null) {
+            return transaction == null ? null : transaction.email;
+        }
+
+        return user.getEmail();
     }
 }

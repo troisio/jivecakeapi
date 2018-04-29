@@ -5,7 +5,6 @@ import java.util.List;
 import io.dropwizard.Configuration;
 
 public class APIConfiguration extends Configuration {
-    public FaceBookConfiguration facebook;
     public List<String> rootOAuthIds;
     public OAuthConfiguration oauth;
     public GCPConfiguration gcp;
